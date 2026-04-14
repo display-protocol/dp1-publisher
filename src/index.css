@@ -1,0 +1,107 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Warm paper + ink — minimal, gallery-adjacent */
+    --background: 40 18% 97%;
+    --foreground: 220 15% 12%;
+    --card: 40 22% 99%;
+    --card-foreground: 220 15% 12%;
+    --popover: 40 22% 99%;
+    --popover-foreground: 220 15% 12%;
+    --primary: 220 18% 14%;
+    --primary-foreground: 40 25% 98%;
+    --secondary: 40 14% 94%;
+    --secondary-foreground: 220 15% 18%;
+    --muted: 40 12% 93%;
+    --muted-foreground: 220 8% 42%;
+    --accent: 40 16% 92%;
+    --accent-foreground: 220 15% 14%;
+    --destructive: 0 72% 42%;
+    --destructive-foreground: 40 25% 98%;
+    --border: 40 12% 88%;
+    --input: 40 12% 88%;
+    --ring: 220 15% 12%;
+    --radius: 0.875rem;
+    --chart-1: 220 35% 45%;
+    --chart-2: 160 30% 40%;
+    --chart-3: 35 40% 48%;
+    --chart-4: 280 28% 52%;
+    --chart-5: 200 32% 48%;
+  }
+
+  .dark {
+    --background: 220 16% 8%;
+    --foreground: 40 20% 96%;
+    --card: 220 14% 11%;
+    --card-foreground: 40 20% 96%;
+    --popover: 220 14% 11%;
+    --popover-foreground: 40 20% 96%;
+    --primary: 40 22% 96%;
+    --primary-foreground: 220 18% 10%;
+    --secondary: 220 12% 16%;
+    --secondary-foreground: 40 20% 96%;
+    --muted: 220 12% 18%;
+    --muted-foreground: 40 10% 62%;
+    --accent: 220 12% 20%;
+    --accent-foreground: 40 20% 96%;
+    --destructive: 0 55% 48%;
+    --destructive-foreground: 40 25% 98%;
+    --border: 220 12% 20%;
+    --input: 220 12% 20%;
+    --ring: 40 18% 85%;
+    --chart-1: 220 55% 58%;
+    --chart-2: 160 45% 50%;
+    --chart-3: 35 50% 55%;
+    --chart-4: 280 40% 60%;
+    --chart-5: 200 45% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    @apply scroll-smooth antialiased;
+  }
+
+  body {
+    @apply min-h-screen bg-background font-sans text-foreground;
+    background-image: linear-gradient(
+      165deg,
+      hsl(40 22% 98%) 0%,
+      hsl(40 16% 96%) 45%,
+      hsl(38 14% 94%) 100%
+    );
+  }
+
+  /* Paper grain — very subtle */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+
+  ::selection {
+    @apply bg-foreground/10 text-foreground;
+  }
+}
+
+@layer components {
+  .section-label {
+    @apply text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground;
+  }
+}

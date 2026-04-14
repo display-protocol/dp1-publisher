@@ -4,7 +4,7 @@
  */
 
 import { getAddress, type WalletClient } from 'viem'
-import { canonicalize } from 'json-canonicalize'
+import canonicalize from 'canonicalize'
 import type { Signature } from '@/types/dp1'
 
 /**
@@ -23,12 +23,15 @@ export function stripSignatureFields(raw: object): object {
 }
 
 /**
- * Canonicalize JSON using JCS (JSON Canonicalization Scheme)
- * Returns deterministic UTF-8 encoded JSON string
+ * Canonicalize JSON using JCS (RFC 8785), matching dp1-go/jcs (gowebpki/jcs).
  */
 export function canonicalPayload(raw: object): string {
   const stripped = stripSignatureFields(raw)
-  return canonicalize(stripped)
+  const out = canonicalize(stripped as Record<string, unknown>)
+  if (out === undefined) {
+    throw new Error('JCS canonicalization failed')
+  }
+  return out
 }
 
 /**

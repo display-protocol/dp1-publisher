@@ -79,7 +79,9 @@ export async function publishChannel(channel: Channel): Promise<Channel> {
  * Fetch a playlist by UUID or slug
  */
 export async function getPlaylist(idOrSlug: string): Promise<Playlist> {
-  const response = await fetch(`${FEED_BASE_URL}/api/v1/playlists/${idOrSlug}`)
+  const response = await fetch(
+    `${FEED_BASE_URL}/api/v1/playlists/${encodeURIComponent(idOrSlug)}`
+  )
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ 
@@ -88,6 +90,161 @@ export async function getPlaylist(idOrSlug: string): Promise<Playlist> {
     }))
     throw new FeedAPIError(
       error.message || 'Failed to fetch playlist',
+      response.status,
+      error.error
+    )
+  }
+
+  return response.json()
+}
+
+export interface FeedListResponse<T> {
+  items: T[]
+  hasMore: boolean
+  cursor?: string
+}
+
+/**
+ * GET /api/v1/playlists — paginated list (sort by created_at)
+ */
+export async function listPlaylists(params: {
+  limit?: number
+  cursor?: string
+  sort?: 'asc' | 'desc'
+}): Promise<FeedListResponse<Playlist>> {
+  const sp = new URLSearchParams()
+  if (params.limit != null) sp.set('limit', String(params.limit))
+  if (params.cursor) sp.set('cursor', params.cursor)
+  if (params.sort) sp.set('sort', params.sort)
+  const q = sp.toString()
+  const response = await fetch(
+    `${FEED_BASE_URL}/api/v1/playlists${q ? `?${q}` : ''}`
+  )
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({
+      error: 'unknown',
+      message: response.statusText,
+    }))
+    throw new FeedAPIError(
+      error.message || 'Failed to list playlists',
+      response.status,
+      error.error
+    )
+  }
+
+  return response.json()
+}
+
+/**
+ * GET /api/v1/channels/{id}
+ */
+export async function getChannel(idOrSlug: string): Promise<Channel> {
+  const response = await fetch(
+    `${FEED_BASE_URL}/api/v1/channels/${encodeURIComponent(idOrSlug)}`
+  )
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({
+      error: 'not_found',
+      message: 'Channel not found',
+    }))
+    throw new FeedAPIError(
+      error.message || 'Failed to fetch channel',
+      response.status,
+      error.error
+    )
+  }
+
+  return response.json()
+}
+
+/**
+ * GET /api/v1/channels — paginated list
+ */
+export async function listChannels(params: {
+  limit?: number
+  cursor?: string
+  sort?: 'asc' | 'desc'
+}): Promise<FeedListResponse<Channel>> {
+  const sp = new URLSearchParams()
+  if (params.limit != null) sp.set('limit', String(params.limit))
+  if (params.cursor) sp.set('cursor', params.cursor)
+  if (params.sort) sp.set('sort', params.sort)
+  const q = sp.toString()
+  const response = await fetch(
+    `${FEED_BASE_URL}/api/v1/channels${q ? `?${q}` : ''}`
+  )
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({
+      error: 'unknown',
+      message: response.statusText,
+    }))
+    throw new FeedAPIError(
+      error.message || 'Failed to list channels',
+      response.status,
+      error.error
+    )
+  }
+
+  return response.json()
+}
+
+/**
+ * PATCH /api/v1/playlists/{id} — partial update with signature-based auth
+ */
+export async function patchPlaylist(
+  idOrSlug: string,
+  body: Record<string, unknown>
+): Promise<Playlist> {
+  const response = await fetch(
+    `${FEED_BASE_URL}/api/v1/playlists/${encodeURIComponent(idOrSlug)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }
+  )
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({
+      error: 'unknown',
+      message: response.statusText,
+    }))
+    throw new FeedAPIError(
+      error.message || 'Failed to update playlist',
+      response.status,
+      error.error
+    )
+  }
+
+  return response.json()
+}
+
+/**
+ * PATCH /api/v1/channels/{id} — partial update with signature-based auth
+ */
+export async function patchChannel(
+  idOrSlug: string,
+  body: Record<string, unknown>
+): Promise<Channel> {
+  const response = await fetch(
+    `${FEED_BASE_URL}/api/v1/channels/${encodeURIComponent(idOrSlug)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }
+  )
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({
+      error: 'unknown',
+      message: response.statusText,
+    }))
+    throw new FeedAPIError(
+      error.message || 'Failed to update channel',
       response.status,
       error.error
     )

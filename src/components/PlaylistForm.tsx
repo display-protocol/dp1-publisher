@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { ArrowLeft, Loader2 } from 'lucide-react'
 import { useAccount, useWalletClient } from 'wagmi'
 import { v4 as uuidv4 } from 'uuid'
 import { getAddress } from 'viem'
@@ -12,8 +13,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast'
 import { generateSlug } from '@/lib/utils'
 import { ethereumAddressToDIDPKH } from '@/lib/signing'
-import { signDocument } from '@/lib/signing'
-import { publishPlaylist } from '@/lib/api'
+import { signDocument, stripSignatureFields } from '@/lib/signing'
+import { getPlaylist, patchPlaylist, publishPlaylist } from '@/lib/api'
+import { mergePlaylistForPatch } from '@/lib/dp1Merge'
+import { recordPublishedPlaylist } from '@/lib/publishedStorage'
 import type { Playlist, Entity, PlaylistItem } from '@/types/dp1'
 import PlaylistItemForm from './PlaylistItemForm'
 import CuratorList from './CuratorList'
@@ -77,12 +80,23 @@ function playlistFromJsonImport(raw: Playlist, fallbackId: string): Playlist {
   }
 }
 
-export default function PlaylistForm() {
+export default function PlaylistForm({
+  editId,
+  onCancelEdit,
+  onPublished,
+}: {
+  editId?: string
+  onCancelEdit?: () => void
+  onPublished?: () => void
+} = {}) {
   const { address } = useAccount()
   const { data: walletClient } = useWalletClient()
   const { toast } = useToast()
 
-  const [id] = useState(uuidv4())
+  const loadedRef = useRef<Playlist | null>(null)
+  const [id, setId] = useState(() => uuidv4())
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [isLoadingDoc, setIsLoadingDoc] = useState(false)
   const [title, setTitle] = useState('')
   const [slug, setSlug] = useState('')
   const [isAutoSlug, setIsAutoSlug] = useState(true)
@@ -112,6 +126,68 @@ export default function PlaylistForm() {
   const [jsonText, setJsonText] = useState('')
 
   const [isPublishing, setIsPublishing] = useState(false)
+
+  const isEdit = Boolean(editId)
+
+  useEffect(() => {
+    if (!editId || !address) {
+      loadedRef.current = null
+      return
+    }
+    let cancelled = false
+    setLoadError(null)
+    setIsLoadingDoc(true)
+    const kid = ethereumAddressToDIDPKH(getAddress(address))
+    getPlaylist(editId)
+      .then((p) => {
+        if (cancelled) return
+        loadedRef.current = p
+        setId(p.id || uuidv4())
+        setTitle(p.title)
+        setIsAutoSlug(false)
+        setSlug(p.slug || '')
+        setSummary(p.summary || '')
+        setCoverImage(p.coverImage || '')
+        setCurators(
+          p.curators?.length
+            ? p.curators
+            : [{ name: '', key: kid, url: '' }]
+        )
+        const d = p.defaults?.display
+        setDefaultScaling(d?.scaling ?? 'fit')
+        setDefaultLicense(p.defaults?.license ?? 'open')
+        setDefaultDuration(
+          p.defaults?.duration != null ? String(p.defaults.duration) : ''
+        )
+        setDefaultAutoplay(d?.autoplay ?? true)
+        setDefaultLoop(d?.loop ?? true)
+        setDefaultBackground(
+          typeof d?.background === 'string' ? d.background : '#000000'
+        )
+        setItems(
+          p.items?.length
+            ? p.items.map((it) => ({
+                ...it,
+                id: it.id || uuidv4(),
+              }))
+            : [{ source: '', title: '', duration: undefined, license: undefined }]
+        )
+        setJsonText(JSON.stringify(stripSignatureFields(p as object), null, 2))
+        setJsonMode('form')
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setLoadError(e instanceof Error ? e.message : 'Failed to load playlist')
+          loadedRef.current = null
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingDoc(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [editId, address])
 
   // Auto-generate slug
   const autoSlug = generateSlug(title, id)
@@ -163,14 +239,167 @@ export default function PlaylistForm() {
   }
 
   const handleGenerateJSON = () => {
-    const playlist = buildPlaylist()
-    setJsonText(JSON.stringify(playlist, null, 2))
+    if (isEdit && loadedRef.current) {
+      const base = loadedRef.current
+      const patchFields = {
+        dpVersion: '1.1.0',
+        title: title.trim(),
+        slug: displaySlug,
+        items: items.map((item) => ({
+          ...item,
+          id: item.id || uuidv4(),
+        })),
+        curators,
+        summary: summary.trim() || undefined,
+        coverImage: coverImage.trim() || undefined,
+        defaults: {
+          display: {
+            scaling: defaultScaling,
+            autoplay: defaultAutoplay,
+            loop: defaultLoop,
+            background: defaultBackground,
+          },
+          license: defaultLicense,
+          duration: defaultDuration ? parseFloat(defaultDuration) : undefined,
+        },
+      }
+      const merged = mergePlaylistForPatch(base, patchFields)
+      setJsonText(JSON.stringify(stripSignatureFields(merged as object), null, 2))
+    } else {
+      const playlist = buildPlaylist()
+      setJsonText(JSON.stringify(playlist, null, 2))
+    }
     setJsonMode('json')
   }
 
   const handlePublish = async () => {
     if (!walletClient || !address) {
       toast({ title: 'Error', description: 'Wallet not connected', variant: 'destructive' })
+      return
+    }
+
+    if (isEdit) {
+      if (!editId || !loadedRef.current) {
+        toast({
+          title: 'Error',
+          description: loadError || 'Playlist not loaded yet.',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      const base = loadedRef.current
+
+      let patchFields: Parameters<typeof mergePlaylistForPatch>[1]
+
+      if (jsonMode === 'json') {
+        const trimmed = jsonText.trim()
+        if (!trimmed) {
+          toast({
+            title: 'Error',
+            description: 'Paste playlist JSON here, or use the Form tab.',
+            variant: 'destructive',
+          })
+          return
+        }
+        const parsed = parsePlaylistJson(trimmed)
+        if ('error' in parsed) {
+          toast({ title: 'Invalid playlist', description: parsed.error, variant: 'destructive' })
+          return
+        }
+        const p = parsed.playlist
+        patchFields = {
+          dpVersion: p.dpVersion || base.dpVersion || '1.1.0',
+          title: p.title.trim(),
+          slug: p.slug ?? base.slug ?? '',
+          items: p.items.map((item) => ({
+            ...item,
+            id: item.id || uuidv4(),
+            source: typeof item.source === 'string' ? item.source.trim() : item.source,
+          })),
+          curators: p.curators ?? base.curators,
+          summary: p.summary,
+          coverImage: p.coverImage,
+          defaults: p.defaults,
+          dynamicQuery: p.dynamicQuery as Record<string, unknown> | undefined,
+        }
+      } else {
+        if (!title.trim()) {
+          toast({ title: 'Error', description: 'Title is required', variant: 'destructive' })
+          return
+        }
+        if (items.length === 0 || items.some((item) => !item.source)) {
+          toast({
+            title: 'Error',
+            description: 'At least one item with source URI is required',
+            variant: 'destructive',
+          })
+          return
+        }
+
+        patchFields = {
+          dpVersion: '1.1.0',
+          title: title.trim(),
+          slug: displaySlug,
+          items: items.map((item) => ({
+            ...item,
+            id: item.id || uuidv4(),
+          })),
+          curators,
+          summary: summary.trim() || undefined,
+          coverImage: coverImage.trim() || undefined,
+          defaults: {
+            display: {
+              scaling: defaultScaling,
+              autoplay: defaultAutoplay,
+              loop: defaultLoop,
+              background: defaultBackground,
+            },
+            license: defaultLicense,
+            duration: defaultDuration ? parseFloat(defaultDuration) : undefined,
+          },
+        }
+      }
+
+      const merged = mergePlaylistForPatch(base, patchFields)
+      setIsPublishing(true)
+      try {
+        const signature = await signDocument(
+          stripSignatureFields(merged) as object,
+          walletClient,
+          'curator'
+        )
+        const body: Record<string, unknown> = {
+          dpVersion: patchFields.dpVersion,
+          title: patchFields.title,
+          slug: patchFields.slug,
+          items: patchFields.items,
+          curators: patchFields.curators,
+          signatures: [signature],
+        }
+        if (patchFields.summary !== undefined) body.summary = patchFields.summary
+        if (patchFields.coverImage !== undefined) body.coverImage = patchFields.coverImage
+        if (patchFields.defaults) body.defaults = patchFields.defaults
+        if (patchFields.dynamicQuery !== undefined) body.dynamicQuery = patchFields.dynamicQuery
+
+        const updated = await patchPlaylist(editId, body)
+        recordPublishedPlaylist(address, updated)
+        onPublished?.()
+        loadedRef.current = updated
+        toast({
+          title: 'Updated',
+          description: `Playlist saved: ${updated.slug}`,
+        })
+      } catch (error) {
+        console.error('Update failed:', error)
+        toast({
+          title: 'Update failed',
+          description: error instanceof Error ? error.message : 'Unknown error',
+          variant: 'destructive',
+        })
+      } finally {
+        setIsPublishing(false)
+      }
       return
     }
 
@@ -225,6 +454,8 @@ export default function PlaylistForm() {
 
       // Publish to feed server
       const published = await publishPlaylist(signedPlaylist)
+      recordPublishedPlaylist(address, published)
+      onPublished?.()
 
       toast({
         title: 'Success!',
@@ -254,14 +485,41 @@ export default function PlaylistForm() {
     <Card className="border-border/45 shadow-[0_2px_40px_-20px_rgba(15,23,42,0.15)]">
       <CardHeader className="space-y-2 pb-6">
         <p className="section-label">Playlist</p>
-        <CardTitle className="font-display text-2xl font-normal sm:text-[1.75rem]">
-          New playlist
-        </CardTitle>
-        <CardDescription className="text-[15px]">
-          Build fields below or switch to JSON to paste a document.
-        </CardDescription>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <CardTitle className="font-display text-2xl font-normal sm:text-[1.75rem]">
+              {isEdit ? 'Edit playlist' : 'New playlist'}
+            </CardTitle>
+            <CardDescription className="text-[15px]">
+              {isEdit
+                ? 'Edit in the form or JSON tab, then sign to PATCH the feed document.'
+                : 'Build fields below or switch to JSON to paste a document.'}
+            </CardDescription>
+          </div>
+          {isEdit && onCancelEdit ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="shrink-0 gap-2 rounded-full"
+              onClick={onCancelEdit}
+            >
+              <ArrowLeft className="size-4" aria-hidden />
+              Back to list
+            </Button>
+          ) : null}
+        </div>
       </CardHeader>
       <CardContent className="pb-8">
+        {isLoadingDoc ? (
+          <div className="flex items-center gap-3 py-16 text-muted-foreground">
+            <Loader2 className="size-5 animate-spin" aria-hidden />
+            <span>Loading playlist…</span>
+          </div>
+        ) : loadError ? (
+          <p className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-[15px] text-destructive">
+            {loadError}
+          </p>
+        ) : (
         <Tabs value={jsonMode} onValueChange={(v) => setJsonMode(v as 'form' | 'json')}>
           <TabsList className="mb-2 h-11 w-full max-w-xs rounded-full">
             <TabsTrigger value="form" className="flex-1 rounded-full text-[13px]">
@@ -458,7 +716,13 @@ export default function PlaylistForm() {
                 onClick={handlePublish}
                 disabled={isPublishing}
               >
-                {isPublishing ? 'Publishing…' : 'Sign & publish'}
+                {isPublishing
+                  ? isEdit
+                    ? 'Saving…'
+                    : 'Publishing…'
+                  : isEdit
+                    ? 'Sign & update'
+                    : 'Sign & publish'}
               </Button>
             </div>
           </TabsContent>
@@ -485,12 +749,19 @@ export default function PlaylistForm() {
                   onClick={handlePublish}
                   disabled={isPublishing}
                 >
-                  {isPublishing ? 'Publishing…' : 'Sign & publish'}
+                  {isPublishing
+                    ? isEdit
+                      ? 'Saving…'
+                      : 'Publishing…'
+                    : isEdit
+                      ? 'Sign & update'
+                      : 'Sign & publish'}
                 </Button>
               </div>
             </div>
           </TabsContent>
         </Tabs>
+        )}
       </CardContent>
     </Card>
   )

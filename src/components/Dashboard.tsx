@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useAccount } from 'wagmi'
 import { ListMusic, Radio } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -6,9 +7,16 @@ import { Toaster } from '@/components/ui/toaster'
 import WalletConnect from './WalletConnect'
 import PlaylistForm from './PlaylistForm'
 import ChannelForm from './ChannelForm'
+import PublishedView from './PublishedView'
 
 export default function Dashboard() {
   const { isConnected } = useAccount()
+  const [view, setView] = useState<'publish' | 'published'>('publish')
+  const [publishedTick, setPublishedTick] = useState(0)
+  const [editPlaylistId, setEditPlaylistId] = useState<string | null>(null)
+  const [editChannelId, setEditChannelId] = useState<string | null>(null)
+
+  const bumpPublished = () => setPublishedTick((n) => n + 1)
 
   return (
     <>
@@ -21,13 +29,21 @@ export default function Dashboard() {
                 Publisher
               </h1>
               <p className="max-w-sm text-[15px] leading-relaxed text-muted-foreground">
-                Sign and publish playlists and channels to the feed. Ethereum mainnet only.
+                Sign and publish playlists and channels to the feed.
               </p>
             </div>
           </div>
           {isConnected ? (
             <div className="shrink-0 sm:pt-1">
-              <WalletConnect />
+              <WalletConnect
+                onNavigatePublish={() => {
+                  setEditPlaylistId(null)
+                  setEditChannelId(null)
+                  setView('publish')
+                }}
+                onNavigatePublished={() => setView('published')}
+                activeSection={view}
+              />
             </div>
           ) : null}
         </header>
@@ -46,7 +62,7 @@ export default function Dashboard() {
               <WalletConnect />
             </CardContent>
           </Card>
-        ) : (
+        ) : view === 'publish' ? (
           <Tabs defaultValue="playlist" className="w-full">
             <TabsList className="grid h-12 w-full max-w-md grid-cols-2 gap-1 rounded-full bg-muted/60 p-1.5 sm:h-11">
               <TabsTrigger
@@ -66,13 +82,45 @@ export default function Dashboard() {
             </TabsList>
 
             <TabsContent value="playlist" className="mt-10 outline-none">
-              <PlaylistForm />
+              <PlaylistForm onPublished={bumpPublished} />
             </TabsContent>
 
             <TabsContent value="channel" className="mt-10 outline-none">
-              <ChannelForm />
+              <ChannelForm onPublished={bumpPublished} />
             </TabsContent>
           </Tabs>
+        ) : editPlaylistId ? (
+          <PlaylistForm
+            key={editPlaylistId}
+            editId={editPlaylistId}
+            onCancelEdit={() => {
+              setEditPlaylistId(null)
+              bumpPublished()
+            }}
+            onPublished={bumpPublished}
+          />
+        ) : editChannelId ? (
+          <ChannelForm
+            key={editChannelId}
+            editId={editChannelId}
+            onCancelEdit={() => {
+              setEditChannelId(null)
+              bumpPublished()
+            }}
+            onPublished={bumpPublished}
+          />
+        ) : (
+          <PublishedView
+            key={publishedTick}
+            onEditPlaylist={(id) => {
+              setEditChannelId(null)
+              setEditPlaylistId(id)
+            }}
+            onEditChannel={(id) => {
+              setEditPlaylistId(null)
+              setEditChannelId(id)
+            }}
+          />
         )}
       </div>
       <Toaster />

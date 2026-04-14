@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Check, Loader2, MinusCircle, AlertCircle } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ArrowLeft, Check, Loader2, MinusCircle, AlertCircle } from 'lucide-react'
 import { useAccount, useWalletClient } from 'wagmi'
 import { v4 as uuidv4 } from 'uuid'
 import { getAddress } from 'viem'
@@ -12,8 +12,17 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
 import { generateChannelSlug } from '@/lib/utils'
 import { ethereumAddressToDIDPKH } from '@/lib/signing'
-import { signDocument } from '@/lib/signing'
-import { publishChannel, validatePlaylistURI, checkPlaylistReachable } from '@/lib/api'
+import { signDocument, stripSignatureFields } from '@/lib/signing'
+import { channelUnsignedPayloadForSigning } from '@/lib/channelSignPayload'
+import { mergeChannelForPatch } from '@/lib/dp1Merge'
+import { recordPublishedChannel } from '@/lib/publishedStorage'
+import {
+  getChannel,
+  patchChannel,
+  publishChannel,
+  validatePlaylistURI,
+  checkPlaylistReachable,
+} from '@/lib/api'
 import type { Channel, Entity } from '@/types/dp1'
 import CuratorList from './CuratorList'
 
@@ -131,15 +140,27 @@ function channelFromJsonImport(raw: Channel, fallbackId: string): Channel {
   }
 }
 
-export default function ChannelForm() {
+export default function ChannelForm({
+  editId,
+  onCancelEdit,
+  onPublished,
+}: {
+  editId?: string
+  onCancelEdit?: () => void
+  onPublished?: () => void
+} = {}) {
   const { address } = useAccount()
   const { data: walletClient } = useWalletClient()
   const { toast } = useToast()
 
-  const [id] = useState(uuidv4())
+  const loadedRef = useRef<Channel | null>(null)
+  const [id, setId] = useState(() => uuidv4())
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [isLoadingDoc, setIsLoadingDoc] = useState(false)
   const [title, setTitle] = useState('')
   const [slug, setSlug] = useState('')
   const [isAutoSlug, setIsAutoSlug] = useState(true)
+  const [version, setVersion] = useState('1.0.0')
   const [summary, setSummary] = useState('')
   const [coverImage, setCoverImage] = useState('')
   
@@ -159,6 +180,70 @@ export default function ChannelForm() {
   const [jsonText, setJsonText] = useState('')
 
   const [isPublishing, setIsPublishing] = useState(false)
+
+  const isEdit = Boolean(editId)
+
+  useEffect(() => {
+    if (!editId || !address) {
+      loadedRef.current = null
+      return
+    }
+    let cancelled = false
+    setLoadError(null)
+    setIsLoadingDoc(true)
+    getChannel(editId)
+      .then((ch) => {
+        if (cancelled) return
+        loadedRef.current = ch
+        setId(ch.id || uuidv4())
+        setTitle(ch.title)
+        setIsAutoSlug(false)
+        setSlug(ch.slug || '')
+        setVersion(ch.version || '1.0.0')
+        setSummary(ch.summary || '')
+        setCoverImage(ch.coverImage || '')
+        const pub = ch.publisher
+        setPublisherName(pub?.name || '')
+        setPublisherUrl(pub?.url || '')
+        setCurators(ch.curators?.length ? ch.curators : [])
+        const lines = (ch.playlists ?? []).join('\n')
+        setPlaylistsText(lines)
+        const uris = lines
+          .split('\n')
+          .map((l) => l.trim())
+          .filter((l) => l.length > 0)
+        setUriStatuses(
+          uris.map((uri) => {
+            const validation = validatePlaylistURI(uri)
+            return {
+              uri,
+              valid: validation.valid,
+              reason: validation.reason,
+              checking: false,
+              reachable: validation.valid ? true : undefined,
+            }
+          })
+        )
+        try {
+          setJsonText(JSON.stringify(channelUnsignedPayloadForSigning(ch), null, 2))
+        } catch {
+          setJsonText(JSON.stringify(stripSignatureFields(ch as object), null, 2))
+        }
+        setJsonMode('form')
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setLoadError(e instanceof Error ? e.message : 'Failed to load channel')
+          loadedRef.current = null
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingDoc(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [editId, address])
 
   // Auto-generate slug
   const autoSlug = generateChannelSlug(title, id)
@@ -223,7 +308,7 @@ export default function ChannelForm() {
       id,
       slug: displaySlug,
       title,
-      version: '1.0.0',
+      version,
       created,
       playlists,
       publisher,
@@ -234,14 +319,179 @@ export default function ChannelForm() {
   }
 
   const handleGenerateJSON = () => {
-    const channel = buildChannel()
-    setJsonText(JSON.stringify(channel, null, 2))
+    if (isEdit && loadedRef.current) {
+      const base = loadedRef.current
+      const playlists = playlistsText
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+      const publisher: Entity = {
+        name: publisherName || '',
+        key: ethereumAddressToDIDPKH(getAddress(address!)),
+        url: publisherUrl || undefined,
+      }
+      const patchFields = {
+        title: title.trim(),
+        slug: displaySlug,
+        version,
+        playlists,
+        publisher,
+        curators,
+        summary: summary.trim() || undefined,
+        coverImage: coverImage.trim() || undefined,
+      }
+      const merged = mergeChannelForPatch(base, patchFields)
+      try {
+        setJsonText(JSON.stringify(channelUnsignedPayloadForSigning(merged), null, 2))
+      } catch {
+        setJsonText(JSON.stringify(stripSignatureFields(merged as object), null, 2))
+      }
+    } else {
+      const channel = buildChannel()
+      try {
+        setJsonText(JSON.stringify(channelUnsignedPayloadForSigning(channel), null, 2))
+      } catch {
+        setJsonText(JSON.stringify(channel, null, 2))
+      }
+    }
     setJsonMode('json')
   }
 
   const handlePublish = async () => {
     if (!walletClient || !address) {
       toast({ title: 'Error', description: 'Wallet not connected', variant: 'destructive' })
+      return
+    }
+
+    if (isEdit) {
+      if (!editId || !loadedRef.current) {
+        toast({
+          title: 'Error',
+          description: loadError || 'Channel not loaded yet.',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      const base = loadedRef.current
+
+      let patchFields: Parameters<typeof mergeChannelForPatch>[1]
+
+      if (jsonMode === 'json') {
+        const trimmed = jsonText.trim()
+        if (!trimmed) {
+          toast({
+            title: 'Error',
+            description: 'Paste channel JSON here, or use the Form tab.',
+            variant: 'destructive',
+          })
+          return
+        }
+        const parsed = parseChannelJson(trimmed)
+        if ('error' in parsed) {
+          toast({ title: 'Invalid channel', description: parsed.error, variant: 'destructive' })
+          return
+        }
+        const p = parsed.channel
+        patchFields = {
+          title: p.title.trim(),
+          slug: p.slug ?? base.slug,
+          version: p.version || base.version || '1.0.0',
+          playlists: p.playlists,
+          publisher: p.publisher ?? base.publisher,
+          curators: p.curators,
+          summary: p.summary,
+          coverImage: p.coverImage,
+        }
+      } else {
+        const playlists = playlistsText
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0)
+
+        const publisher: Entity = {
+          name: publisherName || '',
+          key: ethereumAddressToDIDPKH(getAddress(address)),
+          url: publisherUrl || undefined,
+        }
+        patchFields = {
+          title: title.trim(),
+          slug: displaySlug,
+          version,
+          playlists,
+          publisher,
+          curators,
+          summary: summary.trim() || undefined,
+          coverImage: coverImage.trim() || undefined,
+        }
+
+        const allValidated = uriStatuses.length === playlists.length
+        if (!allValidated) {
+          toast({
+            title: 'Validation Required',
+            description: 'Please validate URIs before saving',
+            variant: 'destructive',
+          })
+          return
+        }
+        if (uriStatuses.some((s) => !s.valid)) {
+          toast({
+            title: 'Invalid URIs',
+            description: 'Please fix invalid URIs before saving',
+            variant: 'destructive',
+          })
+          return
+        }
+      }
+
+      const merged = mergeChannelForPatch(base, patchFields)
+      const validationErrors = validateChannelFields(merged)
+      if (validationErrors.length > 0) {
+        toast({
+          title: 'Validation Error',
+          description: validationErrors[0].message,
+          variant: 'destructive',
+        })
+        return
+      }
+
+      setIsPublishing(true)
+      try {
+        const signature = await signDocument(
+          channelUnsignedPayloadForSigning(merged),
+          walletClient,
+          'publisher'
+        )
+        const body: Record<string, unknown> = {
+          title: patchFields.title,
+          slug: patchFields.slug,
+          version: patchFields.version,
+          playlists: patchFields.playlists,
+          publisher: patchFields.publisher,
+          signatures: [signature],
+        }
+        if (patchFields.curators !== undefined) body.curators = patchFields.curators
+        if (patchFields.summary !== undefined) body.summary = patchFields.summary
+        if (patchFields.coverImage !== undefined) body.coverImage = patchFields.coverImage
+
+        const updated = await patchChannel(editId, body)
+        recordPublishedChannel(address, updated)
+        onPublished?.()
+        loadedRef.current = updated
+        toast({
+          title: 'Updated',
+          description: `Channel saved: ${updated.slug}`,
+        })
+      } catch (error) {
+        console.error('Update failed:', error)
+        toast({
+          title: 'Update failed',
+          description: error instanceof Error ? error.message : 'Unknown error',
+          variant: 'destructive',
+        })
+      } finally {
+        setIsPublishing(false)
+      }
       return
     }
 
@@ -310,17 +560,18 @@ export default function ChannelForm() {
     setIsPublishing(true)
 
     try {
-      // Sign the channel
-      const signature = await signDocument(unsignedChannel, walletClient, 'publisher')
+      const signPayload = channelUnsignedPayloadForSigning(unsignedChannel)
+      const signature = await signDocument(signPayload, walletClient, 'publisher')
 
-      // Add signature
-      const signedChannel: Channel = {
-        ...unsignedChannel,
-        signatures: [signature]
-      }
+      const signedChannel = {
+        ...signPayload,
+        signatures: [signature],
+      } as Channel
 
       // Publish to feed server
       const published = await publishChannel(signedChannel)
+      recordPublishedChannel(address, published)
+      onPublished?.()
 
       toast({
         title: 'Success!',
@@ -354,14 +605,41 @@ export default function ChannelForm() {
     <Card className="border-border/45 shadow-[0_2px_40px_-20px_rgba(15,23,42,0.15)]">
       <CardHeader className="space-y-2 pb-6">
         <p className="section-label">Channel</p>
-        <CardTitle className="font-display text-2xl font-normal sm:text-[1.75rem]">
-          New channel
-        </CardTitle>
-        <CardDescription className="text-[15px]">
-          Point to playlists that already exist on the feed, then sign as publisher.
-        </CardDescription>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <CardTitle className="font-display text-2xl font-normal sm:text-[1.75rem]">
+              {isEdit ? 'Edit channel' : 'New channel'}
+            </CardTitle>
+            <CardDescription className="text-[15px]">
+              {isEdit
+                ? 'Edit in the form or JSON tab, then sign to PATCH the feed document.'
+                : 'Point to playlists that already exist on the feed, then sign as publisher.'}
+            </CardDescription>
+          </div>
+          {isEdit && onCancelEdit ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="shrink-0 gap-2 rounded-full"
+              onClick={onCancelEdit}
+            >
+              <ArrowLeft className="size-4" aria-hidden />
+              Back to list
+            </Button>
+          ) : null}
+        </div>
       </CardHeader>
       <CardContent className="pb-8">
+        {isLoadingDoc ? (
+          <div className="flex items-center gap-3 py-16 text-muted-foreground">
+            <Loader2 className="size-5 animate-spin" aria-hidden />
+            <span>Loading channel…</span>
+          </div>
+        ) : loadError ? (
+          <p className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-[15px] text-destructive">
+            {loadError}
+          </p>
+        ) : (
         <Tabs value={jsonMode} onValueChange={(v) => setJsonMode(v as 'form' | 'json')}>
           <TabsList className="mb-2 h-11 w-full max-w-xs rounded-full">
             <TabsTrigger value="form" className="flex-1 rounded-full text-[13px]">
@@ -545,7 +823,13 @@ export default function ChannelForm() {
                 onClick={handlePublish}
                 disabled={isPublishing}
               >
-                {isPublishing ? 'Publishing…' : 'Sign & publish'}
+                {isPublishing
+                  ? isEdit
+                    ? 'Saving…'
+                    : 'Publishing…'
+                  : isEdit
+                    ? 'Sign & update'
+                    : 'Sign & publish'}
               </Button>
             </div>
           </TabsContent>
@@ -572,12 +856,19 @@ export default function ChannelForm() {
                   onClick={handlePublish}
                   disabled={isPublishing}
                 >
-                  {isPublishing ? 'Publishing…' : 'Sign & publish'}
+                  {isPublishing
+                    ? isEdit
+                      ? 'Saving…'
+                      : 'Publishing…'
+                    : isEdit
+                      ? 'Sign & update'
+                      : 'Sign & publish'}
                 </Button>
               </div>
             </div>
           </TabsContent>
         </Tabs>
+        )}
       </CardContent>
     </Card>
   )

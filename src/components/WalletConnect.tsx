@@ -1,9 +1,9 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { Connector } from 'wagmi'
 import { useAccount, useConnect, useDisconnect } from 'wagmi'
-import { Wallet, AlertTriangle } from 'lucide-react'
+import { Wallet, AlertTriangle, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { truncateAddress } from '@/lib/utils'
+import { cn, truncateAddress } from '@/lib/utils'
 import { mainnet } from 'wagmi/chains'
 import { useToast } from '@/hooks/use-toast'
 
@@ -11,10 +11,22 @@ function hasBrowserEthereumProvider(): boolean {
   return typeof window !== 'undefined' && Boolean(window.ethereum)
 }
 
-export default function WalletConnect() {
+export type WalletNavSection = 'publish' | 'published'
+
+export default function WalletConnect({
+  onNavigatePublish,
+  onNavigatePublished,
+  activeSection = 'publish',
+}: {
+  /** Shown when connected; enables the header menu. */
+  onNavigatePublish?: () => void
+  onNavigatePublished?: () => void
+  activeSection?: WalletNavSection
+} = {}) {
   const { toast } = useToast()
   const { address, isConnected, chain } = useAccount()
   const { disconnect } = useDisconnect()
+  const [menuOpen, setMenuOpen] = useState(false)
 
   const { connect, connectors, isPending, reset, variables } = useConnect({
     mutation: {
@@ -49,6 +61,8 @@ export default function WalletConnect() {
 
   const isWrongNetwork = isConnected && chain?.id !== mainnet.id
 
+  const showNavLinks = Boolean(onNavigatePublish && onNavigatePublished)
+
   if (isConnected && address) {
     return (
       <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:gap-4">
@@ -58,23 +72,88 @@ export default function WalletConnect() {
             Switch to Ethereum mainnet
           </span>
         )}
-        <div className="flex items-center gap-3 rounded-full border border-border/60 bg-card/90 px-1 py-1 pl-4 shadow-sm backdrop-blur-sm">
-          <div className="flex flex-col gap-0.5 pr-1 text-right">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Connected
-            </span>
-            <span className="font-mono text-xs font-medium tabular-nums text-foreground">
-              {truncateAddress(address)}
-            </span>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 rounded-full border-0 bg-muted/80 px-4 text-xs font-medium shadow-none hover:bg-muted"
-            onClick={() => disconnect()}
+        <div
+          className="relative inline-flex flex-col items-end self-end sm:self-auto"
+          onMouseEnter={() => setMenuOpen(true)}
+          onMouseLeave={() => setMenuOpen(false)}
+        >
+          <button
+            type="button"
+            className={cn(
+              'flex items-center gap-3 rounded-full border border-border/60 bg-card/90 py-1 pl-4 pr-2 text-left shadow-sm backdrop-blur-sm transition-colors hover:bg-card',
+              menuOpen && 'ring-2 ring-ring/30',
+            )}
+            aria-expanded={menuOpen}
+            aria-haspopup="true"
           >
-            Disconnect
-          </Button>
+            <div className="flex flex-col gap-0.5 pr-1 text-right">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                Connected
+              </span>
+              <span className="font-mono text-xs font-medium tabular-nums text-foreground">
+                {truncateAddress(address)}
+              </span>
+            </div>
+            <ChevronDown
+              className={cn(
+                'size-4 shrink-0 text-muted-foreground transition-transform',
+                menuOpen && 'rotate-180',
+              )}
+              aria-hidden
+            />
+          </button>
+
+          {/* Absolute panel avoids reflowing the header / pushing the publish form. pt-1 bridges the gap so hover does not flicker. */}
+          <div
+            className={cn(
+              'absolute right-0 top-full z-50 pt-1 transition-opacity duration-150 ease-out',
+              menuOpen ? 'opacity-100' : 'pointer-events-none invisible opacity-0',
+            )}
+          >
+            <div className="min-w-[11rem] overflow-hidden rounded-xl border border-border/60 bg-card/95 py-1 shadow-lg backdrop-blur-sm">
+            {showNavLinks ? (
+              <>
+                <button
+                  type="button"
+                  className={cn(
+                    'flex w-full px-3 py-2 text-left text-[13px] font-medium text-foreground transition-colors hover:bg-muted/70',
+                    activeSection === 'publish' && 'bg-muted/40',
+                  )}
+                  onClick={() => {
+                    onNavigatePublish?.()
+                    setMenuOpen(false)
+                  }}
+                >
+                  Publish
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    'flex w-full px-3 py-2 text-left text-[13px] font-medium text-foreground transition-colors hover:bg-muted/70',
+                    activeSection === 'published' && 'bg-muted/40',
+                  )}
+                  onClick={() => {
+                    onNavigatePublished?.()
+                    setMenuOpen(false)
+                  }}
+                >
+                  Published
+                </button>
+                <div className="my-1 h-px bg-border/60" />
+              </>
+            ) : null}
+            <button
+              type="button"
+              className="flex w-full px-3 py-2 text-left text-[13px] font-medium text-destructive transition-colors hover:bg-destructive/10"
+              onClick={() => {
+                disconnect()
+                setMenuOpen(false)
+              }}
+            >
+              Disconnect
+            </button>
+            </div>
+          </div>
         </div>
       </div>
     )

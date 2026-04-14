@@ -17,6 +17,8 @@ export function stripSignatureFields(raw: object): object {
     signatures?: unknown
     [key: string]: unknown
   }
+  void signature
+  void signatures
   return rest
 }
 

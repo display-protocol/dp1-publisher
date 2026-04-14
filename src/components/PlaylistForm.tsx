@@ -342,7 +342,12 @@ export default function PlaylistForm() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="scaling">Scaling</Label>
-                  <Select value={defaultScaling} onValueChange={(v: any) => setDefaultScaling(v)}>
+                  <Select
+                    value={defaultScaling}
+                    onValueChange={(v: 'fit' | 'fill' | 'stretch' | 'auto') =>
+                      setDefaultScaling(v)
+                    }
+                  >
                     <SelectTrigger id="scaling">
                       <SelectValue />
                     </SelectTrigger>
@@ -356,7 +361,12 @@ export default function PlaylistForm() {
                 </div>
                 <div>
                   <Label htmlFor="license">License</Label>
-                  <Select value={defaultLicense} onValueChange={(v: any) => setDefaultLicense(v)}>
+                  <Select
+                    value={defaultLicense}
+                    onValueChange={(v: 'open' | 'token' | 'subscription') =>
+                      setDefaultLicense(v)
+                    }
+                  >
                     <SelectTrigger id="license">
                       <SelectValue />
                     </SelectTrigger>

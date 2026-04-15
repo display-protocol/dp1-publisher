@@ -22,6 +22,7 @@ import {
   publishChannel,
   validatePlaylistURI,
   checkPlaylistReachable,
+  isDebugMode,
 } from '@/lib/api'
 import type { Channel, Entity } from '@/types/dp1'
 import CuratorList from './CuratorList'
@@ -263,19 +264,21 @@ export default function ChannelForm({
     // Validate format first
     const statuses: PlaylistURIStatus[] = uris.map(uri => {
       const validation = validatePlaylistURI(uri)
+      const skipReachability = validation.valid && isDebugMode()
       return {
         uri,
         valid: validation.valid,
         reason: validation.reason,
-        checking: validation.valid, // Only check reachability if valid format
+        checking: validation.valid && !skipReachability,
+        reachable: skipReachability ? true : undefined,
       }
     })
 
     setUriStatuses(statuses)
 
-    // Check reachability for valid URIs
+    // Check reachability for valid URIs (skipped in dev debug mode: avoids CORS on local APIs)
     const reachabilityPromises = statuses.map(async (status, index) => {
-      if (status.valid) {
+      if (status.valid && !isDebugMode()) {
         const reachable = await checkPlaylistReachable(status.uri)
         setUriStatuses(prev => {
           const updated = [...prev]
@@ -762,6 +765,11 @@ export default function ChannelForm({
             {/* Playlist URIs */}
             <div className="space-y-5">
               <h3 className="section-label">Playlist URLs</h3>
+              {isDebugMode() && (
+                <p className="text-xs text-amber-800 dark:text-amber-200/90">
+                  Debug mode: local and http playlist URLs are allowed; reachability is not checked.
+                </p>
+              )}
               <div>
                 <Label htmlFor="playlists">Playlist URIs (one per line) *</Label>
                 <Textarea

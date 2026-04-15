@@ -7,6 +7,17 @@ import type { Playlist, Channel } from '@/types/dp1'
 
 const FEED_BASE_URL = import.meta.env.VITE_FEED_BASE_URL || 'https://feed.feralfile.com'
 
+/**
+ * Local dev only: set `VITE_DEBUG_MODE=true` in `.env` while running the Vite dev server.
+ * Disabled in production builds (`import.meta.env.DEV` is false).
+ */
+export function isDebugMode(): boolean {
+  return (
+    import.meta.env.DEV === true &&
+    String(import.meta.env.VITE_DEBUG_MODE ?? '').toLowerCase() === 'true'
+  )
+}
+
 export class FeedAPIError extends Error {
   constructor(
     message: string,
@@ -278,6 +289,21 @@ export async function checkPlaylistReachable(uri: string): Promise<boolean> {
  * Validate playlist URI format and security
  */
 export function validatePlaylistURI(uri: string): { valid: boolean; reason?: string } {
+  if (isDebugMode()) {
+    try {
+      const url = new URL(uri)
+      if (url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'ipfs:') {
+        return { valid: true }
+      }
+      return {
+        valid: false,
+        reason: 'Only http://, https://, and ipfs:// URIs are allowed (debug mode)',
+      }
+    } catch {
+      return { valid: false, reason: 'Invalid URI format' }
+    }
+  }
+
   try {
     const url = new URL(uri)
 

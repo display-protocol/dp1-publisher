@@ -4,21 +4,11 @@
  * Must match server json.Marshal before signatures are attached.
  */
 
+import { entityWire } from '@/lib/dp1EntityWire'
 import { generateChannelSlug } from '@/lib/utils'
-import type { Channel, Entity } from '@/types/dp1'
+import type { Channel } from '@/types/dp1'
 
 const DEFAULT_CHANNEL_VERSION = '1.0.0'
-
-/** identity.Entity as Go encoding/json emits (url omitted when empty). */
-function entityWire(e: Entity): { name: string; key: string; url?: string } {
-  const o: { name: string; key: string; url?: string } = {
-    name: e.name,
-    key: e.key,
-  }
-  const u = e.url?.trim()
-  if (u) o.url = u
-  return o
-}
 
 /**
  * Plain object to pass to signDocument() for channels (no top-level signatures).

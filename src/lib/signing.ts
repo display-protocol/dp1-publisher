@@ -23,11 +23,28 @@ export function stripSignatureFields(raw: object): object {
 }
 
 /**
+ * Match the document shape after `JSON.stringify` (wire / server parse): omit `undefined`,
+ * so JCS hashing aligns with what the feed verifies. In-memory objects from the UI often
+ * still have optional fields set to `undefined`, which JSON drops and canonicalize may treat
+ * differently from missing keys.
+ */
+function jsonPayloadStableForSigning(stripped: object): Record<string, unknown> {
+  try {
+    return JSON.parse(JSON.stringify(stripped)) as Record<string, unknown>
+  } catch {
+    throw new Error(
+      'Document must be JSON-serializable for signing (avoid undefined in arrays, BigInt, or circular refs)'
+    )
+  }
+}
+
+/**
  * Canonicalize JSON using JCS (RFC 8785), matching dp1-go/jcs (gowebpki/jcs).
  */
 export function canonicalPayload(raw: object): string {
   const stripped = stripSignatureFields(raw)
-  const out = canonicalize(stripped as Record<string, unknown>)
+  const stable = jsonPayloadStableForSigning(stripped)
+  const out = canonicalize(stable)
   if (out === undefined) {
     throw new Error('JCS canonicalization failed')
   }

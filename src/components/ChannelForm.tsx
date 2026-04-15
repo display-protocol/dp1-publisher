@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Check, Loader2, MinusCircle, AlertCircle } from 'lucide-react'
 import { useAccount, useWalletClient } from 'wagmi'
 import { v4 as uuidv4 } from 'uuid'
@@ -125,6 +125,27 @@ function parseChannelJson(text: string): { channel: Channel } | { error: string 
   return { channel: data as Channel }
 }
 
+/** Lenient parse for live JSON ↔ form sync (publish still uses strict `parseChannelJson`). */
+function parseChannelJsonForFormSync(text: string): Channel | null {
+  let data: unknown
+  try {
+    data = JSON.parse(text)
+  } catch {
+    return null
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return null
+  }
+  const o = data as Record<string, unknown>
+  if (!('title' in o)) {
+    return null
+  }
+  if (!Array.isArray(o.playlists)) {
+    return null
+  }
+  return data as Channel
+}
+
 function channelFromJsonImport(raw: Channel, fallbackId: string): Channel {
   const { signatures: _s, signature: _legacy, ...rest } = raw as Channel & {
     signature?: string
@@ -155,6 +176,8 @@ export default function ChannelForm({
   const { toast } = useToast()
 
   const loadedRef = useRef<Channel | null>(null)
+  /** Stable `created` for new channels so JSON preview does not change every keystroke. */
+  const newChannelCreatedRef = useRef<string>(new Date().toISOString())
   const [id, setId] = useState(() => uuidv4())
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isLoadingDoc, setIsLoadingDoc] = useState(false)
@@ -293,20 +316,20 @@ export default function ChannelForm({
     toast({ title: 'Validation Complete', description: `Checked ${uris.length} URIs` })
   }
 
-  const buildChannel = (): Channel => {
-    const created = new Date().toISOString()
-    
+  const buildChannel = useCallback((): Channel => {
+    const created = newChannelCreatedRef.current
+
     const playlists = playlistsText
       .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
 
     const publisher: Entity = {
       name: publisherName || '',
       key: ethereumAddressToDIDPKH(getAddress(address!)),
       url: publisherUrl || undefined,
     }
-    
+
     return {
       id,
       slug: displaySlug,
@@ -319,9 +342,24 @@ export default function ChannelForm({
       summary: summary || undefined,
       coverImage: coverImage || undefined,
     }
-  }
+  }, [
+    id,
+    displaySlug,
+    title,
+    version,
+    playlistsText,
+    summary,
+    coverImage,
+    publisherName,
+    publisherUrl,
+    curators,
+    address,
+  ])
 
-  const handleGenerateJSON = () => {
+  const serializeChannelJsonPreview = useCallback((): string => {
+    if (!address) {
+      return ''
+    }
     if (isEdit && loadedRef.current) {
       const base = loadedRef.current
       const playlists = playlistsText
@@ -330,7 +368,7 @@ export default function ChannelForm({
         .filter((line) => line.length > 0)
       const publisher: Entity = {
         name: publisherName || '',
-        key: ethereumAddressToDIDPKH(getAddress(address!)),
+        key: ethereumAddressToDIDPKH(getAddress(address)),
         url: publisherUrl || undefined,
       }
       const patchFields = {
@@ -345,18 +383,120 @@ export default function ChannelForm({
       }
       const merged = mergeChannelForPatch(base, patchFields)
       try {
-        setJsonText(JSON.stringify(channelUnsignedPayloadForSigning(merged), null, 2))
+        return JSON.stringify(channelUnsignedPayloadForSigning(merged), null, 2)
       } catch {
-        setJsonText(JSON.stringify(stripSignatureFields(merged as object), null, 2))
-      }
-    } else {
-      const channel = buildChannel()
-      try {
-        setJsonText(JSON.stringify(channelUnsignedPayloadForSigning(channel), null, 2))
-      } catch {
-        setJsonText(JSON.stringify(channel, null, 2))
+        return JSON.stringify(stripSignatureFields(merged as object), null, 2)
       }
     }
+    const channel = buildChannel()
+    try {
+      return JSON.stringify(channelUnsignedPayloadForSigning(channel), null, 2)
+    } catch {
+      return JSON.stringify(channel, null, 2)
+    }
+  }, [
+    address,
+    isEdit,
+    title,
+    displaySlug,
+    version,
+    summary,
+    coverImage,
+    publisherName,
+    publisherUrl,
+    curators,
+    playlistsText,
+    buildChannel,
+  ])
+
+  const applyParsedChannelToForm = useCallback(
+    (raw: Channel) => {
+      const ch = channelFromJsonImport(raw, id)
+      if (!isEdit && ch.created?.trim()) {
+        newChannelCreatedRef.current = ch.created.trim()
+      }
+      const resolvedId = ch.id || id
+      setId(resolvedId)
+      setTitle(ch.title)
+      const auto = generateChannelSlug(ch.title, resolvedId)
+      if (!ch.slug?.trim() || ch.slug.trim() === auto) {
+        setIsAutoSlug(true)
+        setSlug('')
+      } else {
+        setIsAutoSlug(false)
+        setSlug(ch.slug.trim())
+      }
+      setVersion(ch.version || '1.0.0')
+      setSummary(ch.summary || '')
+      setCoverImage(ch.coverImage || '')
+      const pub = ch.publisher
+      setPublisherName(pub?.name || '')
+      setPublisherUrl(pub?.url || '')
+      setCurators(ch.curators?.length ? ch.curators : [])
+      const lines = (ch.playlists ?? []).join('\n')
+      setPlaylistsText(lines)
+      const uris = lines
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0)
+      setUriStatuses(
+        uris.map((uri) => {
+          const validation = validatePlaylistURI(uri)
+          return {
+            uri,
+            valid: validation.valid,
+            reason: validation.reason,
+            checking: false,
+            reachable: validation.valid ? true : undefined,
+          }
+        })
+      )
+    },
+    [id, isEdit]
+  )
+
+  const handleJsonTextChange = (value: string) => {
+    setJsonText(value)
+    const trimmed = value.trim()
+    if (!trimmed) {
+      return
+    }
+    const channel = parseChannelJsonForFormSync(trimmed)
+    if (!channel) {
+      return
+    }
+    applyParsedChannelToForm(channel)
+  }
+
+  useEffect(() => {
+    if (jsonMode !== 'form' || isLoadingDoc) {
+      return
+    }
+    if (!address) {
+      return
+    }
+    if (isEdit && !loadedRef.current) {
+      return
+    }
+    setJsonText(serializeChannelJsonPreview())
+  }, [
+    jsonMode,
+    isLoadingDoc,
+    address,
+    isEdit,
+    serializeChannelJsonPreview,
+  ])
+
+  const handleGenerateJSON = () => {
+    if (!address) {
+      toast({
+        title: 'Error',
+        description: 'Connect a wallet to build channel JSON.',
+        variant: 'destructive',
+      })
+      return
+    }
+    setJsonText(serializeChannelJsonPreview())
     setJsonMode('json')
   }
 
@@ -591,6 +731,7 @@ export default function ChannelForm({
       setPublisherUrl('')
       setCurators([])
       setJsonText('')
+      newChannelCreatedRef.current = new Date().toISOString()
       
     } catch (error) {
       console.error('Publish failed:', error)
@@ -846,10 +987,10 @@ export default function ChannelForm({
             <div className="space-y-6">
               <Textarea
                 value={jsonText}
-                onChange={(e) => setJsonText(e.target.value)}
+                onChange={(e) => handleJsonTextChange(e.target.value)}
                 rows={20}
                 className="font-mono text-[13px] leading-relaxed"
-                placeholder="Paste channel JSON…"
+                placeholder="Edit channel JSON…"
               />
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                 <Button

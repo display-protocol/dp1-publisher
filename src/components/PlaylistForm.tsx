@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { useAccount, useWalletClient } from 'wagmi'
 import { v4 as uuidv4 } from 'uuid'
@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast'
 import { generateSlug } from '@/lib/utils'
 import { ethereumAddressToDIDPKH } from '@/lib/signing'
-import { signDocument, stripSignatureFields } from '@/lib/signing'
+import { signDocument } from '@/lib/signing'
+import { playlistUnsignedPayloadForSigning } from '@/lib/playlistSignPayload'
 import { getPlaylist, patchPlaylist, publishPlaylist } from '@/lib/api'
 import { mergePlaylistForPatch } from '@/lib/dp1Merge'
 import { recordPublishedPlaylist } from '@/lib/publishedStorage'
@@ -58,6 +59,55 @@ function parsePlaylistJson(text: string): { playlist: Playlist } | { error: stri
   return { playlist: data as Playlist }
 }
 
+/** Lenient parse for live JSON ↔ form sync (publish still uses strict `parsePlaylistJson`). */
+function parsePlaylistJsonForFormSync(text: string): Playlist | null {
+  let data: unknown
+  try {
+    data = JSON.parse(text)
+  } catch {
+    return null
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return null
+  }
+  const o = data as Record<string, unknown>
+  if (!('title' in o)) {
+    return null
+  }
+  const titleStr =
+    o.title == null ? '' : typeof o.title === 'string' ? o.title : String(o.title)
+  if (!Array.isArray(o.items)) {
+    return null
+  }
+  const items: PlaylistItem[] = []
+  for (let i = 0; i < o.items.length; i++) {
+    const it = o.items[i]
+    if (!it || typeof it !== 'object' || Array.isArray(it)) {
+      continue
+    }
+    const row = it as PlaylistItem
+    const source =
+      typeof row.source === 'string'
+        ? row.source
+        : row.source != null
+          ? String(row.source)
+          : ''
+    items.push({
+      ...row,
+      source,
+      id: row.id || uuidv4(),
+    })
+  }
+  if (items.length === 0) {
+    return {
+      ...(data as Playlist),
+      title: titleStr,
+      items: [{ source: '', title: '', duration: undefined, license: undefined }],
+    }
+  }
+  return { ...(data as Playlist), title: titleStr, items }
+}
+
 /** Unsigned playlist ready to sign (no prior signatures). */
 function playlistFromJsonImport(raw: Playlist, fallbackId: string): Playlist {
   const { signatures: _s, signature: _legacy, ...rest } = raw as Playlist & {
@@ -94,6 +144,7 @@ export default function PlaylistForm({
   const { toast } = useToast()
 
   const loadedRef = useRef<Playlist | null>(null)
+  const newPlaylistCreatedRef = useRef<string>(new Date().toISOString())
   const [id, setId] = useState(() => uuidv4())
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isLoadingDoc, setIsLoadingDoc] = useState(false)
@@ -172,7 +223,7 @@ export default function PlaylistForm({
               }))
             : [{ source: '', title: '', duration: undefined, license: undefined }]
         )
-        setJsonText(JSON.stringify(stripSignatureFields(p as object), null, 2))
+        setJsonText(JSON.stringify(playlistUnsignedPayloadForSigning(p), null, 2))
         setJsonMode('form')
       })
       .catch((e) => {
@@ -209,18 +260,18 @@ export default function PlaylistForm({
     setItems(newItems)
   }
 
-  const buildPlaylist = (): Playlist => {
-    const created = new Date().toISOString()
-    
+  const buildPlaylist = useCallback((): Playlist => {
+    const created = newPlaylistCreatedRef.current
+
     return {
       dpVersion: '1.1.0',
       id,
       slug: displaySlug,
       title,
       created,
-      items: items.map(item => ({
+      items: items.map((item) => ({
         ...item,
-        id: item.id || uuidv4()
+        id: item.id || uuidv4(),
       })),
       curators,
       summary: summary || undefined,
@@ -236,9 +287,23 @@ export default function PlaylistForm({
         duration: defaultDuration ? parseFloat(defaultDuration) : undefined,
       },
     }
-  }
+  }, [
+    id,
+    displaySlug,
+    title,
+    items,
+    curators,
+    summary,
+    coverImage,
+    defaultScaling,
+    defaultAutoplay,
+    defaultLoop,
+    defaultBackground,
+    defaultLicense,
+    defaultDuration,
+  ])
 
-  const handleGenerateJSON = () => {
+  const serializePlaylistJsonPreview = useCallback((): string => {
     if (isEdit && loadedRef.current) {
       const base = loadedRef.current
       const patchFields = {
@@ -264,11 +329,98 @@ export default function PlaylistForm({
         },
       }
       const merged = mergePlaylistForPatch(base, patchFields)
-      setJsonText(JSON.stringify(stripSignatureFields(merged as object), null, 2))
-    } else {
-      const playlist = buildPlaylist()
-      setJsonText(JSON.stringify(playlist, null, 2))
+      return JSON.stringify(playlistUnsignedPayloadForSigning(merged), null, 2)
     }
+    const playlist = buildPlaylist()
+    return JSON.stringify(playlistUnsignedPayloadForSigning(playlist), null, 2)
+  }, [
+    isEdit,
+    title,
+    displaySlug,
+    items,
+    curators,
+    summary,
+    coverImage,
+    defaultScaling,
+    defaultAutoplay,
+    defaultLoop,
+    defaultBackground,
+    defaultLicense,
+    defaultDuration,
+    buildPlaylist,
+  ])
+
+  const applyParsedPlaylistToForm = useCallback(
+    (raw: Playlist) => {
+      const p = playlistFromJsonImport(raw, id)
+      const kid = address ? ethereumAddressToDIDPKH(getAddress(address)) : ''
+      if (!isEdit && p.created?.trim()) {
+        newPlaylistCreatedRef.current = p.created.trim()
+      }
+      setId(p.id || id)
+      const resolvedId = p.id || id
+      setTitle(p.title)
+      const auto = generateSlug(p.title, resolvedId)
+      if (!p.slug?.trim() || p.slug.trim() === auto) {
+        setIsAutoSlug(true)
+        setSlug('')
+      } else {
+        setIsAutoSlug(false)
+        setSlug(p.slug.trim())
+      }
+      setSummary(p.summary || '')
+      setCoverImage(p.coverImage || '')
+      setCurators(
+        p.curators?.length ? p.curators : [{ name: '', key: kid, url: '' }]
+      )
+      const d = p.defaults?.display
+      setDefaultScaling(d?.scaling ?? 'fit')
+      setDefaultLicense(p.defaults?.license ?? 'open')
+      setDefaultDuration(
+        p.defaults?.duration != null ? String(p.defaults.duration) : ''
+      )
+      setDefaultAutoplay(d?.autoplay ?? true)
+      setDefaultLoop(d?.loop ?? true)
+      setDefaultBackground(
+        typeof d?.background === 'string' ? d.background : '#000000'
+      )
+      setItems(
+        p.items?.length
+          ? p.items.map((it) => ({
+              ...it,
+              id: it.id || uuidv4(),
+            }))
+          : [{ source: '', title: '', duration: undefined, license: undefined }]
+      )
+    },
+    [id, isEdit, address]
+  )
+
+  const handleJsonTextChange = (value: string) => {
+    setJsonText(value)
+    const trimmed = value.trim()
+    if (!trimmed) {
+      return
+    }
+    const playlist = parsePlaylistJsonForFormSync(trimmed)
+    if (!playlist) {
+      return
+    }
+    applyParsedPlaylistToForm(playlist)
+  }
+
+  useEffect(() => {
+    if (jsonMode !== 'form' || isLoadingDoc) {
+      return
+    }
+    if (isEdit && !loadedRef.current) {
+      return
+    }
+    setJsonText(serializePlaylistJsonPreview())
+  }, [jsonMode, isLoadingDoc, isEdit, serializePlaylistJsonPreview])
+
+  const handleGenerateJSON = () => {
+    setJsonText(serializePlaylistJsonPreview())
     setJsonMode('json')
   }
 
@@ -365,7 +517,7 @@ export default function PlaylistForm({
       setIsPublishing(true)
       try {
         const signature = await signDocument(
-          stripSignatureFields(merged) as object,
+          playlistUnsignedPayloadForSigning(merged),
           walletClient,
           'curator'
         )
@@ -442,17 +594,14 @@ export default function PlaylistForm({
     setIsPublishing(true)
 
     try {
+      const wire = playlistUnsignedPayloadForSigning(unsignedPlaylist)
+      const signature = await signDocument(wire, walletClient, 'curator')
 
-      // Sign the playlist
-      const signature = await signDocument(unsignedPlaylist, walletClient, 'curator')
+      const signedPlaylist = {
+        ...wire,
+        signatures: [signature],
+      } as Playlist
 
-      // Add signature
-      const signedPlaylist: Playlist = {
-        ...unsignedPlaylist,
-        signatures: [signature]
-      }
-
-      // Publish to feed server
       const published = await publishPlaylist(signedPlaylist)
       recordPublishedPlaylist(address, published)
       onPublished?.()
@@ -467,6 +616,7 @@ export default function PlaylistForm({
       setSummary('')
       setCoverImage('')
       setJsonText('')
+      newPlaylistCreatedRef.current = new Date().toISOString()
       setItems([{ source: '', title: '', duration: undefined, license: undefined }])
       
     } catch (error) {
@@ -731,10 +881,10 @@ export default function PlaylistForm({
             <div className="space-y-6">
               <Textarea
                 value={jsonText}
-                onChange={(e) => setJsonText(e.target.value)}
+                onChange={(e) => handleJsonTextChange(e.target.value)}
                 rows={20}
                 className="font-mono text-[13px] leading-relaxed"
-                placeholder="Paste playlist JSON…"
+                placeholder="Edit playlist JSON…"
               />
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                 <Button

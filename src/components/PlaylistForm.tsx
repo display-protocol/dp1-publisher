@@ -18,7 +18,7 @@ import { playlistUnsignedPayloadForSigning } from '@/lib/playlistSignPayload'
 import { getPlaylist, patchPlaylist, publishPlaylist } from '@/lib/api'
 import { mergePlaylistForPatch } from '@/lib/dp1Merge'
 import { recordPublishedPlaylist } from '@/lib/publishedStorage'
-import type { Playlist, Entity, PlaylistItem } from '@/types/dp1'
+import type { DynamicQuery, Entity, Playlist, PlaylistItem } from '@/types/dp1'
 import PlaylistItemForm from './PlaylistItemForm'
 import CuratorList from './CuratorList'
 
@@ -40,20 +40,25 @@ function parsePlaylistJson(text: string): { playlist: Playlist } | { error: stri
   if (!Array.isArray(o.items)) {
     return { error: 'Property "items" must be an array.' }
   }
+  // Allow empty items only if dynamicQuery is present
   if (o.items.length === 0) {
-    return { error: 'At least one item with a source URI is required.' }
-  }
-  for (let i = 0; i < o.items.length; i++) {
-    const it = o.items[i]
-    if (!it || typeof it !== 'object') {
-      return { error: `items[${i}] must be an object.` }
+    if (!o.dynamicQuery) {
+      return { error: 'At least one item with a source URI is required, or provide dynamicQuery.' }
     }
-    const src =
-      typeof (it as PlaylistItem).source === 'string'
-        ? (it as PlaylistItem).source.trim()
-        : ''
-    if (!src) {
-      return { error: `items[${i}].source is required.` }
+  } else {
+    // Validate items if present
+    for (let i = 0; i < o.items.length; i++) {
+      const it = o.items[i]
+      if (!it || typeof it !== 'object') {
+        return { error: `items[${i}] must be an object.` }
+      }
+      const src =
+        typeof (it as PlaylistItem).source === 'string'
+          ? (it as PlaylistItem).source.trim()
+          : ''
+      if (!src) {
+        return { error: `items[${i}].source is required.` }
+      }
     }
   }
   return { playlist: data as Playlist }
@@ -154,6 +159,10 @@ export default function PlaylistForm({
   const [summary, setSummary] = useState('')
   const [coverImage, setCoverImage] = useState('')
   
+  // Playlist-level note (optional intermission)
+  const [playlistNoteText, setPlaylistNoteText] = useState('')
+  const [playlistNoteDuration, setPlaylistNoteDuration] = useState('')
+  
   // Curators (first one is always the connected wallet)
   const [curators, setCurators] = useState<Entity[]>([
     { name: '', key: address ? ethereumAddressToDIDPKH(getAddress(address)) : '', url: '' }
@@ -171,6 +180,17 @@ export default function PlaylistForm({
   const [items, setItems] = useState<PlaylistItem[]>([
     { source: '', title: '', duration: undefined, license: undefined }
   ])
+
+  // Dynamic Query (optional, allows empty items)
+  const [enableDynamicQuery, setEnableDynamicQuery] = useState(false)
+  const [dynamicProfile, setDynamicProfile] = useState<'https-json-v1' | 'graphql-v1'>('https-json-v1')
+  const [dynamicEndpoint, setDynamicEndpoint] = useState('')
+  const [dynamicMethod, setDynamicMethod] = useState<'GET' | 'POST'>('GET')
+  const [dynamicHeaders, setDynamicHeaders] = useState('')
+  const [dynamicQuery, setDynamicQuery] = useState('')
+  const [dynamicItemsPath, setDynamicItemsPath] = useState('')
+  const [dynamicItemSchema, setDynamicItemSchema] = useState('dp1/1.1')
+  const [dynamicItemMap, setDynamicItemMap] = useState('')
 
   // JSON editor
   const [jsonMode, setJsonMode] = useState<'form' | 'json'>('form')
@@ -199,6 +219,9 @@ export default function PlaylistForm({
         setSlug(p.slug || '')
         setSummary(p.summary || '')
         setCoverImage(p.coverImage || '')
+        // Load playlist-level note
+        setPlaylistNoteText(p.note?.text || '')
+        setPlaylistNoteDuration(p.note?.duration != null ? String(p.note.duration) : '')
         setCurators(
           p.curators?.length
             ? p.curators
@@ -223,6 +246,20 @@ export default function PlaylistForm({
               }))
             : [{ source: '', title: '', duration: undefined, license: undefined }]
         )
+        // Load dynamicQuery if present
+        if (p.dynamicQuery) {
+          setEnableDynamicQuery(true)
+          setDynamicProfile(p.dynamicQuery.profile || 'https-json-v1')
+          setDynamicEndpoint(p.dynamicQuery.endpoint || '')
+          setDynamicMethod(p.dynamicQuery.method || 'GET')
+          setDynamicHeaders(p.dynamicQuery.headers ? JSON.stringify(p.dynamicQuery.headers, null, 2) : '')
+          setDynamicQuery(p.dynamicQuery.query || '')
+          setDynamicItemsPath(p.dynamicQuery.responseMapping?.itemsPath || '')
+          setDynamicItemSchema(p.dynamicQuery.responseMapping?.itemSchema || 'dp1/1.1')
+          setDynamicItemMap(p.dynamicQuery.responseMapping?.itemMap ? JSON.stringify(p.dynamicQuery.responseMapping.itemMap, null, 2) : '')
+        } else {
+          setEnableDynamicQuery(false)
+        }
         setJsonText(JSON.stringify(playlistUnsignedPayloadForSigning(p), null, 2))
         setJsonMode('form')
       })
@@ -260,8 +297,53 @@ export default function PlaylistForm({
     setItems(newItems)
   }
 
+  const buildDynamicQuery = useCallback((): DynamicQuery | undefined => {
+    if (!enableDynamicQuery) return undefined
+    if (!dynamicEndpoint.trim() || !dynamicItemsPath.trim()) return undefined
+
+    try {
+      const headers = dynamicHeaders.trim() ? 
+        (JSON.parse(dynamicHeaders) as Record<string, string>) : undefined
+      const itemMap = dynamicItemMap.trim() ? 
+        (JSON.parse(dynamicItemMap) as Record<string, string>) : undefined
+
+      return {
+        profile: dynamicProfile,
+        endpoint: dynamicEndpoint.trim(),
+        method: dynamicMethod,
+        headers,
+        query: dynamicQuery.trim() || undefined,
+        responseMapping: {
+          itemsPath: dynamicItemsPath.trim(),
+          itemSchema: dynamicItemSchema.trim(),
+          itemMap,
+        },
+      }
+    } catch (error) {
+      console.error('Failed to build dynamic query:', error)
+      return undefined
+    }
+  }, [
+    enableDynamicQuery,
+    dynamicProfile,
+    dynamicEndpoint,
+    dynamicMethod,
+    dynamicHeaders,
+    dynamicQuery,
+    dynamicItemsPath,
+    dynamicItemSchema,
+    dynamicItemMap,
+  ])
+
   const buildPlaylist = useCallback((): Playlist => {
     const created = newPlaylistCreatedRef.current
+    const dq = buildDynamicQuery()
+    
+    // Build playlist-level note if provided
+    const note = playlistNoteText.trim() ? {
+      text: playlistNoteText.trim(),
+      duration: playlistNoteDuration ? parseFloat(playlistNoteDuration) : undefined,
+    } : undefined
 
     return {
       dpVersion: '1.1.0',
@@ -276,6 +358,8 @@ export default function PlaylistForm({
       curators,
       summary: summary || undefined,
       coverImage: coverImage || undefined,
+      dynamicQuery: dq,
+      note,
       defaults: {
         display: {
           scaling: defaultScaling,
@@ -295,6 +379,9 @@ export default function PlaylistForm({
     curators,
     summary,
     coverImage,
+    buildDynamicQuery,
+    playlistNoteText,
+    playlistNoteDuration,
     defaultScaling,
     defaultAutoplay,
     defaultLoop,
@@ -306,6 +393,12 @@ export default function PlaylistForm({
   const serializePlaylistJsonPreview = useCallback((): string => {
     if (isEdit && loadedRef.current) {
       const base = loadedRef.current
+      const dq = buildDynamicQuery()
+      const note = playlistNoteText.trim() ? {
+        text: playlistNoteText.trim(),
+        duration: playlistNoteDuration ? parseFloat(playlistNoteDuration) : undefined,
+      } : undefined
+
       const patchFields = {
         dpVersion: '1.1.0',
         title: title.trim(),
@@ -317,6 +410,8 @@ export default function PlaylistForm({
         curators,
         summary: summary.trim() || undefined,
         coverImage: coverImage.trim() || undefined,
+        dynamicQuery: dq,
+        note,
         defaults: {
           display: {
             scaling: defaultScaling,
@@ -341,6 +436,9 @@ export default function PlaylistForm({
     curators,
     summary,
     coverImage,
+    buildDynamicQuery,
+    playlistNoteText,
+    playlistNoteDuration,
     defaultScaling,
     defaultAutoplay,
     defaultLoop,
@@ -392,6 +490,23 @@ export default function PlaylistForm({
             }))
           : [{ source: '', title: '', duration: undefined, license: undefined }]
       )
+      // Load dynamicQuery if present
+      if (p.dynamicQuery) {
+        setEnableDynamicQuery(true)
+        setDynamicProfile(p.dynamicQuery.profile || 'https-json-v1')
+        setDynamicEndpoint(p.dynamicQuery.endpoint || '')
+        setDynamicMethod(p.dynamicQuery.method || 'GET')
+        setDynamicHeaders(p.dynamicQuery.headers ? JSON.stringify(p.dynamicQuery.headers, null, 2) : '')
+        setDynamicQuery(p.dynamicQuery.query || '')
+        setDynamicItemsPath(p.dynamicQuery.responseMapping?.itemsPath || '')
+        setDynamicItemSchema(p.dynamicQuery.responseMapping?.itemSchema || 'dp1/1.1')
+        setDynamicItemMap(p.dynamicQuery.responseMapping?.itemMap ? JSON.stringify(p.dynamicQuery.responseMapping.itemMap, null, 2) : '')
+      } else {
+        setEnableDynamicQuery(false)
+      }
+      // Load playlist-level note
+      setPlaylistNoteText(p.note?.text || '')
+      setPlaylistNoteDuration(p.note?.duration != null ? String(p.note.duration) : '')
     },
     [id, isEdit, address]
   )
@@ -473,21 +588,57 @@ export default function PlaylistForm({
           summary: p.summary,
           coverImage: p.coverImage,
           defaults: p.defaults,
-          dynamicQuery: p.dynamicQuery as Record<string, unknown> | undefined,
+          dynamicQuery: p.dynamicQuery,
+          note: p.note,
         }
       } else {
         if (!title.trim()) {
           toast({ title: 'Error', description: 'Title is required', variant: 'destructive' })
           return
         }
-        if (items.length === 0 || items.some((item) => !item.source)) {
+        // Allow empty items only if dynamicQuery is enabled
+        if (!enableDynamicQuery && (items.length === 0 || items.some((item) => !item.source))) {
           toast({
             title: 'Error',
-            description: 'At least one item with source URI is required',
+            description: 'At least one item with source URI is required, or enable Dynamic Query',
             variant: 'destructive',
           })
           return
         }
+        // If dynamic query is enabled, validate required fields
+        if (enableDynamicQuery) {
+          if (!dynamicEndpoint.trim()) {
+            toast({ title: 'Error', description: 'Dynamic Query: Endpoint is required', variant: 'destructive' })
+            return
+          }
+          if (!dynamicItemsPath.trim()) {
+            toast({ title: 'Error', description: 'Dynamic Query: Items Path is required', variant: 'destructive' })
+            return
+          }
+          // Validate JSON fields
+          if (dynamicHeaders.trim()) {
+            try {
+              JSON.parse(dynamicHeaders)
+            } catch {
+              toast({ title: 'Error', description: 'Dynamic Query: Headers must be valid JSON', variant: 'destructive' })
+              return
+            }
+          }
+          if (dynamicItemMap.trim()) {
+            try {
+              JSON.parse(dynamicItemMap)
+            } catch {
+              toast({ title: 'Error', description: 'Dynamic Query: Item Map must be valid JSON', variant: 'destructive' })
+              return
+            }
+          }
+        }
+
+        const dq = buildDynamicQuery()
+        const note = playlistNoteText.trim() ? {
+          text: playlistNoteText.trim(),
+          duration: playlistNoteDuration ? parseFloat(playlistNoteDuration) : undefined,
+        } : undefined
 
         patchFields = {
           dpVersion: '1.1.0',
@@ -500,6 +651,8 @@ export default function PlaylistForm({
           curators,
           summary: summary.trim() || undefined,
           coverImage: coverImage.trim() || undefined,
+          dynamicQuery: dq,
+          note,
           defaults: {
             display: {
               scaling: defaultScaling,
@@ -533,6 +686,7 @@ export default function PlaylistForm({
         if (patchFields.coverImage !== undefined) body.coverImage = patchFields.coverImage
         if (patchFields.defaults) body.defaults = patchFields.defaults
         if (patchFields.dynamicQuery !== undefined) body.dynamicQuery = patchFields.dynamicQuery
+        if (patchFields.note !== undefined) body.note = patchFields.note
 
         const updated = await patchPlaylist(editId, body)
         recordPublishedPlaylist(address, updated)
@@ -579,13 +733,42 @@ export default function PlaylistForm({
         return
       }
 
-      if (items.length === 0 || items.some((item) => !item.source)) {
+      // Allow empty items only if dynamicQuery is enabled
+      if (!enableDynamicQuery && (items.length === 0 || items.some((item) => !item.source))) {
         toast({
           title: 'Error',
-          description: 'At least one item with source URI is required',
+          description: 'At least one item with source URI is required, or enable Dynamic Query',
           variant: 'destructive',
         })
         return
+      }
+      // If dynamic query is enabled, validate required fields
+      if (enableDynamicQuery) {
+        if (!dynamicEndpoint.trim()) {
+          toast({ title: 'Error', description: 'Dynamic Query: Endpoint is required', variant: 'destructive' })
+          return
+        }
+        if (!dynamicItemsPath.trim()) {
+          toast({ title: 'Error', description: 'Dynamic Query: Items Path is required', variant: 'destructive' })
+          return
+        }
+        // Validate JSON fields
+        if (dynamicHeaders.trim()) {
+          try {
+            JSON.parse(dynamicHeaders)
+          } catch {
+            toast({ title: 'Error', description: 'Dynamic Query: Headers must be valid JSON', variant: 'destructive' })
+            return
+          }
+        }
+        if (dynamicItemMap.trim()) {
+          try {
+            JSON.parse(dynamicItemMap)
+          } catch {
+            toast({ title: 'Error', description: 'Dynamic Query: Item Map must be valid JSON', variant: 'destructive' })
+            return
+          }
+        }
       }
 
       unsignedPlaylist = buildPlaylist()
@@ -615,9 +798,20 @@ export default function PlaylistForm({
       setTitle('')
       setSummary('')
       setCoverImage('')
+      setPlaylistNoteText('')
+      setPlaylistNoteDuration('')
       setJsonText('')
       newPlaylistCreatedRef.current = new Date().toISOString()
       setItems([{ source: '', title: '', duration: undefined, license: undefined }])
+      setEnableDynamicQuery(false)
+      setDynamicProfile('https-json-v1')
+      setDynamicEndpoint('')
+      setDynamicMethod('GET')
+      setDynamicHeaders('')
+      setDynamicQuery('')
+      setDynamicItemsPath('')
+      setDynamicItemSchema('dp1/1.1')
+      setDynamicItemMap('')
       
     } catch (error) {
       console.error('Publish failed:', error)
@@ -741,6 +935,43 @@ export default function PlaylistForm({
               </div>
             </div>
 
+            {/* Playlist Note */}
+            <div className="space-y-5">
+              <h3 className="section-label">Intermission Note (Optional)</h3>
+              <p className="text-sm text-muted-foreground">
+                Optional intermission card displayed before playlist starts. Short artist-authored text.
+              </p>
+              <div className="grid gap-4">
+                <div>
+                  <Label htmlFor="playlistNoteText">Note Text</Label>
+                  <Textarea
+                    id="playlistNoteText"
+                    value={playlistNoteText}
+                    onChange={(e) => setPlaylistNoteText(e.target.value)}
+                    placeholder="A short message or interlude (max 500 characters)"
+                    rows={3}
+                    maxLength={500}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {playlistNoteText.length}/500 characters
+                  </p>
+                </div>
+                <div>
+                  <Label htmlFor="playlistNoteDuration">Duration (seconds)</Label>
+                  <Input
+                    id="playlistNoteDuration"
+                    type="number"
+                    value={playlistNoteDuration}
+                    onChange={(e) => setPlaylistNoteDuration(e.target.value)}
+                    placeholder="20 (default)"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    How long to show the note before continuing. Defaults to 20 seconds.
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {/* Curators */}
             <CuratorList curators={curators} onChange={setCurators} />
 
@@ -854,6 +1085,136 @@ export default function PlaylistForm({
                   />
                 ))}
               </div>
+            </div>
+
+            {/* Dynamic Query */}
+            <div className="space-y-5">
+              <div className="flex items-center justify-between gap-4">
+                <span className="section-label">Dynamic Query (Optional)</span>
+                <div className="flex items-center gap-2.5">
+                  <input
+                    type="checkbox"
+                    id="enableDynamicQuery"
+                    checked={enableDynamicQuery}
+                    onChange={(e) => setEnableDynamicQuery(e.target.checked)}
+                    className="size-4 rounded border-border accent-foreground"
+                  />
+                  <Label htmlFor="enableDynamicQuery">Enable</Label>
+                </div>
+              </div>
+              {enableDynamicQuery && (
+                <div className="space-y-4 rounded-xl border border-border/50 bg-muted/30 p-5">
+                  <p className="text-sm text-muted-foreground">
+                    Configure dynamic item fetching from external indexers. When enabled, items can be empty.
+                  </p>
+                  <div className="grid gap-4">
+                    <div>
+                      <Label htmlFor="dynamicProfile">Profile *</Label>
+                      <Select
+                        value={dynamicProfile}
+                        onValueChange={(v: 'https-json-v1' | 'graphql-v1') => setDynamicProfile(v)}
+                      >
+                        <SelectTrigger id="dynamicProfile">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="https-json-v1">https-json-v1</SelectItem>
+                          <SelectItem value="graphql-v1">graphql-v1</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="dynamicEndpoint">Endpoint URL *</Label>
+                      <Input
+                        id="dynamicEndpoint"
+                        value={dynamicEndpoint}
+                        onChange={(e) => setDynamicEndpoint(e.target.value)}
+                        placeholder="https://api.example.com/query"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="dynamicMethod">HTTP Method</Label>
+                      <Select
+                        value={dynamicMethod}
+                        onValueChange={(v: 'GET' | 'POST') => setDynamicMethod(v)}
+                      >
+                        <SelectTrigger id="dynamicMethod">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="GET">GET</SelectItem>
+                          <SelectItem value="POST">POST</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="dynamicHeaders">Headers (JSON)</Label>
+                      <Textarea
+                        id="dynamicHeaders"
+                        value={dynamicHeaders}
+                        onChange={(e) => setDynamicHeaders(e.target.value)}
+                        placeholder='{"Authorization": "Bearer token"}'
+                        rows={3}
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="dynamicQuery">Query Payload</Label>
+                      <Textarea
+                        id="dynamicQuery"
+                        value={dynamicQuery}
+                        onChange={(e) => setDynamicQuery(e.target.value)}
+                        placeholder="GraphQL query or JSON body with {{template}} placeholders"
+                        rows={4}
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                    <div className="border-t border-border/30 pt-4">
+                      <h4 className="mb-3 text-sm font-medium">Response Mapping</h4>
+                      <div className="space-y-3">
+                        <div>
+                          <Label htmlFor="dynamicItemsPath">Items Path *</Label>
+                          <Input
+                            id="dynamicItemsPath"
+                            value={dynamicItemsPath}
+                            onChange={(e) => setDynamicItemsPath(e.target.value)}
+                            placeholder="data.works (dot notation)"
+                          />
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            JSON path to the array of items
+                          </p>
+                        </div>
+                        <div>
+                          <Label htmlFor="dynamicItemSchema">Item Schema</Label>
+                          <Input
+                            id="dynamicItemSchema"
+                            value={dynamicItemSchema}
+                            onChange={(e) => setDynamicItemSchema(e.target.value)}
+                            placeholder="dp1/1.1"
+                          />
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            DP-1 schema version (e.g., dp1/1.0, dp1/1.1)
+                          </p>
+                        </div>
+                        <div>
+                          <Label htmlFor="dynamicItemMap">Item Field Mapping (JSON)</Label>
+                          <Textarea
+                            id="dynamicItemMap"
+                            value={dynamicItemMap}
+                            onChange={(e) => setDynamicItemMap(e.target.value)}
+                            placeholder='{"id": "artwork_id", "title": "name", "source": "media_url"}'
+                            rows={3}
+                            className="font-mono text-xs"
+                          />
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Optional: Map response fields to DP-1 item schema
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Actions */}

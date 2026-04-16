@@ -76,7 +76,22 @@ export interface ProvenanceBlock {
 
 export interface Note {
   text: string
-  duration?: number // seconds
+  duration?: number // seconds, default 20
+}
+
+export interface ResponseMapping {
+  itemsPath: string // JSON path to array (dot notation)
+  itemSchema: string // dp1/1.0 or dp1/1.1
+  itemMap?: Record<string, string> // Optional field mapping
+}
+
+export interface DynamicQuery {
+  profile: 'https-json-v1' | 'graphql-v1'
+  endpoint: string // URI
+  method?: 'GET' | 'POST'
+  headers?: Record<string, string>
+  query?: string // Query payload with {{...}} template placeholders
+  responseMapping: ResponseMapping
 }
 
 export interface PlaylistItem {
@@ -110,10 +125,11 @@ export interface Playlist {
   items: PlaylistItem[]
   signatures?: Signature[]
   signature?: string // Legacy v1.0.x
+  // Extension fields (playlists v0.1.0)
   curators?: Entity[]
   summary?: string
   coverImage?: string
-  dynamicQuery?: Record<string, unknown>
+  dynamicQuery?: DynamicQuery
   note?: Note
 }
 

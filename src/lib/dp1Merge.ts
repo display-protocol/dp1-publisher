@@ -3,7 +3,7 @@
  * (see internal/executor/executor.go UpdatePlaylist / UpdateChannel).
  */
 
-import type { Channel, Entity, Playlist, PlaylistItem } from '@/types/dp1'
+import type { Channel, DynamicQuery, Entity, Note, Playlist, PlaylistItem } from '@/types/dp1'
 
 export function mergePlaylistForPatch(
   existing: Playlist,
@@ -16,7 +16,8 @@ export function mergePlaylistForPatch(
     summary?: string
     coverImage?: string
     defaults?: Playlist['defaults']
-    dynamicQuery?: Record<string, unknown>
+    dynamicQuery?: DynamicQuery
+    note?: Note
   }
 ): Playlist {
   return {
@@ -31,6 +32,7 @@ export function mergePlaylistForPatch(
     defaults: patch.defaults !== undefined ? patch.defaults : existing.defaults,
     dynamicQuery:
       patch.dynamicQuery !== undefined ? patch.dynamicQuery : existing.dynamicQuery,
+    note: patch.note !== undefined ? patch.note : existing.note,
   }
 }
 

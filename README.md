@@ -6,6 +6,8 @@ A web dashboard for publishing DP-1 playlists and channels to the feed server us
 
 - **Wallet Connection**: Connect Ethereum wallet (mainnet only) for signature-based authentication
 - **Publish Playlists**: Create playlists from scratch with multiple items and curator support
+- **Dynamic Playlists**: Support for playlists extension v0.1.0 with dynamic item fetching via `dynamicQuery`
+- **Intermission Notes**: Add optional artist-authored notes at playlist and item levels for intermission cards
 - **Publish Channels**: Create channels that reference existing playlists
 - **JSON Editor**: Paste complete JSON documents or build via forms
 - **URI Validation**: Security checks and reachability verification for playlist URIs
@@ -68,8 +70,14 @@ npm run preview
 3. **Fill Form**:
    - Enter title (required)
    - Optionally customize slug, summary, cover image
+   - Optionally add intermission note (shown before playlist starts)
    - Configure default display settings (scaling, license, duration, etc.)
-   - Add playlist items (source URI required for each)
+   - Add playlist items (source URI required for each) OR enable Dynamic Query
+     - Each item can have an optional intermission note shown after it
+   - If using Dynamic Query:
+     - Enable the "Dynamic Query" toggle
+     - Configure profile, endpoint, method, headers, and query
+     - Set response mapping (items path, schema, field mapping)
    - Add additional curators if needed
 4. **Sign & Publish**: Click "Sign & Publish" to sign with your wallet and publish
 

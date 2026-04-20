@@ -61,6 +61,33 @@ npm run build
 npm run preview
 ```
 
+### Docker
+
+The image is a multi-stage build: Node compiles the Vite app, then nginx serves static files from `dist/`. Base images are pinned with **tags and digests** in the `Dockerfile` so rebuilds stay consistent until you intentionally upgrade Node or nginx. The compile stage uses the full `node:…-bookworm` image (not `-slim`) so dependencies with native bindings can build during `npm ci`.
+
+**Quick start**
+
+```bash
+# Build (defaults match `.env.example`: public feed URL, empty WalletConnect ID)
+docker build -t ff-publisher .
+
+# Run on http://localhost:8080
+docker run --rm -p 8080:80 ff-publisher
+```
+
+**Build-time configuration** (Vite embeds these into the static bundle):
+
+```bash
+docker build -t ff-publisher \
+  --build-arg VITE_FEED_BASE_URL=https://feed.feralfile.com \
+  --build-arg VITE_WALLETCONNECT_PROJECT_ID=your_walletconnect_project_id \
+  .
+```
+
+**Upgrading pinned images**
+
+When you want a newer Node or nginx, choose tags on [Docker Hub](https://hub.docker.com/), refresh the digest for each `FROM` line (see the comment at the top of `Dockerfile`), and run a local build to confirm.
+
 ## Usage
 
 ### Publishing a Playlist

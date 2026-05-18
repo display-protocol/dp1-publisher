@@ -23,6 +23,9 @@ fi
 echo "==> npm run lint"
 npm run lint
 
+echo "==> npm test"
+npm test
+
 echo "==> npm run build (tsc && vite build)"
 npm run build
 

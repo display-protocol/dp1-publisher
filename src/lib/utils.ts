@@ -47,6 +47,18 @@ export function generateChannelSlug(title: string, id: string, userSlug?: string
   return `${base}-${shortId}`
 }
 
+/** Slug for DP-1 playlist-group (exhibition); aligns with dp1-feed-v2 makeSlug(..., "group"). */
+export function generatePlaylistGroupSlug(title: string, id: string, userSlug?: string): string {
+  if (userSlug?.trim()) {
+    const slugified = slugify(userSlug)
+    if (slugified) return slugified
+  }
+
+  const base = slugify(title) || 'group'
+  const shortId = id.slice(0, 8)
+  return `${base}-${shortId}`
+}
+
 /**
  * Truncate Ethereum address for display
  */

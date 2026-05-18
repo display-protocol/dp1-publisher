@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useAccount } from 'wagmi'
-import { ListMusic, Radio } from 'lucide-react'
+import { Layers, ListMusic, Radio } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Toaster } from '@/components/ui/toaster'
 import { useDp1Extensions } from '@/context/Dp1ExtensionsContext'
 import WalletConnect from './WalletConnect'
 import PlaylistForm from './PlaylistForm'
+import PlaylistGroupForm from './PlaylistGroupForm'
 import ChannelForm from './ChannelForm'
 import PublishedView from './PublishedView'
 
@@ -16,6 +17,7 @@ export default function Dashboard() {
   const [view, setView] = useState<'publish' | 'published'>('publish')
   const [publishedTick, setPublishedTick] = useState(0)
   const [editPlaylistId, setEditPlaylistId] = useState<string | null>(null)
+  const [editPlaylistGroupId, setEditPlaylistGroupId] = useState<string | null>(null)
   const [editChannelId, setEditChannelId] = useState<string | null>(null)
 
   const bumpPublished = () => setPublishedTick((n) => n + 1)
@@ -25,6 +27,12 @@ export default function Dashboard() {
       setEditChannelId(null)
     }
   }, [extensionsEnabled])
+
+  const clearEditState = () => {
+    setEditPlaylistId(null)
+    setEditPlaylistGroupId(null)
+    setEditChannelId(null)
+  }
 
   return (
     <>
@@ -38,8 +46,8 @@ export default function Dashboard() {
               </h1>
               <p className="max-w-sm text-[15px] leading-relaxed text-muted-foreground">
                 {extensionsEnabled
-                  ? 'Sign and publish playlists and channels to the feed.'
-                  : 'Sign and publish core DP-1 playlists to the feed. Channel and playlist extension fields are hidden because extensions are off for this deployment.'}
+                  ? 'Publish core playlists and playlist groups, and channel documents when extensions are on.'
+                  : 'Publish core DP-1 playlists and playlist groups. Channel UI is hidden when extensions are off for this deployment.'}
               </p>
               {extensionsLoading ? (
                 <p className="text-xs text-muted-foreground">Checking feed extension settings…</p>
@@ -50,8 +58,7 @@ export default function Dashboard() {
             <div className="shrink-0 sm:pt-1">
               <WalletConnect
                 onNavigatePublish={() => {
-                  setEditPlaylistId(null)
-                  setEditChannelId(null)
+                  clearEditState()
                   setView('publish')
                 }}
                 onNavigatePublished={() => setView('published')}
@@ -77,6 +84,44 @@ export default function Dashboard() {
           </Card>
         ) : view === 'publish' ? extensionsEnabled ? (
           <Tabs defaultValue="playlist" className="w-full">
+            <TabsList className="grid h-12 w-full max-w-xl grid-cols-3 gap-1 rounded-full bg-muted/60 p-1.5 sm:h-11">
+              <TabsTrigger
+                value="playlist"
+                className="gap-1 rounded-full px-2 text-[11px] font-medium data-[state=active]:shadow-sm sm:gap-2 sm:px-4 sm:text-[13px]"
+              >
+                <ListMusic className="size-3.5 opacity-70 sm:size-4" aria-hidden />
+                Playlist
+              </TabsTrigger>
+              <TabsTrigger
+                value="group"
+                className="gap-1 rounded-full px-2 text-[11px] font-medium data-[state=active]:shadow-sm sm:gap-2 sm:px-4 sm:text-[13px]"
+              >
+                <Layers className="size-3.5 opacity-70 sm:size-4" aria-hidden />
+                Group
+              </TabsTrigger>
+              <TabsTrigger
+                value="channel"
+                className="gap-1 rounded-full px-2 text-[11px] font-medium data-[state=active]:shadow-sm sm:gap-2 sm:px-4 sm:text-[13px]"
+              >
+                <Radio className="size-3.5 opacity-70 sm:size-4" aria-hidden />
+                Channel
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="playlist" className="mt-10 outline-none">
+              <PlaylistForm extensionsEnabled onPublished={bumpPublished} />
+            </TabsContent>
+
+            <TabsContent value="group" className="mt-10 outline-none">
+              <PlaylistGroupForm onPublished={bumpPublished} />
+            </TabsContent>
+
+            <TabsContent value="channel" className="mt-10 outline-none">
+              <ChannelForm onPublished={bumpPublished} />
+            </TabsContent>
+          </Tabs>
+        ) : (
+          <Tabs defaultValue="playlist" className="w-full">
             <TabsList className="grid h-12 w-full max-w-md grid-cols-2 gap-1 rounded-full bg-muted/60 p-1.5 sm:h-11">
               <TabsTrigger
                 value="playlist"
@@ -86,24 +131,22 @@ export default function Dashboard() {
                 Playlist
               </TabsTrigger>
               <TabsTrigger
-                value="channel"
+                value="group"
                 className="gap-2 rounded-full px-4 text-[13px] font-medium data-[state=active]:shadow-sm"
               >
-                <Radio className="size-4 opacity-70" aria-hidden />
-                Channel
+                <Layers className="size-4 opacity-70" aria-hidden />
+                Group
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="playlist" className="mt-10 outline-none">
-              <PlaylistForm extensionsEnabled onPublished={bumpPublished} />
+              <PlaylistForm extensionsEnabled={false} onPublished={bumpPublished} />
             </TabsContent>
 
-            <TabsContent value="channel" className="mt-10 outline-none">
-              <ChannelForm onPublished={bumpPublished} />
+            <TabsContent value="group" className="mt-10 outline-none">
+              <PlaylistGroupForm onPublished={bumpPublished} />
             </TabsContent>
           </Tabs>
-        ) : (
-          <PlaylistForm extensionsEnabled={false} onPublished={bumpPublished} />
         ) : editPlaylistId ? (
           <PlaylistForm
             key={editPlaylistId}
@@ -111,6 +154,16 @@ export default function Dashboard() {
             extensionsEnabled={extensionsEnabled}
             onCancelEdit={() => {
               setEditPlaylistId(null)
+              bumpPublished()
+            }}
+            onPublished={bumpPublished}
+          />
+        ) : editPlaylistGroupId ? (
+          <PlaylistGroupForm
+            key={editPlaylistGroupId}
+            editId={editPlaylistGroupId}
+            onCancelEdit={() => {
+              setEditPlaylistGroupId(null)
               bumpPublished()
             }}
             onPublished={bumpPublished}
@@ -130,11 +183,18 @@ export default function Dashboard() {
             key={publishedTick}
             extensionsEnabled={extensionsEnabled}
             onEditPlaylist={(id) => {
+              setEditPlaylistGroupId(null)
               setEditChannelId(null)
               setEditPlaylistId(id)
             }}
+            onEditPlaylistGroup={(id) => {
+              setEditPlaylistId(null)
+              setEditChannelId(null)
+              setEditPlaylistGroupId(id)
+            }}
             onEditChannel={(id) => {
               setEditPlaylistId(null)
+              setEditPlaylistGroupId(null)
               setEditChannelId(id)
             }}
           />

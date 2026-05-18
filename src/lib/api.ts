@@ -3,7 +3,7 @@
  * Base URL: https://feed.feralfile.com
  */
 
-import type { Playlist, Channel } from '@/types/dp1'
+import type { Playlist, Channel, PlaylistGroup } from '@/types/dp1'
 
 /** Base feed origin, no trailing slash (matches `VITE_FEED_BASE_URL` when set). */
 export function getFeedBaseUrl(): string {
@@ -51,6 +51,11 @@ export function feedPlaylistResourceUrl(idOrSlug: string): string {
 /** GET resource URL for a channel (API accepts UUID or slug). */
 export function feedChannelResourceUrl(idOrSlug: string): string {
   return `${FEED_BASE_URL}/api/v1/channels/${encodeURIComponent(idOrSlug.trim())}`
+}
+
+/** GET resource URL for a playlist-group / exhibition (API accepts UUID or slug). */
+export function feedPlaylistGroupResourceUrl(idOrSlug: string): string {
+  return `${FEED_BASE_URL}/api/v1/playlist-groups/${encodeURIComponent(idOrSlug.trim())}`
 }
 
 /**
@@ -132,6 +137,33 @@ export async function publishChannel(channel: Channel): Promise<Channel> {
 }
 
 /**
+ * POST /api/v1/playlist-groups — create exhibition; body matches dp1-feed-v2 PlaylistGroupCreateRequest.
+ */
+export async function publishPlaylistGroup(body: Record<string, unknown>): Promise<PlaylistGroup> {
+  const response = await fetch(`${FEED_BASE_URL}/api/v1/playlist-groups`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({
+      error: 'unknown',
+      message: response.statusText,
+    }))
+    throw new FeedAPIError(
+      error.message || 'Failed to publish playlist group',
+      response.status,
+      error.error
+    )
+  }
+
+  return response.json()
+}
+
+/**
  * GET /api/v1/playlists/{id}
  * Fetch a playlist by UUID or slug
  */
@@ -185,6 +217,61 @@ export async function listPlaylists(params: {
     }))
     throw new FeedAPIError(
       error.message || 'Failed to list playlists',
+      response.status,
+      error.error
+    )
+  }
+
+  return response.json()
+}
+
+/**
+ * GET /api/v1/playlist-groups/{id}
+ */
+export async function getPlaylistGroup(idOrSlug: string): Promise<PlaylistGroup> {
+  const response = await fetch(
+    `${FEED_BASE_URL}/api/v1/playlist-groups/${encodeURIComponent(idOrSlug)}`
+  )
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({
+      error: 'not_found',
+      message: 'Playlist group not found',
+    }))
+    throw new FeedAPIError(
+      error.message || 'Failed to fetch playlist group',
+      response.status,
+      error.error
+    )
+  }
+
+  return response.json()
+}
+
+/**
+ * GET /api/v1/playlist-groups — paginated list
+ */
+export async function listPlaylistGroups(params: {
+  limit?: number
+  cursor?: string
+  sort?: 'asc' | 'desc'
+}): Promise<FeedListResponse<PlaylistGroup>> {
+  const sp = new URLSearchParams()
+  if (params.limit != null) sp.set('limit', String(params.limit))
+  if (params.cursor) sp.set('cursor', params.cursor)
+  if (params.sort) sp.set('sort', params.sort)
+  const q = sp.toString()
+  const response = await fetch(
+    `${FEED_BASE_URL}/api/v1/playlist-groups${q ? `?${q}` : ''}`
+  )
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({
+      error: 'unknown',
+      message: response.statusText,
+    }))
+    throw new FeedAPIError(
+      error.message || 'Failed to list playlist groups',
       response.status,
       error.error
     )
@@ -271,6 +358,37 @@ export async function patchPlaylist(
     }))
     throw new FeedAPIError(
       error.message || 'Failed to update playlist',
+      response.status,
+      error.error
+    )
+  }
+
+  return response.json()
+}
+
+/**
+ * PATCH /api/v1/playlist-groups/{id} — partial update with signature-based auth
+ */
+export async function patchPlaylistGroup(
+  idOrSlug: string,
+  body: Record<string, unknown>
+): Promise<PlaylistGroup> {
+  const response = await fetch(
+    `${FEED_BASE_URL}/api/v1/playlist-groups/${encodeURIComponent(idOrSlug)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }
+  )
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({
+      error: 'unknown',
+      message: response.statusText,
+    }))
+    throw new FeedAPIError(
+      error.message || 'Failed to update playlist group',
       response.status,
       error.error
     )

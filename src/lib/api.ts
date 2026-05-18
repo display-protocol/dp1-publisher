@@ -15,7 +15,7 @@ export function getFeedBaseUrl(): string {
 
 const FEED_BASE_URL = getFeedBaseUrl()
 
-/** GET /api/v1 — deployment metadata including `extensionsEnabled` (see dp1-feed-v2 OpenAPI). */
+/** GET /api/v1 — deployment metadata including `extensionsEnabled` (see https://github.com/display-protocol/dp1-feed-v2/blob/main/api/openapi.yaml). */
 export interface FeedApiMetadata {
   name?: string
   version?: string
@@ -137,7 +137,7 @@ export async function publishChannel(channel: Channel): Promise<Channel> {
 }
 
 /**
- * POST /api/v1/playlist-groups — create exhibition; body matches dp1-feed-v2 PlaylistGroupCreateRequest.
+ * POST /api/v1/playlist-groups — create exhibition; body matches PlaylistGroupCreateRequest (https://github.com/display-protocol/dp1-feed-v2).
  */
 export async function publishPlaylistGroup(body: Record<string, unknown>): Promise<PlaylistGroup> {
   const response = await fetch(`${FEED_BASE_URL}/api/v1/playlist-groups`, {

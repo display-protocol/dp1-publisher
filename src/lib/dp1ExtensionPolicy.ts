@@ -1,6 +1,6 @@
 /**
  * DP-1 core vs extensions (playlists + channels registries in dp-1/extensions/registry.json).
- * Aligns client behavior with dp1-feed-v2 when extensions are disabled: core playlist validation only;
+ * Aligns client behavior with https://github.com/display-protocol/dp1-feed-v2 when extensions are disabled: core playlist validation only;
  * channel APIs return extensions_disabled.
  */
 

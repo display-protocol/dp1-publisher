@@ -148,7 +148,7 @@ export default function PlaylistGroupForm({
   const [slug, setSlug] = useState('')
   const [isAutoSlug, setIsAutoSlug] = useState(true)
 
-  /** Curator signing key — must equal feed `kid` (dp1-feed-v2 verifies against this field). */
+  /** Curator signing key — must equal feed `kid` (verified server-side — see https://github.com/display-protocol/dp1-feed-v2). */
   const [curatorDid, setCuratorDid] = useState('')
   const [summary, setSummary] = useState('')
   const [coverImage, setCoverImage] = useState('')

@@ -1,0 +1,47 @@
+---
+description: >-
+  Consumer contract — how ff-publisher must stay aligned with the dp1-feed-v2 HTTP API (https://github.com/display-protocol/dp1-feed-v2)
+globs:
+  - "**/*.{ts,tsx}"
+  - "docs/**"
+alwaysApply: true
+---
+
+# Feed API (client parity)
+
+This application **consumes** the feed API implemented by **[dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2)**. The normative specification is **[api/openapi.yaml](https://github.com/display-protocol/dp1-feed-v2/blob/main/api/openapi.yaml)**, with **[docs/api_design.md](https://github.com/display-protocol/dp1-feed-v2/blob/main/docs/api_design.md)** as narrative.
+
+When changing HTTP usage, payloads, pagination, caching headers, or error handling:
+
+- reconcile with **OpenAPI + api_design**, and note any intentional subset or deviation in code/comments or `docs/architecture.md`
+- preserve stable **`error` codes** in branching logic (`FeedAPIError`); treat **`message`** as human-readable and variable
+
+## Versioning & metadata
+
+- Base path **`/api/v1`**; **`GET /api/v1`** yields deployment metadata (**`extensionsEnabled`**, endpoints, etc.) unless **`VITE_DP1_EXTENSIONS_ENABLED`** overrides UX locally (`DEVELOPMENT.md`).
+
+## Auth model (publisher path)
+
+- Browser flows rely on **`signatures`** on DP-1 JSON for operator writes where the feed allows **signature-only** auth; feeds may combine with API-key rules for tooling not in this UI.
+- Do not embed feed API keys in client code.
+
+## Resources (shape)
+
+Plural segments mirror the server (`playlists`, `playlist-groups`, `channels`, `playlist-items`; registry routes as implemented). Kebab-case path segments stay stable with server routes.
+
+## JSON & listings
+
+Prefer types that match server field names (`items`, `hasMore`, `cursor`). Handle pagination semantics consistently in list views.
+
+## Errors
+
+Expect JSON like `{"error":"<stable_code>","message":"<detail>"}` when the feed returns structured errors — map alongside raw HTTP failures.
+
+## Compatibility
+
+Additive server changes should be tolerated in the client where reasonable; breaking changes require coordinated deployment or versioning strategy—call out rollout risk in PRs/plans.
+
+## References
+
+- [dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2): [api/openapi.yaml](https://github.com/display-protocol/dp1-feed-v2/blob/main/api/openapi.yaml), [docs/api_design.md](https://github.com/display-protocol/dp1-feed-v2/blob/main/docs/api_design.md)
+- This repo: `docs/architecture.md`, `src/lib/api.ts`

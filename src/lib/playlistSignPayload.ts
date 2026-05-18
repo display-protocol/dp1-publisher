@@ -1,6 +1,6 @@
 /**
  * Build the JSON object the feed hashes for playlist (curator) signatures.
- * Aligns with dp1-feed-v2 `buildPlaylistDocument` + `json.Marshal(playlist.Playlist)`:
+ * Aligns with https://github.com/display-protocol/dp1-feed-v2 `buildPlaylistDocument` + `json.Marshal(playlist.Playlist)`:
  * - identity.Entity: omit empty `url` ([entityWire])
  * - `summary` / `coverImage`: omit when empty (struct tags `omitempty`)
  * - `curators`: omit when length 0 (server only sets `p.Curators` when `len(req.Curators) > 0`)

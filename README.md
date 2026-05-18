@@ -10,7 +10,7 @@ A browser dashboard for composing and publishing DP-1 **playlists**, **playlist-
 | [docs/typescript_coding_standards.md](docs/typescript_coding_standards.md) | Coding conventions |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Contributor setup, env vars, QA checklist |
 
-Authoritative HTTP contract lives in **dp1-feed-v2**: `api/openapi.yaml` plus `docs/api_design.md`.
+Authoritative HTTP contract lives in **[dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2)**: [`api/openapi.yaml`](https://github.com/display-protocol/dp1-feed-v2/blob/main/api/openapi.yaml) plus [`docs/api_design.md`](https://github.com/display-protocol/dp1-feed-v2/blob/main/docs/api_design.md).
 
 ## Features
 
@@ -109,7 +109,7 @@ Feeds derive slug from optional client slug or title plus short ID on create; pu
 
 Creates and PATCH updates use **`/api/v1/playlists`**, **`playlist-groups`**, **`channels`**. Reads use GET/list for edit flows.
 
-Full HTTP contract: **`dp1-feed-v2`** `api/openapi.yaml` and **`dp1-feed-v2`** `docs/api_design.md`. Feed calls from this SPA are centralized in [`src/lib/api.ts`](src/lib/api.ts).
+Full HTTP contract: **[dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2)** [`api/openapi.yaml`](https://github.com/display-protocol/dp1-feed-v2/blob/main/api/openapi.yaml) and [`docs/api_design.md`](https://github.com/display-protocol/dp1-feed-v2/blob/main/docs/api_design.md). Feed calls from this SPA are centralized in [`src/lib/api.ts`](src/lib/api.ts).
 
 ## Security
 

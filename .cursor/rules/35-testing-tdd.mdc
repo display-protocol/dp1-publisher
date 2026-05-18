@@ -1,0 +1,35 @@
+---
+description: Mandatory verification for TypeScript/React changes in ff-publisher
+globs:
+  - "**/*.{ts,tsx}"
+alwaysApply: true
+---
+
+# Testing and Verification Rule
+
+## 1) Required sequence
+
+1. Isolate brittle logic where practical (pure helpers separate from JSX).
+2. Add or extend **automated tests** when a runner exists and coverage adds real signal.
+3. Keep production wiring cohesive (`components` → `lib`).
+4. Run verification before handing off.
+
+## 2) Constraints
+
+- Do not ship behavior changes that break **`npm run build`** (`tsc` + bundle) unless explicitly approved.
+- For meaningful feed integration or signing changes, smoke behavior against a reachable feed locally when feasible (`DEVELOPMENT.md`).
+- Prefer explicit failure paths and user-visible diagnostics over silent mismatches (`FeedAPIError`).
+
+## 3) Required verification
+
+Run **`scripts/agent-helpers/post-implementation-checks`** from the repo root (requires **`node_modules`** — use `npm ci` or `npm install`).
+
+This script matches CI intent: **`npm run lint`** and **`npm run build`**.
+
+## 4) Coverage posture
+
+Until Vitest/Jest lands, TypeScript correctness is exercised by **`npm run build`**.
+
+When tests exist: prioritize **`src/lib`** helpers (URI validation, merge, signing inputs), error shaping, and small pure utilities over broad component snapshots.
+
+Do not allow meaningful regressions in documented invariants without calling them out.

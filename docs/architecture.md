@@ -6,7 +6,7 @@
 
 ```text
 Publisher (browser) ──► Feed API ──► PostgreSQL
-   │  Vite/React            (dp1-feed-v2)
+   │  Vite/React       (DP-1 Feed server — https://github.com/display-protocol/dp1-feed-v2)
    │  wagmi + viem
    └── localStorage (published list UX only)
 ```
@@ -45,7 +45,7 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 
 - **Base URL:** `VITE_FEED_BASE_URL` at build/dev time (see `.env.example`). Default fallback in code is production Feral File feed unless overridden.
 - **Extensions:** Channel routes and playlist extension-dependent UI align with **`GET /api/v1`** (`extensionsEnabled`) unless **`VITE_DP1_EXTENSIONS_ENABLED`** forces on/off locally.
-- **Contract:** HTTP paths, payloads, errors, ETag semantics, and pagination are defined by **dp1-feed-v2** (OpenAPI + `docs/api_design.md`). This app implements a **subset** of calls needed for dashboard workflows; treat the feed repo as normative.
+- **Contract:** HTTP paths, payloads, errors, ETag semantics, and pagination are defined by **[dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2)** ([OpenAPI](https://github.com/display-protocol/dp1-feed-v2/blob/main/api/openapi.yaml), [API design](https://github.com/display-protocol/dp1-feed-v2/blob/main/docs/api_design.md)). This app implements a **subset** of calls needed for dashboard workflows; treat that repository as normative.
 
 ---
 
@@ -68,7 +68,7 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 
 ## Intentionally out of scope
 
-- Running or embedding dp1-feed-v2 / PostgreSQL.
+- Running or embedding [dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2) / PostgreSQL.
 - OAuth/JWT flows (wallet signatures only here).
 - Server-side persistence of drafts (except browser `localStorage` list metadata).
 
@@ -78,7 +78,7 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 
 - [DEVELOPMENT.md](../DEVELOPMENT.md) (tooling and workflow)
 - [TypeScript conventions](typescript_coding_standards.md)
-- DP-1 Feed V2 canonical docs (companion codebase): `docs/architecture.md`, `docs/api_design.md`, and `api/openapi.yaml`
+- **[dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2)** canonical docs: [`docs/architecture.md`](https://github.com/display-protocol/dp1-feed-v2/blob/main/docs/architecture.md), [`docs/api_design.md`](https://github.com/display-protocol/dp1-feed-v2/blob/main/docs/api_design.md), [`api/openapi.yaml`](https://github.com/display-protocol/dp1-feed-v2/blob/main/api/openapi.yaml)
 
 ---
 

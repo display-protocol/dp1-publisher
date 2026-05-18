@@ -1,0 +1,37 @@
+---
+description: Core architecture and implementation constraints for ff-publisher (Vite/React/TS)
+globs:
+  - "**/*.{ts,tsx}"
+  - "AGENTS.md"
+  - "docs/**"
+alwaysApply: true
+---
+
+# Core Architecture Rule
+
+Use this rule for structural decisions and module boundaries.
+
+## 1) Non-negotiable constraints
+
+- Prefer deleting or replacing weak designs over layering on local fixes.
+- Do not preserve compatibility shims or speculative extensibility unless explicitly requested.
+- Prefer small, cohesive modules (`components/` vs `lib/` vs `types/`).
+- Keep side effects explicit (wallet, HTTP, storage); avoid hidden global mutation.
+- For non-obvious logic, add comments that preserve future amendment context: intent, invariants, trade-offs, failure modes.
+
+## 2) Boundary posture
+
+- Split **presentation** (`src/components`), **transport** (`src/lib/api.ts`), **signing/canonicalization** (`src/lib/signing.ts` and payloads), **types** (`src/types`), and **cross-cutting provider policy** (`src/context`).
+- Keep feed semantics aligned with [dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2); do not duplicate server validation as "truth"—document where the UI intentionally approximates checks for UX-only hints.
+
+## 3) Canonical sources
+
+- **Architecture:** `docs/architecture.md` (mirrored in `.cursor/rules/20-architecture.mdc`). Update both when assumptions change.
+- **Feed HTTP contract:** [dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2) [api/openapi.yaml](https://github.com/display-protocol/dp1-feed-v2/blob/main/api/openapi.yaml) and [docs/api_design.md](https://github.com/display-protocol/dp1-feed-v2/blob/main/docs/api_design.md) (summary in `.cursor/rules/21-feed-api-client.mdc`). When client behavior shifts, reconcile types/errors/docs with those sources where applicable.
+- **TypeScript idioms:** `docs/typescript_coding_standards.md` and ESLint configuration.
+
+## 4) Completion checks
+
+- Dependency direction stays clear (components call into `lib/`, not the reverse except via props/callbacks).
+- Behavior that looks like validation or merging with server state is justified and documented (`publishedStorage`, PATCH merges, etc.).
+- No new unexplained widening of URIs or dev-only escapes without documenting security posture changes.

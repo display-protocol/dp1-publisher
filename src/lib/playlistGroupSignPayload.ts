@@ -1,6 +1,6 @@
 /**
  * Unsigned playlist-group JSON for curator signing.
- * Matches dp1-feed-v2 buildPlaylistGroupDocument (omitempty curator, summary, coverImage; no signatures).
+ * Matches buildPlaylistGroupDocument in https://github.com/display-protocol/dp1-feed-v2 (omitempty curator, summary, coverImage; no signatures).
  */
 
 import { generatePlaylistGroupSlug } from '@/lib/utils'

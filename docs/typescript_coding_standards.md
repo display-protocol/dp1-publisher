@@ -1,6 +1,6 @@
 # TypeScript / React Coding Standards
 
-This repository favors clarity, predictable boundaries, and behavior aligned with the DP-1 Feed contract. Guidance parallels the Go coding standards in the companion **`dp1-feed-v2`** repository (`docs/go_coding_standards.md` there—read beside this appendix when hopping between repos).
+This repository favors clarity, predictable boundaries, and behavior aligned with the DP-1 Feed contract. Guidance parallels the Go coding standards in **[dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2)** ([`docs/go_coding_standards.md`](https://github.com/display-protocol/dp1-feed-v2/blob/main/docs/go_coding_standards.md)—read beside this appendix when hopping between repos).
 
 ## Primary references
 
@@ -62,7 +62,9 @@ Avoid narrating obvious JSX or trivial assignments.
 
 ## Testing posture
 
-(Add tests where behavior is brittle—signing/canonical JSON, URI validation, merge helpers. The codebase may grow jest/vitest; until then **`npm run build`** performs `tsc` typecheck.)
+(Add tests where behavior is brittle—signing/canonical JSON, URI validation, merge helpers. The codebase may grow Vitest/Jest; until then **`npm run build`** performs `tsc` plus the Vite production bundle.)
+
+For the same gate CI and agents expect, run **`scripts/agent-helpers/post-implementation-checks`** from the repo root after `npm ci` / `npm install`.
 
 ---
 

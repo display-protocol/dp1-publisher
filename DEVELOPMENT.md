@@ -57,7 +57,7 @@ Conceptual layering and flows: **[docs/architecture.md](docs/architecture.md)**
 
 ## Working with another feed checkout
 
-Clone **dp1-feed-v2**, run locally, and point the publisher:
+Clone **[dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2)**, run locally, and point the publisher:
 
 ```bash
 # example
@@ -66,7 +66,7 @@ VITE_FEED_BASE_URL=http://localhost:8080
 
 Ensure CORS/network allows browser origin (dev server defaults to localhost). If `/api/v1` is unreachable during extensions probe, UI falls back to “extensions enabled” behavior—prefer a reachable metadata endpoint when testing toggles.
 
-Http contract parity: **`dp1-feed-v2/api/openapi.yaml`** and **`dp1-feed-v2/docs/api_design.md`**.
+HTTP contract parity: [`api/openapi.yaml`](https://github.com/display-protocol/dp1-feed-v2/blob/main/api/openapi.yaml) and [`docs/api_design.md`](https://github.com/display-protocol/dp1-feed-v2/blob/main/docs/api_design.md) in [dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2).
 
 ---
 
@@ -83,10 +83,10 @@ GitHub Actions live under **`.github/workflows/`** (mostly **`main`** / **`devel
 | Workflow | Purpose |
 | -------- | ------- |
 | **`lint.yaml`** | `npm ci`, ESLint (`npm run lint`), markdownlint on `**/*.md` |
-| **`build.yaml`** | **`npm ci` + `npm run build`**, then **Docker** Buildx. On **pull requests**, builds the image **without** pushing. On **`push`** to **`main`** / **`develop`**, logs into [**DigitalOcean Container Registry**](https://docs.digitalocean.com/products/container-registry/) using **`registry.digitalocean.com/feral-file`** / **`apps`** (aligned with **`dp1-feed-v2`/`.github/workflows/build-image.yaml`**), pushes tags **`ff-publisher-*`** (distinct from **`dp1-feed-*`**), and runs the same tag-retention cleanup. Requires repo secret **`DIGITALOCEAN_DOCR_TOKEN`**. **`workflow_dispatch`** accepts an optional version suffix; if empty it uses **`ff-publisher-<commit-sha-short>`**. |
+| **`build.yaml`** | **`npm ci` + `npm run build`**, then **Docker** Buildx. On **pull requests**, builds the image **without** pushing. On **`push`** to **`main`** / **`develop`**, logs into [**DigitalOcean Container Registry**](https://docs.digitalocean.com/products/container-registry/) using **`registry.digitalocean.com/feral-file`** / **`apps`** (aligned with [dp1-feed-v2 **`build-image.yaml`**](https://github.com/display-protocol/dp1-feed-v2/blob/main/.github/workflows/build-image.yaml)), pushes tags **`ff-publisher-*`** (distinct from **`dp1-feed-*`**), and runs the same tag-retention cleanup. Requires repo secret **`DIGITALOCEAN_DOCR_TOKEN`**. **`workflow_dispatch`** accepts an optional version suffix; if empty it uses **`ff-publisher-<commit-sha-short>`**. |
 | **`gitleaks.yaml`** | [Gitleaks](https://github.com/gitleaks/gitleaks) secret scan |
 
-Path filters mirror **dp1-feed-v2**–style CI so only relevant workflows re-run when touched files change.
+Path filters mirror **[dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2)**–style CI so only relevant workflows re-run when touched files change.
 
 ---
 
@@ -103,4 +103,7 @@ Coding style pointers: **`docs/typescript_coding_standards.md`**
 ## Further reading
 
 - [README.md](README.md) — overview, Docker, usage
+- [AGENTS.md](AGENTS.md) — agent/repository contract (Cursor rules under [`.cursor/rules/`](.cursor/rules/))
+- [PLANS.md](PLANS.md) — when to write an execution plan before large work
+- [`scripts/agent-helpers/post-implementation-checks`](scripts/agent-helpers/post-implementation-checks) — local gate matching CI (`npm run lint`, `npm run build`)
 - [docs/architecture.md](docs/architecture.md)

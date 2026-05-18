@@ -12,7 +12,7 @@ const DEFAULT_CHANNEL_VERSION = '1.0.0'
 
 /**
  * Plain object to pass to signDocument() for channels (no top-level signatures).
- * Slug is derived with the same rules as dp1-feed-v2 makeSlug(..., "channel").
+ * Slug is derived with the same rules as makeSlug(..., "channel") in https://github.com/display-protocol/dp1-feed-v2.
  */
 export function channelUnsignedPayloadForSigning(ch: Channel): Record<string, unknown> {
   const id = ch.id?.trim()

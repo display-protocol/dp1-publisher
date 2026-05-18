@@ -1,0 +1,49 @@
+---
+description: >-
+  Frontend architecture—Vite SPA layout, layering, signing + feed boundaries.
+  Mirrors docs/architecture.md.
+globs:
+  - "**/*.{ts,tsx}"
+  - "docs/**"
+alwaysApply: true
+---
+
+# Architecture
+
+**Canonical detail:** `docs/architecture.md`. When layering or integrations change, update **both** that document and this rule.
+
+**ff-publisher** is a SPA that publishes DP-1 documents to an external DP-1 Feed. **Vite embeds configuration at build time** via `import.meta.env` / `VITE_*`; no Node server in prod.
+
+Flow (conceptual): `browser (React)` → **`src/lib/api.ts`** → **feed HTTP API** → backend persistence ([dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2)). Signing uses **wagmi/viem** (EIP-191) locally.
+
+## Target layout (summary)
+
+| Area | Location | Role |
+|------|----------|------|
+| **Entry / shell** | `src/main.tsx`, `src/App.tsx` | React root, wagmi/query providers |
+| **Screens** | `src/components/` | Compose publish flows (`Dashboard`, forms) |
+| **Feed client** | `src/lib/api.ts` | Paths, verbs, typed errors (`FeedAPIError`) |
+| **Signing** | `src/lib/signing.ts`, payloads | Strip signatures → JCS → digest → EIP-191 |
+| **Merge / wire helpers** | `src/lib/dp1Merge.ts`, `dp1EntityWire.ts` | Patch shapes aligned with server expectations |
+| **Extension policy** | `src/context/`, `src/lib/dp1ExtensionPolicy.ts` | Extensions on/off UX vs `GET /api/v1` |
+| **Types** | `src/types/dp1.ts` | DP-1-aligned shapes |
+
+## Boundary rules
+
+- **Components:** orchestrate user intent; delegate IO to `lib/`.
+- **`api.ts`:** HTTP only for feed calls — no DP-1 signing or wallet access.
+- **Signing modules:** deterministic inputs; isolate wallet/async concerns clearly.
+- **Types:** shared shapes across UI + `lib/`; tighten when responses are known stable.
+
+## Build / deploy
+
+- `npm run build` → **`dist/`** static assets behind nginx/CDN (`Dockerfile` pattern).
+- **Secrets:** never ship non-`VITE_*` server secrets — they belong in infra, not browser bundles.
+
+## External contract
+
+- Normative REST contract: **[dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2)** [api/openapi.yaml](https://github.com/display-protocol/dp1-feed-v2/blob/main/api/openapi.yaml) + [docs/api_design.md](https://github.com/display-protocol/dp1-feed-v2/blob/main/docs/api_design.md). This SPA implements **a subset**.
+
+## Further reading
+
+- `docs/architecture.md`, `docs/typescript_coding_standards.md`, `DEVELOPMENT.md`

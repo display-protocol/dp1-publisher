@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Agent/local gate aligned with CI: ESLint + TypeScript/Vite production build.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$REPO_ROOT"
+
+if [[ ! -f package.json ]]; then
+  echo "No package.json found at repo root. Skipping ff-publisher checks."
+  exit 0
+fi
+
+if [[ ! -d node_modules ]]; then
+  echo "node_modules missing. Install dependencies before running:"
+  echo "  npm ci   # reproducible CI-style install"
+  echo "  or"
+  echo "  npm install"
+  exit 1
+fi
+
+echo "==> npm run lint"
+npm run lint
+
+echo "==> npm run build (tsc && vite build)"
+npm run build
+
+echo "Post-implementation checks passed."

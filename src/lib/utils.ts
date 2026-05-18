@@ -7,7 +7,7 @@ export function cn(...inputs: ClassValue[]) {
 
 /**
  * Slugify a string for URL-safe slugs
- * Based on dp1-feed-v2/internal/executor/executor.go slugify function
+ * Based on slugify in https://github.com/display-protocol/dp1-feed-v2/blob/main/internal/executor/executor.go
  */
 export function slugify(s: string): string {
   return s
@@ -47,7 +47,7 @@ export function generateChannelSlug(title: string, id: string, userSlug?: string
   return `${base}-${shortId}`
 }
 
-/** Slug for DP-1 playlist-group (exhibition); aligns with dp1-feed-v2 makeSlug(..., "group"). */
+/** Slug for DP-1 playlist-group (exhibition); aligns with makeSlug(..., "group") in https://github.com/display-protocol/dp1-feed-v2. */
 export function generatePlaylistGroupSlug(title: string, id: string, userSlug?: string): string {
   if (userSlug?.trim()) {
     const slugified = slugify(userSlug)

@@ -1,0 +1,34 @@
+---
+description: Comment contract for preserving design context in non-obvious TS/React code
+globs:
+  - "**/*.{ts,tsx}"
+alwaysApply: true
+---
+
+# Comment Contract
+
+Prefer richer comments **where they preserve intent** agents and humans would otherwise lose (signing rules, feed edge cases).
+
+## Add comments when code is non-obvious
+
+Prefer comments around:
+
+- signing / canonicalization / merge invariants (`signing.ts`, merge helpers)
+- PATCH vs POST semantics and why refetch matters before merge
+- extension policy overrides (`Dp1ExtensionsContext`, env fallbacks)
+- URI validation philosophy (prod vs debug)
+- any intentional divergence from [dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2) observable behavior
+
+## Good comment content
+
+Comments should preserve:
+
+- why the code exists
+- invariants it must preserve
+- failure modes and degraded UX expectations
+- design trade-offs
+- unresolved owner-level decisions affecting later changes
+
+## Avoid low-value comments
+
+Do not narrate obvious JSX structure, trivial hooks, or what the next line mechanically does.

@@ -1,6 +1,6 @@
 /**
- * Merge helpers aligned with dp1-feed-v2 executor partial PATCH semantics
- * (see internal/executor/executor.go UpdatePlaylist / UpdateChannel).
+ * Merge helpers aligned with executor partial PATCH semantics in https://github.com/display-protocol/dp1-feed-v2
+ * (see internal/executor/executor.go UpdatePlaylist / UpdateChannel on main).
  */
 
 import type {

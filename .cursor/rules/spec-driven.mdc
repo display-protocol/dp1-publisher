@@ -1,0 +1,29 @@
+---
+description: >-
+  Spec-driven workflow for major UI/integrations, architectural refactors, and
+  security-sensitive changes
+globs:
+  - "**/*.{ts,tsx}"
+  - "docs/**"
+  - "AGENTS.md"
+alwaysApply: true
+---
+
+# Spec-Driven Development Rule
+
+Apply when the change is large: new flows, invasive refactors across `components` + `lib`, wallet/signing changes, URI policy changes, or material feed integration adjustments.
+
+## Required planning workflow
+
+1. Read `PLANS.md`.
+2. Read `.cursor/rules/01-master-design.mdc`.
+3. Read `.cursor/rules/20-architecture.mdc`.
+4. Read `.cursor/rules/21-feed-api-client.mdc`.
+5. Summarize unresolved owner decisions affecting behavior or rollout.
+6. Produce a concise plan aligned with **`spec → design → tasks → verification`**.
+7. Implement and verify.
+
+## Enforcement
+
+- Surface missing decisions instead of guessing.
+- Prefer reversible, staged rollout when risky.

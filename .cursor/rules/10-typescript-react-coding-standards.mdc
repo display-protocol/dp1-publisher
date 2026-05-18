@@ -1,0 +1,44 @@
+---
+description: TypeScript / React readability and ESLint-aligned standards for ff-publisher
+globs:
+  - "**/*.{ts,tsx}"
+alwaysApply: true
+---
+
+# TypeScript / React Coding Standards
+
+Canonical narrative: **`docs/typescript_coding_standards.md`**. ESLint rule set: **`eslint.config.js`**. Companion feed server standards live in [dp1-feed-v2 **`docs/go_coding_standards.md`**](https://github.com/display-protocol/dp1-feed-v2/blob/main/docs/go_coding_standards.md) for cross-repo context only.
+
+## 1) Readability first
+
+- Prefer straightforward types and narrow functions over abstraction for its own sake.
+- Components stay focused on UI flow; extract helpers when JSX becomes a logic swamp.
+- Name hooks **`use*`**; use **`camelCase`** for values/functions and **`PascalCase`** for components exported as React views.
+
+## 2) Errors and boundaries
+
+- Use **`FeedAPIError`** from `src/lib/api.ts` (or successors) so HTTP failures carry **status** and stable **`error`** when the feed returns it.
+- Do not silently swallow failures; surface user-visible or developer-actionable diagnostics.
+- Parse unknown JSON explicitly at boundaries; avoid widening types without reason.
+
+## 3) Modules and layering
+
+- **HTTP:** `src/lib/api.ts`
+- **Signing / JCS / EIP-191:** `src/lib/signing.ts` and related payload helpers
+- **Types:** `src/types/`
+- Avoid embedding fetch/signing deep inside unrelated presentational helpers.
+
+## 4) React-specific
+
+- Prefer controlled forms and deliberate refetch/state keys when swapping entities (avoid stale PATCH merges).
+- Context providers expose narrow APIs; misuse should fail fast (`useDp1Extensions`).
+
+## 5) Testing
+
+- When a test runner is added, prioritize pure helpers (URI validation, merge, canonical signing inputs) over snapshotting large trees.
+- Until then: **`npm run build`** exercises `tsc`; keep it green.
+
+## 6) Verification
+
+- **`npm run lint`** must pass (`eslint.config.js`).
+- **`npm run build`** must pass for changes that touch TypeScript.

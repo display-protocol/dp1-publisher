@@ -1,0 +1,38 @@
+name: Feature request
+description: Suggest an improvement or new capability
+title: '[feat]: '
+labels: ['enhancement']
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        DP-1 feed API behavior lives in **dp1-feed-v2**; publisher issues here should focus on dashboard UX or client integration.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or motivation
+      description: What problem does this solve? Who benefits?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should the publisher behave? Any trade-offs?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional
+
+  - type: textarea
+    id: feed-scope
+    attributes:
+      label: DP-1 / feed compatibility
+      description: If this depends on dp1-feed-v2 OpenAPI behavior, describe the contract or link the feed issue/PR.

@@ -1,0 +1,249 @@
+name: Build and push Docker image
+
+# CI: on pull requests — `npm run build` plus Docker build (no push).
+# CD: on push to main/develop — same checks, then push to DOCR (`ff-publisher-*` tags).
+# Manual: workflow_dispatch — optional version suffix or default commit SHA tag.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version suffix for the image tag (e.g. 0.1.0, prod). If empty, use the commit SHA.'
+        required: false
+        type: string
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'src/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'tsconfig.node.json'
+      - 'vite.config.ts'
+      - 'tailwind.config.js'
+      - 'postcss.config.js'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'docker/**'
+      - '.github/workflows/build.yaml'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'src/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'tsconfig.node.json'
+      - 'vite.config.ts'
+      - 'tailwind.config.js'
+      - 'postcss.config.js'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'docker/**'
+      - '.github/workflows/build.yaml'
+
+concurrency:
+  group: build-image-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOCR_REGISTRY_NAME: feral-file
+  DOCR_REGISTRY: registry.digitalocean.com/feral-file
+  DOCR_REPOSITORY: apps
+  DOCR_TAG_PREFIX: ff-publisher-
+  DOCR_KEEP_IMAGES: '3'
+
+jobs:
+  build-and-image:
+    name: Build app and image
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check and Vite build
+        run: npm run build
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Determine image tag (publish only)
+        id: determine-tag
+        if: github.event_name != 'pull_request'
+        env:
+          PREFIX: ${{ env.DOCR_TAG_PREFIX }}
+          DISPATCH_SUFFIX: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+        run: |
+          set -euo pipefail
+          SHA_SHORT="${GITHUB_SHA:0:12}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${DISPATCH_SUFFIX:-}"
+            if [ -n "${VERSION}" ]; then
+              TAG="${PREFIX}${VERSION}"
+            else
+              TAG="${PREFIX}${SHA_SHORT}"
+            fi
+          else
+            TAG="${PREFIX}${SHA_SHORT}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Using tag: ${TAG}"
+
+      - name: Install doctl
+        if: github.event_name != 'pull_request'
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_DOCR_TOKEN }}
+
+      - name: Login to DigitalOcean Container Registry
+        if: github.event_name != 'pull_request'
+        run: doctl registry login --expiry-seconds 1200
+
+      - name: Verify DOCR repository
+        if: github.event_name != 'pull_request'
+        run: |
+          doctl registry repository list-tags "${DOCR_REPOSITORY}" >/dev/null 2>&1 || true
+
+      - name: Generate Docker metadata
+        id: meta
+        if: github.event_name != 'pull_request'
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCR_REGISTRY }}/${{ env.DOCR_REPOSITORY }}
+          tags: |
+            type=raw,value=${{ steps.determine-tag.outputs.tag }}
+
+      - name: Docker build (pull request)
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: ff-publisher:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Docker image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+          sbom: false
+
+      - name: Clean up older DOCR tags for ff-publisher
+        if: ${{ success() && github.event_name != 'pull_request' }}
+        continue-on-error: true
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_DOCR_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+          from datetime import datetime
+
+          token = os.environ["DO_TOKEN"]
+          registry = os.environ["DOCR_REGISTRY_NAME"]
+          repository = os.environ["DOCR_REPOSITORY"]
+          prefix = os.environ["DOCR_TAG_PREFIX"]
+          keep = int(os.environ["DOCR_KEEP_IMAGES"])
+
+          def request_json(url: str, method: str = "GET") -> dict:
+              req = urllib.request.Request(
+                  url,
+                  method=method,
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Content-Type": "application/json",
+                  },
+              )
+              with urllib.request.urlopen(req) as response:
+                  if response.status == 204:
+                      return {}
+                  return json.load(response)
+
+          tags = []
+          url = (
+              f"https://api.digitalocean.com/v2/registry/{registry}/repositories/"
+              f"{repository}/tags?page=1&per_page=200"
+          )
+          while url:
+              payload = request_json(url)
+              tags.extend(payload.get("tags", []))
+              pages = payload.get("links", {}).get("pages", {})
+              url = pages.get("next")
+
+          matching = [tag for tag in tags if tag.get("tag", "").startswith(prefix)]
+          matching.sort(
+              key=lambda item: datetime.fromisoformat(
+                  item["updated_at"].replace("Z", "+00:00")
+              ),
+              reverse=True,
+          )
+
+          to_delete = matching[keep:]
+          print(
+              f"Found {len(matching)} tags matching prefix {prefix}; "
+              f"keeping {min(len(matching), keep)} and deleting {len(to_delete)}."
+          )
+
+          deleted = []
+          for item in to_delete:
+              tag = item["tag"]
+              encoded_tag = urllib.parse.quote(tag, safe="")
+              delete_url = (
+                  f"https://api.digitalocean.com/v2/registry/{registry}/repositories/"
+                  f"{repository}/tags/{encoded_tag}"
+              )
+              request_json(delete_url, method="DELETE")
+              deleted.append(tag)
+              print(f"Deleted tag: {tag}")
+
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with open(summary_path, "a", encoding="utf-8") as summary:
+                  summary.write("\n## DOCR cleanup\n\n")
+                  summary.write(
+                      f"- Prefix: `{prefix}`\n"
+                      f"- Kept: `{min(len(matching), keep)}`\n"
+                      f"- Deleted: `{len(deleted)}`\n"
+                  )
+                  for tag in deleted:
+                      summary.write(f"  - `{tag}`\n")
+          PY
+
+      - name: Output image tag
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "## Built image" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${DOCR_REGISTRY}/${DOCR_REPOSITORY}:${{ steps.determine-tag.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"

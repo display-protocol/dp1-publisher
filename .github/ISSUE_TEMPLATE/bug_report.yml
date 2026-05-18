@@ -1,0 +1,53 @@
+name: Bug report
+description: Report incorrect behavior or a regression
+title: '[bug]: '
+labels: ['bug']
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps so we can see the issue (browser, wallet, feed URL).
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: e.g. Node 22.x, Safari 18, fed URL, commit SHA
+      placeholder: Node 22.10, Chrome 138, localhost:5173, main @ abc1234
+
+  - type: textarea
+    id: extras
+    attributes:
+      label: Screenshots / logs
+      description: Optional console or network snippets (redact secrets).

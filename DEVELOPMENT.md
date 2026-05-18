@@ -76,6 +76,20 @@ See **README § Docker**. Build args map to `VITE_*` embedding at compile time�
 
 ---
 
+## Continuous integration / delivery
+
+GitHub Actions live under **`.github/workflows/`** (mostly **`main`** / **`develop`**; path filters skip unrelated edits).
+
+| Workflow | Purpose |
+| -------- | ------- |
+| **`lint.yaml`** | `npm ci`, ESLint (`npm run lint`), markdownlint on `**/*.md` |
+| **`build.yaml`** | **`npm ci` + `npm run build`**, then **Docker** Buildx. On **pull requests**, builds the image **without** pushing. On **`push`** to **`main`** / **`develop`**, logs into [**DigitalOcean Container Registry**](https://docs.digitalocean.com/products/container-registry/) using **`registry.digitalocean.com/feral-file`** / **`apps`** (aligned with **`dp1-feed-v2`/`.github/workflows/build-image.yaml`**), pushes tags **`ff-publisher-*`** (distinct from **`dp1-feed-*`**), and runs the same tag-retention cleanup. Requires repo secret **`DIGITALOCEAN_DOCR_TOKEN`**. **`workflow_dispatch`** accepts an optional version suffix; if empty it uses **`ff-publisher-<commit-sha-short>`**. |
+| **`gitleaks.yaml`** | [Gitleaks](https://github.com/gitleaks/gitleaks) secret scan |
+
+Path filters mirror **dp1-feed-v2**–style CI so only relevant workflows re-run when touched files change.
+
+---
+
 ## Pull request checklist
 
 - `npm run lint` clean  

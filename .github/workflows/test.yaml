@@ -55,6 +55,15 @@ jobs:
       - name: Run unit tests with coverage
         run: npm run test:coverage
 
+      # Upload token: https://app.codecov.io/gh/display-protocol/dp1-publisher/settings (repo secret CODECOV_TOKEN)
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage/lcov.info
+          disable_search: true
+          fail_ci_if_error: true
+
       - name: Add coverage summary to job summary
         run: |
           if [[ ! -f coverage/coverage-summary.json ]]; then

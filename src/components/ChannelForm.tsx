@@ -17,6 +17,7 @@ import { channelUnsignedPayloadForSigning } from '@/lib/channelSignPayload'
 import { mergeChannelForPatch } from '@/lib/dp1Merge'
 import { recordPublishedChannel } from '@/lib/publishedStorage'
 import {
+  feedChannelResourceUrl,
   getChannel,
   patchChannel,
   publishChannel,
@@ -24,6 +25,7 @@ import {
   checkPlaylistReachable,
   isDebugMode,
 } from '@/lib/api'
+import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription'
 import type { Channel, Entity } from '@/types/dp1'
 import CuratorList from './CuratorList'
 
@@ -623,7 +625,11 @@ export default function ChannelForm({
         loadedRef.current = updated
         toast({
           title: 'Updated',
-          description: `Channel saved: ${updated.slug}`,
+          description: (
+            <FeedUrlToastDescription
+              url={feedChannelResourceUrl(updated.slug?.trim() || updated.id || '')}
+            />
+          ),
         })
       } catch (error) {
         console.error('Update failed:', error)
@@ -718,7 +724,11 @@ export default function ChannelForm({
 
       toast({
         title: 'Success!',
-        description: `Channel published: ${published.slug}`,
+        description: (
+          <FeedUrlToastDescription
+            url={feedChannelResourceUrl(published.slug?.trim() || published.id || '')}
+          />
+        ),
       })
 
       // Reset form

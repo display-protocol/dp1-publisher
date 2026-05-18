@@ -15,7 +15,8 @@ import { generateSlug } from '@/lib/utils'
 import { ethereumAddressToDIDPKH } from '@/lib/signing'
 import { signDocument } from '@/lib/signing'
 import { playlistUnsignedPayloadForSigning } from '@/lib/playlistSignPayload'
-import { getPlaylist, patchPlaylist, publishPlaylist } from '@/lib/api'
+import { feedPlaylistResourceUrl, getPlaylist, patchPlaylist, publishPlaylist } from '@/lib/api'
+import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription'
 import { mergePlaylistForPatch } from '@/lib/dp1Merge'
 import { recordPublishedPlaylist } from '@/lib/publishedStorage'
 import type { DynamicQuery, Entity, Playlist, PlaylistItem } from '@/types/dp1'
@@ -694,7 +695,11 @@ export default function PlaylistForm({
         loadedRef.current = updated
         toast({
           title: 'Updated',
-          description: `Playlist saved: ${updated.slug}`,
+          description: (
+            <FeedUrlToastDescription
+              url={feedPlaylistResourceUrl(updated.slug?.trim() || updated.id || '')}
+            />
+          ),
         })
       } catch (error) {
         console.error('Update failed:', error)
@@ -791,7 +796,11 @@ export default function PlaylistForm({
 
       toast({
         title: 'Success!',
-        description: `Playlist published: ${published.slug}`,
+        description: (
+          <FeedUrlToastDescription
+            url={feedPlaylistResourceUrl(published.slug?.trim() || published.id || '')}
+          />
+        ),
       })
 
       // Reset form

@@ -5,7 +5,25 @@
 
 import type { Playlist, Channel } from '@/types/dp1'
 
-const FEED_BASE_URL = import.meta.env.VITE_FEED_BASE_URL || 'https://feed.feralfile.com'
+/** Base feed origin, no trailing slash (matches `VITE_FEED_BASE_URL` when set). */
+export function getFeedBaseUrl(): string {
+  return String(import.meta.env.VITE_FEED_BASE_URL || 'https://feed.feralfile.com').replace(
+    /\/$/,
+    ''
+  )
+}
+
+const FEED_BASE_URL = getFeedBaseUrl()
+
+/** GET resource URL for a playlist (API accepts UUID or slug). */
+export function feedPlaylistResourceUrl(idOrSlug: string): string {
+  return `${FEED_BASE_URL}/api/v1/playlists/${encodeURIComponent(idOrSlug.trim())}`
+}
+
+/** GET resource URL for a channel (API accepts UUID or slug). */
+export function feedChannelResourceUrl(idOrSlug: string): string {
+  return `${FEED_BASE_URL}/api/v1/channels/${encodeURIComponent(idOrSlug.trim())}`
+}
 
 /**
  * Local dev only: set `VITE_DEBUG_MODE=true` in `.env` while running the Vite dev server.

@@ -3,6 +3,7 @@ import { useAccount } from 'wagmi'
 import { ListMusic, Radio } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { feedChannelResourceUrl, feedPlaylistResourceUrl } from '@/lib/api'
 import { loadPublished, sortByCreatedDesc, type PublishedRecord } from '@/lib/publishedStorage'
 
 function formatWhen(iso?: string): string {
@@ -83,6 +84,9 @@ export default function PublishedView({
               rows={playlists}
               empty="No playlists recorded yet. Publish one from the Publish screen."
               onRowClick={(r) => onEditPlaylist(r.id)}
+              feedResourceUrl={(r) =>
+                feedPlaylistResourceUrl(r.slug?.trim() || r.id)
+              }
             />
           </TabsContent>
 
@@ -91,6 +95,9 @@ export default function PublishedView({
               rows={channels}
               empty="No channels recorded yet. Publish one from the Publish screen."
               onRowClick={(r) => onEditChannel(r.id)}
+              feedResourceUrl={(r) =>
+                feedChannelResourceUrl(r.slug?.trim() || r.id)
+              }
             />
           </TabsContent>
         </Tabs>
@@ -103,10 +110,12 @@ function PublishedTable({
   rows,
   empty,
   onRowClick,
+  feedResourceUrl,
 }: {
   rows: PublishedRecord[]
   empty: string
   onRowClick: (r: PublishedRecord) => void
+  feedResourceUrl: (r: PublishedRecord) => string
 }) {
   if (rows.length === 0) {
     return (
@@ -122,7 +131,7 @@ function PublishedTable({
         <thead>
           <tr className="border-b border-border/50 bg-muted/25 text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
             <th className="px-4 py-3 font-medium">Title</th>
-            <th className="hidden px-4 py-3 font-medium sm:table-cell">Slug</th>
+            <th className="hidden px-4 py-3 font-medium sm:table-cell">Feed URL</th>
             <th className="px-4 py-3 font-medium">Created</th>
           </tr>
         </thead>
@@ -133,11 +142,28 @@ function PublishedTable({
               className="cursor-pointer border-b border-border/40 transition-colors last:border-0 hover:bg-muted/20"
               onClick={() => onRowClick(r)}
             >
-              <td className="max-w-[200px] truncate px-4 py-3 font-medium text-foreground sm:max-w-none">
-                {r.title || '—'}
+              <td className="max-w-[200px] px-4 py-3 font-medium text-foreground sm:max-w-none">
+                <div className="truncate sm:max-w-none">{r.title || '—'}</div>
+                <a
+                  href={feedResourceUrl(r)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1.5 hidden max-w-full font-mono text-[11px] font-normal leading-snug text-primary underline underline-offset-2 [word-break:break-all] max-[639px]:block hover:text-primary/90"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {feedResourceUrl(r)}
+                </a>
               </td>
-              <td className="hidden max-w-[180px] truncate px-4 py-3 font-mono text-[13px] text-muted-foreground sm:table-cell">
-                {r.slug || '—'}
+              <td className="hidden max-w-[min(28rem,50vw)] px-4 py-3 align-top sm:table-cell">
+                <a
+                  href={feedResourceUrl(r)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-[12px] text-primary underline underline-offset-2 [word-break:break-all] hover:text-primary/90"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {feedResourceUrl(r)}
+                </a>
               </td>
               <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
                 {formatWhen(r.created)}

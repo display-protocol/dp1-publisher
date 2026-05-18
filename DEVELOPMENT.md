@@ -40,6 +40,8 @@ URI rules and dev-only relaxations: [`validatePlaylistURI` / `isDebugMode`](src/
 | `npm run build` | `tsc` then production bundle to `dist/` |
 | `npm run preview` | Serve production build locally |
 | `npm run lint` | ESLint over the workspace |
+| `npm run test` | Vitest unit tests (single run) |
+| `npm run test:coverage` | Vitest + v8 coverage (`coverage/`, gitignored) |
 
 ---
 
@@ -83,6 +85,7 @@ GitHub Actions live under **`.github/workflows/`** (mostly **`main`** / **`devel
 | Workflow | Purpose |
 | -------- | ------- |
 | **`lint.yaml`** | `npm ci`, ESLint (`npm run lint`), markdownlint on `**/*.md` |
+| **`test.yaml`** | `npm ci`, **`npm run test:coverage`** (Vitest + v8); publishes a **coverage** job summary table and uploads **`coverage-report`** (HTML, LCOV, JSON). |
 | **`build.yaml`** | **`npm ci` + `npm run build`**, then **Docker** Buildx. On **pull requests**, builds the image **without** pushing. On **`push`** to **`main`** / **`develop`**, logs into [**DigitalOcean Container Registry**](https://docs.digitalocean.com/products/container-registry/) using **`registry.digitalocean.com/feral-file`** / **`apps`** (aligned with [dp1-feed-v2 **`build-image.yaml`**](https://github.com/display-protocol/dp1-feed-v2/blob/main/.github/workflows/build-image.yaml)), pushes tags **`ff-publisher-*`** (distinct from **`dp1-feed-*`**), and runs the same tag-retention cleanup. Requires repo secret **`DIGITALOCEAN_DOCR_TOKEN`**. **`workflow_dispatch`** accepts an optional version suffix; if empty it uses **`ff-publisher-<commit-sha-short>`**. |
 | **`gitleaks.yaml`** | [Gitleaks](https://github.com/gitleaks/gitleaks) secret scan |
 

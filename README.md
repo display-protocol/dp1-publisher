@@ -1,179 +1,122 @@
 # DP-1 Publisher Dashboard
 
-A web dashboard for publishing DP-1 playlists and channels to the feed server using wallet-based authentication.
+A browser dashboard for composing and publishing DP-1 **playlists**, **playlist-groups**, and (when enabled) **channels** to a [DP-1 Feed](https://github.com/display-protocol/dp1) HTTP API—using **Ethereum wallet EIP-191** signatures rather than operator API keys.
+
+## Documentation
+
+| Doc | Contents |
+| --- | -------- |
+| [docs/architecture.md](docs/architecture.md) | App layout, signing flow boundaries, responsibilities |
+| [docs/typescript_coding_standards.md](docs/typescript_coding_standards.md) | Coding conventions |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Contributor setup, env vars, QA checklist |
+
+Authoritative HTTP contract lives in **dp1-feed-v2**: `api/openapi.yaml` plus `docs/api_design.md`.
 
 ## Features
 
-- **Wallet Connection**: Connect Ethereum wallet (mainnet only) for signature-based authentication
-- **Publish Playlists**: Create playlists from scratch with multiple items and curator support
-- **Dynamic Playlists**: Support for playlists extension v0.1.0 with dynamic item fetching via `dynamicQuery`
-- **Intermission Notes**: Add optional artist-authored notes at playlist and item levels for intermission cards
-- **Publish Channels**: Create channels that reference existing playlists
-- **JSON Editor**: Paste complete JSON documents or build via forms
-- **URI Validation**: Security checks and reachability verification for playlist URIs
-- **DP-1 Compliant**: Full EIP-191 signing with DID:PKH format
+- **Wallet connection**: Ethereum **mainnet** only (wagmi)—injected or optional WalletConnect
+- **Playlist publishing**: Forms or JSON editor; curator keys; playlists extension (`note`, dynamic query paths) follow feed policy
+- **Playlist groups (“exhibitions”)**: Compose and publish grouped playlists
+- **Channels**: Visible when deployment reports `extensionsEnabled` (or forced via env)
+- **PATCH updates**: Publish view lists prior work per wallet; edits refetch authoritative documents via GET before merge/sign
+- **URI checks**: Playlist item URIs validated for HTTPS/IPFS reachability UX (optional dev overrides)
+- **DP-1 signing**: Strip signatures → JCS (RFC 8785) → SHA-256 over canonical bytes + `\n` → EIP-191 personal sign (`did:pkh` identifiers)
 
-## Tech Stack
+## Tech stack
 
-- **Frontend**: Vite + React + TypeScript
-- **Web3**: wagmi + viem
-- **UI**: Tailwind CSS + shadcn/ui
-- **Signing**: EIP-191 personal message signing
-- **Feed Server**: https://feed.feralfile.com
+Vite · React · TypeScript · Tailwind · shadcn/ui · wagmi · viem · TanStack Query · `canonicalize` (JCS)
 
-## Getting Started
+## Getting started
 
 ### Prerequisites
 
-- Node.js 22.10+ and npm
-- Ethereum wallet (MetaMask, WalletConnect, etc.)
-- Access to Ethereum mainnet
+- Node.js **22.10+** and npm
+- Ethereum wallet (MetaMask, WalletConnect-compatible, …)
+- A reachable DP-1 Feed (default build targets Feral File public feed unless overridden)
 
-### Installation
+### Install
 
 ```bash
-# Install dependencies
 npm install
-
-# Copy environment configuration
 cp .env.example .env
-
-# (Optional) Add WalletConnect Project ID to .env
-# Get one from https://cloud.walletconnect.com/
+# Optional: VITE_WALLETCONNECT_PROJECT_ID from https://cloud.walletconnect.com/
 ```
 
-### Development
+### Development server
 
 ```bash
-# Start development server
 npm run dev
-
 # Open http://localhost:5173
 ```
 
-### Build
+### Production build
 
 ```bash
-# Build for production
 npm run build
-
-# Preview production build
 npm run preview
 ```
 
 ### Docker
 
-The image is a multi-stage build: Node compiles the Vite app, then nginx serves static files from `dist/`. Base images are pinned with **tags and digests** in the `Dockerfile` so rebuilds stay consistent until you intentionally upgrade Node or nginx. The compile stage uses the full `node:…-bookworm` image (not `-slim`) so dependencies with native bindings can build during `npm ci`.
-
-**Quick start**
+Multi-stage image: Node builds static assets → nginx serves `dist/`. Pinned digest details are in [`Dockerfile`](Dockerfile).
 
 ```bash
-# Build (defaults match `.env.example`: public feed URL, empty WalletConnect ID)
 docker build -t ff-publisher .
-
-# Run on http://localhost:8080
 docker run --rm -p 8080:80 ff-publisher
 ```
 
-**Build-time configuration** (Vite embeds these into the static bundle):
+Embed feed origin and WalletConnect at **build time**:
 
 ```bash
 docker build -t ff-publisher \
-  --build-arg VITE_FEED_BASE_URL=https://feed.feralfile.com \
+  --build-arg VITE_FEED_BASE_URL=https://feed.example.com \
   --build-arg VITE_WALLETCONNECT_PROJECT_ID=your_walletconnect_project_id \
   .
 ```
 
-**Upgrading pinned images**
+## Usage highlights
 
-When you want a newer Node or nginx, choose tags on [Docker Hub](https://hub.docker.com/), refresh the digest for each `FROM` line (see the comment at the top of `Dockerfile`), and run a local build to confirm.
+See [DEVELOPMENT.md](DEVELOPMENT.md) for environment nuances and feed-local development.
 
-## Usage
+### Publishing
 
-### Publishing a Playlist
+1. **Connect wallet**
+2. **Publish** tabs: Playlist, Group (and Channel when extensions are on)—use forms or paste JSON where offered
+3. **Sign & publish** submits `POST /api/v1/...` with non-empty signatures
+4. **Published**: local per-wallet registry (browser `localStorage`) for shortcuts; edits always reload from GET before PATCH + re-sign
 
-1. **Connect Wallet**: Click "Connect Wallet" and connect your Ethereum mainnet wallet
-2. **Switch to Playlist Tab**: Navigate to "📋 Publish Playlist"
-3. **Fill Form**:
-   - Enter title (required)
-   - Optionally customize slug, summary, cover image
-   - Optionally add intermission note (shown before playlist starts)
-   - Configure default display settings (scaling, license, duration, etc.)
-   - Add playlist items (source URI required for each) OR enable Dynamic Query
-     - Each item can have an optional intermission note shown after it
-   - If using Dynamic Query:
-     - Enable the "Dynamic Query" toggle
-     - Configure profile, endpoint, method, headers, and query
-     - Set response mapping (items path, schema, field mapping)
-   - Add additional curators if needed
-4. **Sign & Publish**: Click "Sign & Publish" to sign with your wallet and publish
+### Extensions
 
-**OR** use JSON Editor:
+Channels and playlists extension UI follow **`GET /api/v1`** `extensionsEnabled` unless `VITE_DP1_EXTENSIONS_ENABLED` overrides—see [.env.example](.env.example).
 
-1. Switch to "JSON Editor" tab
-2. Paste complete playlist JSON
-3. Click "Sign & Publish"
+## Signing flow (summary)
 
-### Publishing a Channel
+Aligned with DP-1 signing bytes and verified by the feed:
 
-1. **Connect Wallet**: Ensure wallet is connected (Ethereum mainnet)
-2. **Switch to Channel Tab**: Navigate to "📺 Publish Channel"
-3. **Fill Form**:
-   - Enter title (required)
-   - Optionally customize slug, version, summary, cover image
-   - Enter your publisher name and URL
-   - Add curators if needed (optional)
-   - Paste playlist URIs (one per line)
-4. **Validate URIs**: Click "Validate URIs" to check format and reachability
-5. **Sign & Publish**: Click "Sign & Publish" to sign and publish
+1. Strip `signature` / `signatures`
+2. Stabilize JSON (avoid `undefined` drift vs wire form)
+3. Canonicalize (**JCS**, RFC 8785)
+4. Append newline (`0x0A`) → hash **SHA-256**
+5. **EIP-191** personal sign digest; emit `kid` `did:pkh:eip155:1:<checksummed address>`
 
-## Architecture
+Details: [`src/lib/signing.ts`](src/lib/signing.ts) and [docs/architecture.md](docs/architecture.md).
 
-### Signing Flow
+## Slug conventions
 
-Based on `dp1-go/sign/payload.go`:
+Feeds derive slug from optional client slug or title plus short ID on create; publishers provide `slug`/`title` in line with DP-1/feed executor rules—not reimplemented verbatim here.
 
-1. **Strip signatures**: Remove `signature` and `signatures` fields from JSON
-2. **Canonicalize**: Apply JCS (JSON Canonicalization Scheme)
-3. **Construct signing message**: Append `\n` to canonical JSON
-4. **Hash**: Compute SHA-256 digest
-5. **Sign**: Use EIP-191 personal_sign with the digest
-6. **Format**: Construct signature object with:
-   - `alg`: "eip191"
-   - `kid`: "did:pkh:eip155:1:{checksummed-address}"
-   - `ts`: RFC3339 timestamp
-   - `payload_hash`: "sha256:{hex-digest}"
-   - `role`: "curator" | "publisher"
-   - `sig`: base64url-encoded signature (no padding)
+## Endpoint subset (SPA)
 
-### Slug Generation
+Creates and PATCH updates use **`/api/v1/playlists`**, **`playlist-groups`**, **`channels`**. Reads use GET/list for edit flows.
 
-Based on `dp1-feed-v2/internal/executor/executor.go`:
-
-```typescript
-function generateSlug(title: string, id: string, userSlug?: string): string {
-  if (userSlug) return slugify(userSlug);
-  const base = slugify(title) || 'playlist';
-  const shortId = id.slice(0, 8); // First 8 chars of UUID
-  return `${base}-${shortId}`;
-}
-```
-
-## API Endpoints
-
-- **POST** `/api/v1/playlists` - Create playlist
-- **POST** `/api/v1/channels` - Create channel
-- **GET** `/api/v1/playlists/{id}` - Get playlist
-
-Authentication: Signature-based (no API key required)
+Full HTTP contract: **`dp1-feed-v2`** `api/openapi.yaml` and **`dp1-feed-v2`** `docs/api_design.md`. Feed calls from this SPA are centralized in [`src/lib/api.ts`](src/lib/api.ts).
 
 ## Security
 
-- Only `https://` and `ipfs://` URIs allowed for playlists
-- Private/local URIs blocked (localhost, 127.x.x.x, 192.168.x.x, 10.x.x.x)
-- EIP-191 signature verification on server
-- DID:PKH format for key identifiers
+- **Production** playlist-item URIs: **https:** and **ipfs:** only; private/local blocked in UI validation (`src/lib/api.ts`).
+- **`VITE_DEBUG_MODE=true`** (Vite dev only) additionally allows `http:` for experimentation.
+- **No API keys** in the SPA path—wallet signatures only.
 
 ## License
 
-See [LICENSE](LICENSE) file.
+See [LICENSE](LICENSE).

@@ -15,6 +15,34 @@ export function getFeedBaseUrl(): string {
 
 const FEED_BASE_URL = getFeedBaseUrl()
 
+/** GET /api/v1 — deployment metadata including `extensionsEnabled` (see dp1-feed-v2 OpenAPI). */
+export interface FeedApiMetadata {
+  name?: string
+  version?: string
+  description?: string
+  extensionsEnabled: boolean
+}
+
+export async function getFeedApiMetadata(): Promise<FeedApiMetadata> {
+  const base = getFeedBaseUrl()
+  const response = await fetch(`${base}/api/v1`)
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({
+      error: 'unknown',
+      message: response.statusText,
+    }))
+    throw new FeedAPIError(
+      error.message || 'Failed to load feed metadata',
+      response.status,
+      error.error
+    )
+  }
+  const data = (await response.json()) as { extensionsEnabled?: boolean }
+  return {
+    extensionsEnabled: data.extensionsEnabled !== false,
+  }
+}
+
 /** GET resource URL for a playlist (API accepts UUID or slug). */
 export function feedPlaylistResourceUrl(idOrSlug: string): string {
   return `${FEED_BASE_URL}/api/v1/playlists/${encodeURIComponent(idOrSlug.trim())}`

@@ -3,6 +3,7 @@ import { mainnet } from 'wagmi/chains'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { injected, walletConnect } from 'wagmi/connectors'
 import Dashboard from './components/Dashboard'
+import { Dp1ExtensionsProvider } from './context/Dp1ExtensionsContext'
 
 /** Must be `VITE_WALLETCONNECT_PROJECT_ID` in `.env` — Vite only exposes vars prefixed with `VITE_`. */
 const walletConnectProjectId =
@@ -34,7 +35,9 @@ function App() {
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
         <div className="min-h-screen">
-          <Dashboard />
+          <Dp1ExtensionsProvider>
+            <Dashboard />
+          </Dp1ExtensionsProvider>
         </div>
       </QueryClientProvider>
     </WagmiProvider>

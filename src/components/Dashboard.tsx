@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAccount } from 'wagmi'
 import { ListMusic, Radio } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Toaster } from '@/components/ui/toaster'
+import { useDp1Extensions } from '@/context/Dp1ExtensionsContext'
 import WalletConnect from './WalletConnect'
 import PlaylistForm from './PlaylistForm'
 import ChannelForm from './ChannelForm'
@@ -11,12 +12,19 @@ import PublishedView from './PublishedView'
 
 export default function Dashboard() {
   const { isConnected } = useAccount()
+  const { extensionsEnabled, extensionsLoading } = useDp1Extensions()
   const [view, setView] = useState<'publish' | 'published'>('publish')
   const [publishedTick, setPublishedTick] = useState(0)
   const [editPlaylistId, setEditPlaylistId] = useState<string | null>(null)
   const [editChannelId, setEditChannelId] = useState<string | null>(null)
 
   const bumpPublished = () => setPublishedTick((n) => n + 1)
+
+  useEffect(() => {
+    if (!extensionsEnabled) {
+      setEditChannelId(null)
+    }
+  }, [extensionsEnabled])
 
   return (
     <>
@@ -29,8 +37,13 @@ export default function Dashboard() {
                 Publisher
               </h1>
               <p className="max-w-sm text-[15px] leading-relaxed text-muted-foreground">
-                Sign and publish playlists and channels to the feed.
+                {extensionsEnabled
+                  ? 'Sign and publish playlists and channels to the feed.'
+                  : 'Sign and publish core DP-1 playlists to the feed. Channel and playlist extension fields are hidden because extensions are off for this deployment.'}
               </p>
+              {extensionsLoading ? (
+                <p className="text-xs text-muted-foreground">Checking feed extension settings…</p>
+              ) : null}
             </div>
           </div>
           {isConnected ? (
@@ -62,7 +75,7 @@ export default function Dashboard() {
               <WalletConnect />
             </CardContent>
           </Card>
-        ) : view === 'publish' ? (
+        ) : view === 'publish' ? extensionsEnabled ? (
           <Tabs defaultValue="playlist" className="w-full">
             <TabsList className="grid h-12 w-full max-w-md grid-cols-2 gap-1 rounded-full bg-muted/60 p-1.5 sm:h-11">
               <TabsTrigger
@@ -82,24 +95,27 @@ export default function Dashboard() {
             </TabsList>
 
             <TabsContent value="playlist" className="mt-10 outline-none">
-              <PlaylistForm onPublished={bumpPublished} />
+              <PlaylistForm extensionsEnabled onPublished={bumpPublished} />
             </TabsContent>
 
             <TabsContent value="channel" className="mt-10 outline-none">
               <ChannelForm onPublished={bumpPublished} />
             </TabsContent>
           </Tabs>
+        ) : (
+          <PlaylistForm extensionsEnabled={false} onPublished={bumpPublished} />
         ) : editPlaylistId ? (
           <PlaylistForm
             key={editPlaylistId}
             editId={editPlaylistId}
+            extensionsEnabled={extensionsEnabled}
             onCancelEdit={() => {
               setEditPlaylistId(null)
               bumpPublished()
             }}
             onPublished={bumpPublished}
           />
-        ) : editChannelId ? (
+        ) : editChannelId && extensionsEnabled ? (
           <ChannelForm
             key={editChannelId}
             editId={editChannelId}
@@ -112,6 +128,7 @@ export default function Dashboard() {
         ) : (
           <PublishedView
             key={publishedTick}
+            extensionsEnabled={extensionsEnabled}
             onEditPlaylist={(id) => {
               setEditChannelId(null)
               setEditPlaylistId(id)

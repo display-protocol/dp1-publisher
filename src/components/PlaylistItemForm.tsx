@@ -10,12 +10,21 @@ import { useState } from 'react'
 interface Props {
   item: PlaylistItem
   index: number
+  /** When false, hides optional playlists-extension intermission note UI. */
+  showIntermissionNote?: boolean
   onUpdate: (item: PlaylistItem) => void
   onRemove: () => void
   canRemove: boolean
 }
 
-export default function PlaylistItemForm({ item, index, onUpdate, onRemove, canRemove }: Props) {
+export default function PlaylistItemForm({
+  item,
+  index,
+  showIntermissionNote = true,
+  onUpdate,
+  onRemove,
+  canRemove,
+}: Props) {
   const [showAdvanced, setShowAdvanced] = useState(false)
   
   return (
@@ -93,72 +102,82 @@ export default function PlaylistItemForm({ item, index, onUpdate, onRemove, canR
             </div>
           </div>
 
-          {/* Advanced options toggle */}
-          <div className="pt-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              className="text-xs"
-            >
-              {showAdvanced ? '− Hide' : '+ Show'} intermission note
-            </Button>
-          </div>
+          {/* Advanced options — playlists extension (intermission note) */}
+          {showIntermissionNote ? (
+            <>
+              <div className="pt-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  className="text-xs"
+                >
+                  {showAdvanced ? '− Hide' : '+ Show'} intermission note
+                </Button>
+              </div>
 
-          {/* Item Note */}
-          {showAdvanced && (
-            <div className="space-y-3 rounded-lg border border-border/30 bg-muted/20 p-4">
-              <p className="text-xs text-muted-foreground">
-                Optional intermission card shown after this item
-              </p>
-              <div>
-                <Label htmlFor={`item-note-text-${index}`}>Note Text</Label>
-                <Textarea
-                  id={`item-note-text-${index}`}
-                  value={item.note?.text || ''}
-                  onChange={(e) => onUpdate({
-                    ...item,
-                    note: e.target.value ? {
-                      text: e.target.value,
-                      duration: item.note?.duration,
-                    } : undefined
-                  })}
-                  placeholder="Short intermission message (max 500 characters)"
-                  rows={2}
-                  maxLength={500}
-                />
-                {item.note?.text && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {item.note.text.length}/500 characters
+              {showAdvanced && (
+                <div className="space-y-3 rounded-lg border border-border/30 bg-muted/20 p-4">
+                  <p className="text-xs text-muted-foreground">
+                    Optional intermission card shown after this item
                   </p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor={`item-note-duration-${index}`}>Duration (seconds)</Label>
-                <Input
-                  id={`item-note-duration-${index}`}
-                  type="number"
-                  value={item.note?.duration || ''}
-                  onChange={(e) => {
-                    const duration = e.target.value ? parseFloat(e.target.value) : undefined
-                    onUpdate({
-                      ...item,
-                      note: item.note?.text ? {
-                        text: item.note.text,
-                        duration,
-                      } : undefined
-                    })
-                  }}
-                  placeholder="20 (default)"
-                  disabled={!item.note?.text}
-                />
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Defaults to 20 seconds if not specified
-                </p>
-              </div>
-            </div>
-          )}
+                  <div>
+                    <Label htmlFor={`item-note-text-${index}`}>Note Text</Label>
+                    <Textarea
+                      id={`item-note-text-${index}`}
+                      value={item.note?.text || ''}
+                      onChange={(e) =>
+                        onUpdate({
+                          ...item,
+                          note: e.target.value
+                            ? {
+                                text: e.target.value,
+                                duration: item.note?.duration,
+                              }
+                            : undefined,
+                        })
+                      }
+                      placeholder="Short intermission message (max 500 characters)"
+                      rows={2}
+                      maxLength={500}
+                    />
+                    {item.note?.text && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {item.note.text.length}/500 characters
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <Label htmlFor={`item-note-duration-${index}`}>Duration (seconds)</Label>
+                    <Input
+                      id={`item-note-duration-${index}`}
+                      type="number"
+                      value={item.note?.duration || ''}
+                      onChange={(e) => {
+                        const duration = e.target.value ? parseFloat(e.target.value) : undefined
+                        onUpdate({
+                          ...item,
+                          note: item.note?.text
+                            ? {
+                                text: item.note.text,
+                                duration,
+                              }
+                            : undefined,
+                        })
+                      }}
+                      placeholder="20 (default)"
+                      disabled={!item.note?.text}
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Defaults to 20 seconds if not specified
+                    </p>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : null}
+
         </div>
       </CardContent>
     </Card>

@@ -17,9 +17,11 @@ function formatWhen(iso?: string): string {
 }
 
 export default function PublishedView({
+  extensionsEnabled,
   onEditPlaylist,
   onEditChannel,
 }: {
+  extensionsEnabled: boolean
   onEditPlaylist: (id: string) => void
   onEditChannel: (id: string) => void
 }) {
@@ -52,34 +54,59 @@ export default function PublishedView({
         <p className="section-label">Published</p>
         <div className="space-y-1">
           <CardTitle className="font-display text-2xl font-normal sm:text-[1.75rem]">
-            Your playlists & channels
+            {extensionsEnabled ? 'Your playlists & channels' : 'Your playlists'}
           </CardTitle>
           <CardDescription className="text-[15px]">
-            Entries saved in this browser when you publish from here. Sorted by created time (newest
-            first).
+            {extensionsEnabled
+              ? 'Entries saved in this browser when you publish from here. Sorted by created time (newest first).'
+              : 'Entries saved in this browser when you publish playlists from here. Sorted by created time (newest first).'}
           </CardDescription>
         </div>
       </CardHeader>
       <CardContent className="pb-8">
-        <Tabs defaultValue="playlist" className="w-full">
-          <TabsList className="grid h-12 w-full max-w-md grid-cols-2 gap-1 rounded-full bg-muted/60 p-1.5 sm:h-11">
-            <TabsTrigger
-              value="playlist"
-              className="gap-2 rounded-full px-4 text-[13px] font-medium data-[state=active]:shadow-sm"
-            >
-              <ListMusic className="size-4 opacity-70" aria-hidden />
-              Playlists
-            </TabsTrigger>
-            <TabsTrigger
-              value="channel"
-              className="gap-2 rounded-full px-4 text-[13px] font-medium data-[state=active]:shadow-sm"
-            >
-              <Radio className="size-4 opacity-70" aria-hidden />
-              Channels
-            </TabsTrigger>
-          </TabsList>
+        {extensionsEnabled ? (
+          <Tabs defaultValue="playlist" className="w-full">
+            <TabsList className="grid h-12 w-full max-w-md grid-cols-2 gap-1 rounded-full bg-muted/60 p-1.5 sm:h-11">
+              <TabsTrigger
+                value="playlist"
+                className="gap-2 rounded-full px-4 text-[13px] font-medium data-[state=active]:shadow-sm"
+              >
+                <ListMusic className="size-4 opacity-70" aria-hidden />
+                Playlists
+              </TabsTrigger>
+              <TabsTrigger
+                value="channel"
+                className="gap-2 rounded-full px-4 text-[13px] font-medium data-[state=active]:shadow-sm"
+              >
+                <Radio className="size-4 opacity-70" aria-hidden />
+                Channels
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="playlist" className="mt-8 outline-none">
+            <TabsContent value="playlist" className="mt-8 outline-none">
+              <PublishedTable
+                rows={playlists}
+                empty="No playlists recorded yet. Publish one from the Publish screen."
+                onRowClick={(r) => onEditPlaylist(r.id)}
+                feedResourceUrl={(r) =>
+                  feedPlaylistResourceUrl(r.slug?.trim() || r.id)
+                }
+              />
+            </TabsContent>
+
+            <TabsContent value="channel" className="mt-8 outline-none">
+              <PublishedTable
+                rows={channels}
+                empty="No channels recorded yet. Publish one from the Publish screen."
+                onRowClick={(r) => onEditChannel(r.id)}
+                feedResourceUrl={(r) =>
+                  feedChannelResourceUrl(r.slug?.trim() || r.id)
+                }
+              />
+            </TabsContent>
+          </Tabs>
+        ) : (
+          <div className="mt-8">
             <PublishedTable
               rows={playlists}
               empty="No playlists recorded yet. Publish one from the Publish screen."
@@ -88,19 +115,8 @@ export default function PublishedView({
                 feedPlaylistResourceUrl(r.slug?.trim() || r.id)
               }
             />
-          </TabsContent>
-
-          <TabsContent value="channel" className="mt-8 outline-none">
-            <PublishedTable
-              rows={channels}
-              empty="No channels recorded yet. Publish one from the Publish screen."
-              onRowClick={(r) => onEditChannel(r.id)}
-              feedResourceUrl={(r) =>
-                feedChannelResourceUrl(r.slug?.trim() || r.id)
-              }
-            />
-          </TabsContent>
-        </Tabs>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

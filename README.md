@@ -1,6 +1,6 @@
 # DP-1 Publisher Dashboard
 
-[![Tests](https://github.com/display-protocol/dp1-publisher/actions/workflows/test.yaml/badge.svg)](https://github.com/display-protocol/dp1-publisher/actions/workflows/test.yaml) [![Lint](https://github.com/display-protocol/dp1-publisher/actions/workflows/lint.yaml/badge.svg)](https://github.com/display-protocol/dp1-publisher/actions/workflows/lint.yaml) [![Build](https://github.com/display-protocol/dp1-publisher/actions/workflows/build.yaml/badge.svg)](https://github.com/display-protocol/dp1-publisher/actions/workflows/build.yaml) [![Codecov](https://codecov.io/gh/display-protocol/dp1-publisher/graph/badge.svg)](https://codecov.io/gh/display-protocol/dp1-publisher)
+[![Tests](https://github.com/display-protocol/dp1-publisher/actions/workflows/test.yaml/badge.svg)](https://github.com/display-protocol/dp1-publisher/actions/workflows/test.yaml) [![Lint](https://github.com/display-protocol/dp1-publisher/actions/workflows/lint.yaml/badge.svg)](https://github.com/display-protocol/dp1-publisher/actions/workflows/lint.yaml) [![Codecov](https://codecov.io/gh/display-protocol/dp1-publisher/graph/badge.svg)](https://codecov.io/gh/display-protocol/dp1-publisher)
 
 A browser dashboard for composing and publishing DP-1 **playlists**, **playlist-groups**, and (when enabled) **channels** to a [DP-1 Feed](https://github.com/display-protocol/dp1) HTTP API—using **Ethereum wallet EIP-191** signatures rather than operator API keys.
 

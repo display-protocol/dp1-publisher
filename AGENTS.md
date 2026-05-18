@@ -1,10 +1,10 @@
-# AGENTS.md — FF Publisher Repository Contract
+# AGENTS.md — DP-1 Publisher Repository Contract
 
 This file defines repository-level constraints for coding agents. Detailed behavior lives in `.cursor/rules/` and `docs/architecture.md`.
 
 ## Repository overview
 
-- **Project:** `ff-publisher`
+- **Project:** `dp1-publisher`
 - **Purpose:** Vite + React + TypeScript SPA to compose DP-1 documents and publish them to a **DP-1 Feed** HTTP API using wallet-based (EIP-191) signing. This repo does **not** implement the feed server.
 - **Stack:** React 18, Vite 6, TypeScript (strict via `tsc`), TanStack Query, wagmi/viem, Tailwind/Radix UI.
 

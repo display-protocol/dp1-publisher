@@ -1,5 +1,5 @@
 ---
-description: TypeScript / React readability and ESLint-aligned standards for ff-publisher
+description: TypeScript / React readability and ESLint-aligned standards for dp1-publisher
 globs:
   - "**/*.{ts,tsx}"
 alwaysApply: true

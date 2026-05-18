@@ -7,7 +7,12 @@
 import { getAddress } from 'viem'
 import type { Channel, Playlist, PlaylistGroup } from '@/types/dp1'
 
-const STORAGE_KEY = 'ff-publisher:published:v2'
+/** Current key for per-wallet published-metadata registry. */
+const STORAGE_KEY = 'dp1-publisher:published:v2'
+/** Prior v2 key when the repo/npm package was `ff-publisher`; migrated on read. */
+const LEGACY_STORAGE_KEY_V2 = 'ff-publisher:published:v2'
+/** Original v1 layout (no playlistGroups). */
+const LEGACY_STORAGE_KEY_V1 = 'ff-publisher:published:v1'
 
 export type PublishedRecord = {
   kind: 'playlist' | 'playlist-group' | 'channel'
@@ -33,7 +38,14 @@ function emptyBucket(): AddressBucket {
 
 function readRoot(): Root {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    let raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) {
+      raw = localStorage.getItem(LEGACY_STORAGE_KEY_V2)
+      if (raw) {
+        localStorage.setItem(STORAGE_KEY, raw)
+        localStorage.removeItem(LEGACY_STORAGE_KEY_V2)
+      }
+    }
     if (!raw) return { byAddress: {} }
     const p = JSON.parse(raw) as Root
     if (!p || typeof p !== 'object' || !p.byAddress) return { byAddress: {} }
@@ -46,7 +58,7 @@ function readRoot(): Root {
 /** Migrate v1 layout (no playlistGroups) to v2 with three lists. */
 function readRootWithMigration(): Root {
   try {
-    const legacyRaw = localStorage.getItem('ff-publisher:published:v1')
+    const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY_V1)
     if (legacyRaw) {
       const legacy = JSON.parse(legacyRaw) as {
         byAddress?: Record<
@@ -67,7 +79,7 @@ function readRootWithMigration(): Root {
         }
         const next: Root = { byAddress }
         localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-        localStorage.removeItem('ff-publisher:published:v1')
+        localStorage.removeItem(LEGACY_STORAGE_KEY_V1)
         return next
       }
     }

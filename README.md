@@ -1,6 +1,6 @@
 # DP-1 Publisher Dashboard
 
-[![Tests](https://github.com/feral-file/ff-publisher/actions/workflows/test.yaml/badge.svg)](https://github.com/feral-file/ff-publisher/actions/workflows/test.yaml) [![Lint](https://github.com/feral-file/ff-publisher/actions/workflows/lint.yaml/badge.svg)](https://github.com/feral-file/ff-publisher/actions/workflows/lint.yaml) [![Build](https://github.com/feral-file/ff-publisher/actions/workflows/build.yaml/badge.svg)](https://github.com/feral-file/ff-publisher/actions/workflows/build.yaml)
+[![Tests](https://github.com/display-protocol/dp1-publisher/actions/workflows/test.yaml/badge.svg)](https://github.com/display-protocol/dp1-publisher/actions/workflows/test.yaml) [![Lint](https://github.com/display-protocol/dp1-publisher/actions/workflows/lint.yaml/badge.svg)](https://github.com/display-protocol/dp1-publisher/actions/workflows/lint.yaml) [![Build](https://github.com/display-protocol/dp1-publisher/actions/workflows/build.yaml/badge.svg)](https://github.com/display-protocol/dp1-publisher/actions/workflows/build.yaml)
 
 A browser dashboard for composing and publishing DP-1 **playlists**, **playlist-groups**, and (when enabled) **channels** to a [DP-1 Feed](https://github.com/display-protocol/dp1) HTTP API—using **Ethereum wallet EIP-191** signatures rather than operator API keys.
 
@@ -63,14 +63,14 @@ npm run preview
 Multi-stage image: Node builds static assets → nginx serves `dist/`. Pinned digest details are in [`Dockerfile`](Dockerfile).
 
 ```bash
-docker build -t ff-publisher .
-docker run --rm -p 8080:80 ff-publisher
+docker build -t dp1-publisher .
+docker run --rm -p 8080:80 dp1-publisher
 ```
 
 Embed feed origin and WalletConnect at **build time**:
 
 ```bash
-docker build -t ff-publisher \
+docker build -t dp1-publisher \
   --build-arg VITE_FEED_BASE_URL=https://feed.example.com \
   --build-arg VITE_WALLETCONNECT_PROJECT_ID=your_walletconnect_project_id \
   .

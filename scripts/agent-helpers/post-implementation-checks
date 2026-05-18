@@ -8,7 +8,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
 if [[ ! -f package.json ]]; then
-  echo "No package.json found at repo root. Skipping ff-publisher checks."
+  echo "No package.json found at repo root. Skipping dp1-publisher checks."
   exit 0
 fi
 

@@ -1,5 +1,5 @@
 ---
-description: Mandatory verification for TypeScript/React changes in ff-publisher
+description: Mandatory verification for TypeScript/React changes in dp1-publisher
 globs:
   - "**/*.{ts,tsx}"
 alwaysApply: true

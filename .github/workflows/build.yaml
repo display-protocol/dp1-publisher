@@ -1,7 +1,7 @@
 name: Build and push Docker image
 
 # CI: on pull requests — `npm run build` plus Docker build (no push).
-# CD: on push to main/develop — same checks, then push to DOCR (`ff-publisher-*` tags).
+# CD: on push to main/develop — same checks, then push to DOCR (`dp1-publisher-*` tags).
 # Manual: workflow_dispatch — optional version suffix or default commit SHA tag.
 
 on:
@@ -56,7 +56,7 @@ env:
   DOCR_REGISTRY_NAME: feral-file
   DOCR_REGISTRY: registry.digitalocean.com/feral-file
   DOCR_REPOSITORY: apps
-  DOCR_TAG_PREFIX: ff-publisher-
+  DOCR_TAG_PREFIX: dp1-publisher-
   DOCR_KEEP_IMAGES: '3'
 
 jobs:
@@ -139,7 +139,7 @@ jobs:
         with:
           context: .
           push: false
-          tags: ff-publisher:ci
+          tags: dp1-publisher:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -157,7 +157,7 @@ jobs:
           provenance: false
           sbom: false
 
-      - name: Clean up older DOCR tags for ff-publisher
+      - name: Clean up older DOCR tags for dp1-publisher
         if: ${{ success() && github.event_name != 'pull_request' }}
         continue-on-error: true
         env:

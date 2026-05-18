@@ -1,5 +1,5 @@
 ---
-description: Core architecture and implementation constraints for ff-publisher (Vite/React/TS)
+description: Core architecture and implementation constraints for dp1-publisher (Vite/React/TS)
 globs:
   - "**/*.{ts,tsx}"
   - "AGENTS.md"

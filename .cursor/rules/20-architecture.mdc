@@ -12,7 +12,7 @@ alwaysApply: true
 
 **Canonical detail:** `docs/architecture.md`. When layering or integrations change, update **both** that document and this rule.
 
-**ff-publisher** is a SPA that publishes DP-1 documents to an external DP-1 Feed. **Vite embeds configuration at build time** via `import.meta.env` / `VITE_*`; no Node server in prod.
+**dp1-publisher** is a SPA that publishes DP-1 documents to an external DP-1 Feed. **Vite embeds configuration at build time** via `import.meta.env` / `VITE_*`; no Node server in prod.
 
 Flow (conceptual): `browser (React)` → **`src/lib/api.ts`** → **feed HTTP API** → backend persistence ([dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2)). Signing uses **wagmi/viem** (EIP-191) locally.
 

@@ -1,7 +1,7 @@
 # Testing Infrastructure Setup - Summary
 
 ## Overview
-Comprehensive unit testing infrastructure has been added to ff-publisher, covering all critical paths for DP-1 document handling, signing, and merging operations.
+Comprehensive unit testing infrastructure has been added to dp1-publisher, covering all critical paths for DP-1 document handling, signing, and merging operations.
 
 ## What Was Added
 

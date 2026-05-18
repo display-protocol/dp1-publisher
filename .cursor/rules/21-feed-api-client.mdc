@@ -1,6 +1,6 @@
 ---
 description: >-
-  Consumer contract — how ff-publisher must stay aligned with the dp1-feed-v2 HTTP API (https://github.com/display-protocol/dp1-feed-v2)
+  Consumer contract — how dp1-publisher must stay aligned with the dp1-feed-v2 HTTP API (https://github.com/display-protocol/dp1-feed-v2)
 globs:
   - "**/*.{ts,tsx}"
   - "docs/**"

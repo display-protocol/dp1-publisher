@@ -2,7 +2,7 @@
 name: reviewer
 model: composer-2-fast
 description: >-
-  Read-only TypeScript/React reviewer for ff-publisher. Uses prompts/code-review.md.
+  Read-only TypeScript/React reviewer for dp1-publisher. Uses prompts/code-review.md.
   Does not edit unless asked.
 readonly: true
 ---

@@ -42,9 +42,10 @@ export function Dp1ExtensionsProvider({ children }: { children: ReactNode }) {
       const meta = await getFeedApiMetadata()
       setFeedEnabled(meta.extensionsEnabled)
     } catch {
-      // CORS/network failures: assume extensions on (historic default); UI cannot know feed policy.
+      // CORS/network failures: conservative default (extensions off) until metadata is fetched successfully.
+      // This avoids offering extension-only fields when the feed may have extensions disabled.
       setFeedUnreachable(true)
-      setFeedEnabled(true)
+      setFeedEnabled(false)
     } finally {
       setFeedLoading(false)
     }
@@ -55,7 +56,7 @@ export function Dp1ExtensionsProvider({ children }: { children: ReactNode }) {
   }, [loadFromFeed])
 
   const extensionsEnabled =
-    envOverride !== undefined ? envOverride : feedEnabled !== false
+    envOverride !== undefined ? envOverride : feedEnabled === true
 
   const extensionsSource: ExtensionsSource =
     envOverride !== undefined

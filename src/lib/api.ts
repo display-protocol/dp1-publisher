@@ -450,7 +450,115 @@ export async function checkPlaylistReachable(uri: string): Promise<boolean> {
 }
 
 /**
- * Validate playlist URI format and security
+ * Check if an IPv4 address (as 4 bytes) is in a private/loopback range (RFC1918, RFC3927, loopback).
+ * Returns true if the address should be blocked.
+ */
+function isPrivateOrLoopbackIPv4(bytes: number[]): boolean {
+  if (bytes.length !== 4) return false
+  
+  // 127.0.0.0/8 - loopback
+  if (bytes[0] === 127) return true
+  
+  // 10.0.0.0/8 - private
+  if (bytes[0] === 10) return true
+  
+  // 172.16.0.0/12 - private (172.16.0.0 through 172.31.255.255)
+  if (bytes[0] === 172 && bytes[1] >= 16 && bytes[1] <= 31) return true
+  
+  // 192.168.0.0/16 - private
+  if (bytes[0] === 192 && bytes[1] === 168) return true
+  
+  // 169.254.0.0/16 - link-local
+  if (bytes[0] === 169 && bytes[1] === 254) return true
+  
+  // 0.0.0.0/8 - current network (should not route)
+  if (bytes[0] === 0) return true
+  
+  return false
+}
+
+/**
+ * Parse an IPv4 address string into bytes. Returns null if invalid.
+ * Handles decimal notation only (not octal, hex, or other obfuscations).
+ */
+function parseIPv4(hostname: string): number[] | null {
+  const parts = hostname.split('.')
+  if (parts.length !== 4) return null
+  
+  const bytes: number[] = []
+  for (const part of parts) {
+    // Reject empty parts or non-numeric
+    if (part === '' || !/^\d+$/.test(part)) return null
+    
+    const num = parseInt(part, 10)
+    // Reject out of range or leading zeros (which could be octal interpretation)
+    if (num > 255 || (part.length > 1 && part[0] === '0')) return null
+    
+    bytes.push(num)
+  }
+  
+  return bytes
+}
+
+/**
+ * Check if hostname is a private/loopback IPv6 address.
+ * Returns true if the address should be blocked.
+ * 
+ * Note: This is a pattern-based check, not full RFC parsing. It catches common private/loopback forms.
+ */
+function isPrivateOrLoopbackIPv6(hostname: string): boolean {
+  const lower = hostname.toLowerCase()
+  
+  // ::1 - loopback (short form)
+  if (lower === '::1') return true
+  
+  // Loopback expanded forms
+  if (lower === '0:0:0:0:0:0:0:1' || lower.includes('::0:1') || lower.includes('::ffff:127.')) return true
+  
+  // :: - unspecified address
+  if (lower === '::' || lower === '0:0:0:0:0:0:0:0') return true
+  
+  // fe80::/10 - link-local
+  if (lower.startsWith('fe80:') || lower.startsWith('fe8') || lower.startsWith('fe9') || 
+      lower.startsWith('fea') || lower.startsWith('feb')) return true
+  
+  // fc00::/7 - unique local addresses (fc00-fdff)
+  if (lower.startsWith('fc0') || lower.startsWith('fc') || lower.startsWith('fd')) return true
+  
+  // Common compressed forms of loopback
+  if (lower.match(/^0*:0*:0*:0*:0*:0*:0*:1$/)) return true
+  
+  // IPv4-mapped and IPv4-compatible IPv6 addresses
+  // - IPv4-mapped: ::ffff:x.x.x.x (or ::ffff:xxxx:xxxx after normalization)
+  // - IPv4-compatible (deprecated): ::x.x.x.x (normalizes to ::xxxx:xxxx)
+  // Browser URL parser converts both to hex. Examples:
+  //   [::ffff:192.168.1.1] → [::ffff:c0a8:101]
+  //   [::192.168.1.1] → [::c0a8:101]
+  
+  // IMPORTANT: Only match addresses that START with :: (not mid-address compressions like 2001:db8::c0a8:101)
+  // IPv4-compatible and IPv4-mapped addresses have all zeros before the IPv4 portion
+  const ipv4InIPv6Match = lower.match(/^::(?:ffff:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/)
+  if (ipv4InIPv6Match) {
+    // Convert hex segments back to IPv4 bytes
+    const high = parseInt(ipv4InIPv6Match[1], 16)
+    const low = parseInt(ipv4InIPv6Match[2], 16)
+    const ipv4Bytes = [
+      (high >> 8) & 0xff,
+      high & 0xff,
+      (low >> 8) & 0xff,
+      low & 0xff
+    ]
+    if (isPrivateOrLoopbackIPv4(ipv4Bytes)) {
+      return true
+    }
+  }
+  
+  return false
+}
+
+/**
+ * Validate playlist URI format and security.
+ * Blocks http:// (prod only), localhost, loopback, and RFC1918 private IPs (IPv4 + common IPv6 patterns).
  */
 export function validatePlaylistURI(uri: string): { valid: boolean; reason?: string } {
   if (isDebugMode()) {
@@ -476,24 +584,47 @@ export function validatePlaylistURI(uri: string): { valid: boolean; reason?: str
       return { valid: false, reason: 'Only https:// and ipfs:// URIs are allowed' }
     }
 
-    // Block localhost and private IPs
-    const hostname = url.hostname.toLowerCase()
-    if (
-      hostname === 'localhost' ||
-      hostname.startsWith('127.') ||
-      hostname.startsWith('192.168.') ||
-      hostname.startsWith('10.') ||
-      hostname.startsWith('172.16.') ||
-      hostname.startsWith('172.17.') ||
-      hostname.startsWith('172.18.') ||
-      hostname.startsWith('172.19.') ||
-      hostname.startsWith('172.2') ||
-      hostname.startsWith('172.30.') ||
-      hostname.startsWith('172.31.')
-    ) {
+    // For ipfs://, no hostname to check
+    if (url.protocol === 'ipfs:') {
+      return { valid: true }
+    }
+
+    // Block localhost by name
+    let hostname = url.hostname.toLowerCase()
+    if (hostname === 'localhost') {
       return { valid: false, reason: 'Private/local URIs are not allowed' }
     }
 
+    // IPv6 literals may have brackets in some environments; strip them
+    if (hostname.startsWith('[') && hostname.endsWith(']')) {
+      hostname = hostname.slice(1, -1)
+    }
+
+    // Check if hostname is an IPv6 literal (contains colons)
+    if (hostname.includes(':')) {
+      if (isPrivateOrLoopbackIPv6(hostname)) {
+        return { valid: false, reason: 'Private/local URIs are not allowed' }
+      }
+      return { valid: true }
+    }
+
+    // Check if hostname is an IPv4 address
+    const ipv4Bytes = parseIPv4(hostname)
+    if (ipv4Bytes) {
+      if (isPrivateOrLoopbackIPv4(ipv4Bytes)) {
+        return { valid: false, reason: 'Private/local URIs are not allowed' }
+      }
+      return { valid: true }
+    }
+
+    // If it looks like an IPv4 address (4 dot-separated parts) but failed to parse,
+    // reject it as potentially malformed or obfuscated
+    const parts = hostname.split('.')
+    if (parts.length === 4 && parts.every(p => /^\d+$/.test(p))) {
+      return { valid: false, reason: 'Malformed or obfuscated IP address' }
+    }
+
+    // Hostname is a domain name; allow it (browser DNS will resolve, but we can't block all possible resolutions here)
     return { valid: true }
   } catch {
     return { valid: false, reason: 'Invalid URI format' }

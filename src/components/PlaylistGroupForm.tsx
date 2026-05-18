@@ -61,6 +61,11 @@ function parsePlaylistGroupJson(text: string): { group: PlaylistGroup } | { erro
     if (typeof u !== 'string' || !u.trim()) {
       return { error: `playlists[${i}] must be a non-empty URI string.` }
     }
+    // Validate URI format and security
+    const validation = validatePlaylistURI(u.trim())
+    if (!validation.valid) {
+      return { error: `playlists[${i}]: ${validation.reason || 'Invalid URI'}` }
+    }
   }
   return { group: data as PlaylistGroup }
 }

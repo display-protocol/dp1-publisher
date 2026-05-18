@@ -15,7 +15,7 @@ import { generateSlug } from '@/lib/utils'
 import { ethereumAddressToDIDPKH } from '@/lib/signing'
 import { signDocument } from '@/lib/signing'
 import { playlistUnsignedPayloadForSigning } from '@/lib/playlistSignPayload'
-import { feedPlaylistResourceUrl, getPlaylist, patchPlaylist, publishPlaylist } from '@/lib/api'
+import { feedPlaylistResourceUrl, getPlaylist, patchPlaylist, publishPlaylist, validatePlaylistURI } from '@/lib/api'
 import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription'
 import { mergePlaylistForPatch } from '@/lib/dp1Merge'
 import { stripPlaylistExtensionFields, stripItemExtensionFields } from '@/lib/dp1ExtensionPolicy'
@@ -66,6 +66,11 @@ function parsePlaylistJson(
           : ''
       if (!src) {
         return { error: `items[${i}].source is required.` }
+      }
+      // Validate URI format and security
+      const validation = validatePlaylistURI(src)
+      if (!validation.valid) {
+        return { error: `items[${i}].source: ${validation.reason || 'Invalid URI'}` }
       }
     }
   }

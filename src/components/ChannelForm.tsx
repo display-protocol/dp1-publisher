@@ -124,6 +124,18 @@ function parseChannelJson(text: string): { channel: Channel } | { error: string 
   if (o.playlists.length === 0) {
     return { error: 'At least one playlist URI is required.' }
   }
+  // Validate playlist URIs
+  for (let i = 0; i < o.playlists.length; i++) {
+    const u = o.playlists[i]
+    if (typeof u !== 'string' || !u.trim()) {
+      return { error: `playlists[${i}] must be a non-empty URI string.` }
+    }
+    // Validate URI format and security
+    const validation = validatePlaylistURI(u.trim())
+    if (!validation.valid) {
+      return { error: `playlists[${i}]: ${validation.reason || 'Invalid URI'}` }
+    }
+  }
   return { channel: data as Channel }
 }
 

@@ -3,7 +3,7 @@
  * Based on dp1-go/sign/payload.go and multisig.go
  */
 
-import { getAddress, type WalletClient } from 'viem'
+import { getAddress, hexToBytes, isHex, type WalletClient } from 'viem'
 import canonicalize from 'canonicalize'
 import type { Signature } from '@/types/dp1'
 
@@ -132,8 +132,14 @@ export async function signDocument(
     message: { raw: digest }
   })
   
-  // 4. Convert signature to base64url (no padding)
+  // 4. Validate and convert signature to base64url (no padding)
+  if (!isHex(signature)) {
+    throw new Error('Wallet returned invalid signature (not hex)')
+  }
   const sigBytes = hexToBytes(signature)
+  if (sigBytes.length !== 65) {
+    throw new Error(`Wallet returned signature with unexpected length: ${sigBytes.length} bytes (expected 65 for secp256k1)`)
+  }
   const base64url = bytesToBase64Url(sigBytes)
   
   // 5. Construct DID:PKH kid
@@ -150,18 +156,6 @@ export async function signDocument(
     role,
     sig: base64url
   }
-}
-
-/**
- * Convert hex string to Uint8Array
- */
-function hexToBytes(hex: string): Uint8Array {
-  const cleaned = hex.startsWith('0x') ? hex.slice(2) : hex
-  const bytes = new Uint8Array(cleaned.length / 2)
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(cleaned.slice(i * 2, i * 2 + 2), 16)
-  }
-  return bytes
 }
 
 /**

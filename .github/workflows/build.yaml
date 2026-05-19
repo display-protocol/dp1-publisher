@@ -11,6 +11,18 @@ on:
         description: 'Version suffix for the image tag (e.g. 0.1.0, prod). If empty, use the commit SHA.'
         required: false
         type: string
+      extensions_enabled:
+        description: >-
+          Extensions UI policy for this build. workflow-default uses env/repo
+          setting; follow-feed leaves VITE_DP1_EXTENSIONS_ENABLED unset in the image.
+        required: false
+        type: choice
+        options:
+          - workflow-default
+          - follow-feed
+          - 'true'
+          - 'false'
+        default: workflow-default
   push:
     branches:
       - main
@@ -58,6 +70,11 @@ env:
   DOCR_REPOSITORY: apps
   DOCR_TAG_PREFIX: dp1-publisher-
   DOCR_KEEP_IMAGES: '3'
+  # Production feed origin; must match ff-deploy dp1_feed.public_base_url (feed.feralfile.com).
+  VITE_FEED_BASE_URL: https://feed.feralfile.com
+  # Extensions UI: true matches ff-deploy dp1_feed.extensions_enabled. Empty = follow feed GET /api/v1.
+  # Override default via repository variable VITE_DP1_EXTENSIONS_ENABLED (true/false/empty).
+  VITE_DP1_EXTENSIONS_ENABLED: ${{ vars.VITE_DP1_EXTENSIONS_ENABLED || 'true' }}
 
 jobs:
   build-and-image:
@@ -133,6 +150,28 @@ jobs:
           tags: |
             type=raw,value=${{ steps.determine-tag.outputs.tag }}
 
+      - name: Resolve Vite build arguments
+        id: vite-build-args
+        run: |
+          set -euo pipefail
+          EXT="${VITE_DP1_EXTENSIONS_ENABLED}"
+          DISPATCH="${DISPATCH_EXTENSIONS}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${DISPATCH}" ]; then
+            case "${DISPATCH}" in
+              workflow-default) ;;
+              follow-feed) EXT="" ;;
+              true|false) EXT="${DISPATCH}" ;;
+              *)
+                echo "Unknown extensions_enabled: ${DISPATCH}" >&2
+                exit 1
+                ;;
+            esac
+          fi
+          echo "extensions_enabled=${EXT}" >> "$GITHUB_OUTPUT"
+        env:
+          VITE_DP1_EXTENSIONS_ENABLED: ${{ env.VITE_DP1_EXTENSIONS_ENABLED }}
+          DISPATCH_EXTENSIONS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.extensions_enabled || '' }}
+
       - name: Docker build (pull request)
         if: github.event_name == 'pull_request'
         uses: docker/build-push-action@v6
@@ -140,6 +179,10 @@ jobs:
           context: .
           push: false
           tags: dp1-publisher:ci
+          build-args: |
+            VITE_FEED_BASE_URL=${{ env.VITE_FEED_BASE_URL }}
+            VITE_WALLETCONNECT_PROJECT_ID=${{ secrets.VITE_WALLETCONNECT_PROJECT_ID }}
+            VITE_DP1_EXTENSIONS_ENABLED=${{ steps.vite-build-args.outputs.extensions_enabled }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -152,6 +195,10 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VITE_FEED_BASE_URL=${{ env.VITE_FEED_BASE_URL }}
+            VITE_WALLETCONNECT_PROJECT_ID=${{ secrets.VITE_WALLETCONNECT_PROJECT_ID }}
+            VITE_DP1_EXTENSIONS_ENABLED=${{ steps.vite-build-args.outputs.extensions_enabled }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false

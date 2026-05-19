@@ -73,6 +73,7 @@ Embed feed origin and WalletConnect at **build time**:
 docker build -t dp1-publisher \
   --build-arg VITE_FEED_BASE_URL=https://feed.example.com \
   --build-arg VITE_WALLETCONNECT_PROJECT_ID=your_walletconnect_project_id \
+  --build-arg VITE_DP1_EXTENSIONS_ENABLED=true \
   .
 ```
 

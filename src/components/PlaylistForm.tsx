@@ -23,6 +23,7 @@ import { recordPublishedPlaylist } from '@/lib/publishedStorage'
 import type { DynamicQuery, Entity, Playlist, PlaylistItem } from '@/types/dp1'
 import PlaylistItemForm from './PlaylistItemForm'
 import CuratorList from './CuratorList'
+import JsonFileDropZone from './JsonFileDropZone'
 
 function parsePlaylistJson(
   text: string,
@@ -794,6 +795,22 @@ export default function PlaylistForm({
       unsignedPlaylist = playlistFromJsonImport(parsed.playlist, id)
       if (!extensionsEnabled) {
         unsignedPlaylist = stripPlaylistExtensionFields(unsignedPlaylist)
+      } else if (!unsignedPlaylist.curators?.length) {
+        // Auto-seed the connected wallet as curator when the pasted JSON
+        // omits `curators` — parity with the Form tab's default. Without
+        // this, the feed rejects with "no valid curator signature found"
+        // because the curator-role signature has no declared curator to
+        // match against.
+        const fallbackKey = ethereumAddressToDIDPKH(getAddress(address))
+        unsignedPlaylist = {
+          ...unsignedPlaylist,
+          curators: [{ name: '', key: fallbackKey, url: '' }],
+        }
+        toast({
+          title: 'Curator auto-added',
+          description:
+            'Pasted JSON had no curators — signing with your connected wallet as the curator.',
+        })
       }
     } else {
       if (!title.trim()) {
@@ -1326,12 +1343,10 @@ export default function PlaylistForm({
 
           <TabsContent value="json" className="mt-8">
             <div className="space-y-6">
-              <Textarea
+              <JsonFileDropZone
                 value={jsonText}
-                onChange={(e) => handleJsonTextChange(e.target.value)}
+                onChange={handleJsonTextChange}
                 rows={20}
-                className="font-mono text-[13px] leading-relaxed"
-                placeholder="Edit playlist JSON…"
               />
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                 <Button

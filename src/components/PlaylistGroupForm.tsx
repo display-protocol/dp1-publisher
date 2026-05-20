@@ -25,6 +25,7 @@ import {
   isDebugMode,
 } from '@/lib/api'
 import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription'
+import JsonFileDropZone from './JsonFileDropZone'
 import type { PlaylistGroup } from '@/types/dp1'
 
 interface PlaylistURIStatus {
@@ -837,12 +838,11 @@ export default function PlaylistGroupForm({
 
             <TabsContent value="json" className="mt-8">
               <div className="space-y-6">
-                <Textarea
+                <JsonFileDropZone
                   value={jsonText}
-                  onChange={(e) => handleJsonTextChange(e.target.value)}
+                  onChange={handleJsonTextChange}
                   rows={22}
-                  className="font-mono text-[13px] leading-relaxed"
-                  placeholder="Playlist group JSON (unsigned, no signatures)…"
+                  placeholder="Drop a .json file here or paste playlist group JSON (unsigned, no signatures)…"
                 />
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                   <Button type="button" variant="outline" className="rounded-full" onClick={() => setJsonMode('form')}>

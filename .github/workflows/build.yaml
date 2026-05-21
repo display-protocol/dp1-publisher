@@ -1,8 +1,7 @@
 name: Build and push Docker image
 
-# CI: on pull requests — `npm run build` plus Docker build (no push).
-# CD: on push to main/develop — same checks, then push to DOCR (`dp1-publisher-*` tags).
-# Manual: workflow_dispatch — optional version suffix or default commit SHA tag.
+# Manual only (workflow_dispatch): `npm run build`, Docker build/push to DOCR.
+# Optional tag suffix; default image tag uses 12-char commit SHA (`dp1-publisher-*`).
 
 on:
   workflow_dispatch:
@@ -23,42 +22,6 @@ on:
           - 'true'
           - 'false'
         default: workflow-default
-  push:
-    branches:
-      - main
-      - develop
-    paths:
-      - 'src/**'
-      - 'index.html'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'tsconfig.json'
-      - 'tsconfig.node.json'
-      - 'vite.config.ts'
-      - 'tailwind.config.js'
-      - 'postcss.config.js'
-      - 'Dockerfile'
-      - '.dockerignore'
-      - 'docker/**'
-      - '.github/workflows/build.yaml'
-  pull_request:
-    branches:
-      - main
-      - develop
-    paths:
-      - 'src/**'
-      - 'index.html'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'tsconfig.json'
-      - 'tsconfig.node.json'
-      - 'vite.config.ts'
-      - 'tailwind.config.js'
-      - 'postcss.config.js'
-      - 'Dockerfile'
-      - '.dockerignore'
-      - 'docker/**'
-      - '.github/workflows/build.yaml'
 
 concurrency:
   group: build-image-${{ github.workflow }}-${{ github.ref }}
@@ -104,22 +67,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Determine image tag (publish only)
+      - name: Determine image tag
         id: determine-tag
-        if: github.event_name != 'pull_request'
         env:
           PREFIX: ${{ env.DOCR_TAG_PREFIX }}
-          DISPATCH_SUFFIX: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+          DISPATCH_SUFFIX: ${{ github.event.inputs.tag }}
         run: |
           set -euo pipefail
           SHA_SHORT="${GITHUB_SHA:0:12}"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${DISPATCH_SUFFIX:-}"
-            if [ -n "${VERSION}" ]; then
-              TAG="${PREFIX}${VERSION}"
-            else
-              TAG="${PREFIX}${SHA_SHORT}"
-            fi
+          VERSION="${DISPATCH_SUFFIX:-}"
+          if [ -n "${VERSION}" ]; then
+            TAG="${PREFIX}${VERSION}"
           else
             TAG="${PREFIX}${SHA_SHORT}"
           fi
@@ -127,23 +85,19 @@ jobs:
           echo "Using tag: ${TAG}"
 
       - name: Install doctl
-        if: github.event_name != 'pull_request'
         uses: digitalocean/action-doctl@v2
         with:
           token: ${{ secrets.DIGITALOCEAN_DOCR_TOKEN }}
 
       - name: Login to DigitalOcean Container Registry
-        if: github.event_name != 'pull_request'
         run: doctl registry login --expiry-seconds 1200
 
       - name: Verify DOCR repository
-        if: github.event_name != 'pull_request'
         run: |
           doctl registry repository list-tags "${DOCR_REPOSITORY}" >/dev/null 2>&1 || true
 
       - name: Generate Docker metadata
         id: meta
-        if: github.event_name != 'pull_request'
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.DOCR_REGISTRY }}/${{ env.DOCR_REPOSITORY }}
@@ -156,7 +110,7 @@ jobs:
           set -euo pipefail
           EXT="${VITE_DP1_EXTENSIONS_ENABLED}"
           DISPATCH="${DISPATCH_EXTENSIONS}"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${DISPATCH}" ]; then
+          if [ -n "${DISPATCH}" ]; then
             case "${DISPATCH}" in
               workflow-default) ;;
               follow-feed) EXT="" ;;
@@ -170,24 +124,9 @@ jobs:
           echo "extensions_enabled=${EXT}" >> "$GITHUB_OUTPUT"
         env:
           VITE_DP1_EXTENSIONS_ENABLED: ${{ env.VITE_DP1_EXTENSIONS_ENABLED }}
-          DISPATCH_EXTENSIONS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.extensions_enabled || '' }}
-
-      - name: Docker build (pull request)
-        if: github.event_name == 'pull_request'
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: false
-          tags: dp1-publisher:ci
-          build-args: |
-            VITE_FEED_BASE_URL=${{ env.VITE_FEED_BASE_URL }}
-            VITE_WALLETCONNECT_PROJECT_ID=${{ secrets.VITE_WALLETCONNECT_PROJECT_ID }}
-            VITE_DP1_EXTENSIONS_ENABLED=${{ steps.vite-build-args.outputs.extensions_enabled }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          DISPATCH_EXTENSIONS: ${{ github.event.inputs.extensions_enabled }}
 
       - name: Build and push Docker image
-        if: github.event_name != 'pull_request'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -205,7 +144,7 @@ jobs:
           sbom: false
 
       - name: Clean up older DOCR tags for dp1-publisher
-        if: ${{ success() && github.event_name != 'pull_request' }}
+        if: success()
         continue-on-error: true
         env:
           DO_TOKEN: ${{ secrets.DIGITALOCEAN_DOCR_TOKEN }}
@@ -289,7 +228,6 @@ jobs:
           PY
 
       - name: Output image tag
-        if: github.event_name != 'pull_request'
         run: |
           echo "## Built image" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"

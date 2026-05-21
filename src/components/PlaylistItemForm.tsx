@@ -4,7 +4,8 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import type { PlaylistItem } from '@/types/dp1'
+import type { DisplayPrefs, PlaylistItem } from '@/types/dp1'
+import { updateItemDisplay } from '@/lib/dp1ItemDisplay'
 import { useState } from 'react'
 
 interface Props {
@@ -17,6 +18,24 @@ interface Props {
   canRemove: boolean
 }
 
+type ScalingValue = NonNullable<DisplayPrefs['scaling']>
+const SCALING_VALUES: ScalingValue[] = ['fit', 'fill', 'stretch', 'auto']
+
+function isScalingValue(v: string): v is ScalingValue {
+  return (SCALING_VALUES as string[]).includes(v)
+}
+
+function triStateValue(b: boolean | undefined): 'inherit' | 'true' | 'false' {
+  if (b === undefined) return 'inherit'
+  return b ? 'true' : 'false'
+}
+
+function triStateToBool(v: string): boolean | undefined {
+  if (v === 'true') return true
+  if (v === 'false') return false
+  return undefined
+}
+
 export default function PlaylistItemForm({
   item,
   index,
@@ -26,7 +45,9 @@ export default function PlaylistItemForm({
   canRemove,
 }: Props) {
   const [showAdvanced, setShowAdvanced] = useState(false)
-  
+
+  const background = typeof item.display?.background === 'string' ? item.display.background : ''
+
   return (
     <Card className="border-border/35 bg-muted/10 shadow-none">
       <CardContent className="pt-6">
@@ -102,23 +123,108 @@ export default function PlaylistItemForm({
             </div>
           </div>
 
-          {/* Advanced options — playlists extension (intermission note) */}
-          {showIntermissionNote ? (
-            <>
-              <div className="pt-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowAdvanced(!showAdvanced)}
-                  className="text-xs"
-                >
-                  {showAdvanced ? '− Hide' : '+ Show'} intermission note
-                </Button>
+          {/* Advanced — per-item display overrides (core) + intermission note (extension) */}
+          <div className="pt-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="text-xs"
+            >
+              {showAdvanced ? '− Hide' : '+ Show'} advanced
+            </Button>
+          </div>
+
+          {showAdvanced && (
+            <div className="space-y-4 rounded-lg border border-border/30 bg-muted/20 p-4">
+              {/* Display overrides — always shown (core DP-1) */}
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Per-item display overrides — each defaults to the playlist&apos;s default value
+                </p>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label htmlFor={`item-scaling-${index}`}>Scaling</Label>
+                    <Select
+                      value={item.display?.scaling ?? 'inherit'}
+                      onValueChange={(v) =>
+                        onUpdate(
+                          updateItemDisplay(
+                            item,
+                            'scaling',
+                            v === 'inherit' || !isScalingValue(v) ? undefined : v
+                          )
+                        )
+                      }
+                    >
+                      <SelectTrigger id={`item-scaling-${index}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="inherit">Inherit default</SelectItem>
+                        <SelectItem value="fit">Fit</SelectItem>
+                        <SelectItem value="fill">Fill</SelectItem>
+                        <SelectItem value="stretch">Stretch</SelectItem>
+                        <SelectItem value="auto">Auto</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor={`item-background-${index}`}>Background</Label>
+                    <Input
+                      id={`item-background-${index}`}
+                      value={background}
+                      onChange={(e) =>
+                        onUpdate(
+                          updateItemDisplay(item, 'background', e.target.value || undefined)
+                        )
+                      }
+                      placeholder="Inherit (e.g. #000000)"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`item-loop-${index}`}>Loop</Label>
+                    <Select
+                      value={triStateValue(item.display?.loop)}
+                      onValueChange={(v) =>
+                        onUpdate(updateItemDisplay(item, 'loop', triStateToBool(v)))
+                      }
+                    >
+                      <SelectTrigger id={`item-loop-${index}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="inherit">Inherit default</SelectItem>
+                        <SelectItem value="true">On</SelectItem>
+                        <SelectItem value="false">Off</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor={`item-autoplay-${index}`}>Autoplay</Label>
+                    <Select
+                      value={triStateValue(item.display?.autoplay)}
+                      onValueChange={(v) =>
+                        onUpdate(updateItemDisplay(item, 'autoplay', triStateToBool(v)))
+                      }
+                    >
+                      <SelectTrigger id={`item-autoplay-${index}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="inherit">Inherit default</SelectItem>
+                        <SelectItem value="true">On</SelectItem>
+                        <SelectItem value="false">Off</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </div>
 
-              {showAdvanced && (
-                <div className="space-y-3 rounded-lg border border-border/30 bg-muted/20 p-4">
+              {/* Intermission note — playlists extension */}
+              {showIntermissionNote && (
+                <div className="space-y-3 border-t border-border/30 pt-4">
                   <p className="text-xs text-muted-foreground">
                     Optional intermission card shown after this item
                   </p>
@@ -175,8 +281,8 @@ export default function PlaylistItemForm({
                   </div>
                 </div>
               )}
-            </>
-          ) : null}
+            </div>
+          )}
 
         </div>
       </CardContent>

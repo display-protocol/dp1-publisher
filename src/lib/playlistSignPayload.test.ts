@@ -16,6 +16,29 @@ describe('playlistUnsignedPayloadForSigning', () => {
     expect(payload).toHaveProperty('items')
   })
 
+  // Round-10 regression guard: imported JSON can carry tool metadata (build
+  // times, debug fields, etc.). The feed reconstructs a typed Playlist via
+  // json.Marshal, which silently omits unknown fields — so anything we let
+  // through the canonicalizer would be hashed by us but not by the feed,
+  // producing a signature mismatch on the JSON-import/re-sign path this PR
+  // exists to fix.
+  it('drops unknown top-level fields (feed-contract whitelist)', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      extraField: 'tool metadata',
+      _buildTime: '2026-05-22T00:00:00Z',
+      __debug: { something: true },
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    expect(payload).not.toHaveProperty('extraField')
+    expect(payload).not.toHaveProperty('_buildTime')
+    expect(payload).not.toHaveProperty('__debug')
+    // But typed fields still survive.
+    expect(payload).toHaveProperty('dpVersion')
+    expect(payload).toHaveProperty('title')
+    expect(payload).toHaveProperty('items')
+  })
+
   it('should strip signatures array', () => {
     const playlist: Playlist = {
       ...minimalPlaylist,

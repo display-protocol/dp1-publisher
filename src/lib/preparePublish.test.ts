@@ -147,17 +147,18 @@ describe('preparePlaylistForPublish — create', () => {
     expect(r.wireBody).toEqual(signedMinusOmissions)
   })
 
-  it('preserves unknown top-level fields imported from JSON (or omits them in both signed AND wire)', () => {
-    // The previous wireBody construction only emitted known fields, so an
-    // unknown imported top-level key would survive in the signed payload but
-    // not the wire body — drift. With wireBody derived from signedBytes, the
-    // two paths agree by construction (whether the canonicalizer keeps it
-    // or drops it, both see the same shape).
+  it('drops unknown top-level fields imported from JSON (feed-contract whitelist)', () => {
+    // The feed reconstructs a typed playlist via json.Marshal, which omits
+    // any unknown fields. If we let `_buildMeta` or other tool metadata
+    // through the canonicalizer, the feed would hash a different shape than
+    // we signed — signature mismatch. The whitelist in
+    // playlistUnsignedPayloadForSigning is the boundary that enforces this.
     const rawWithUnknown = {
       ...basePlaylist,
       id: 'pl-1',
       created: '2026-05-22T00:00:00Z',
-      extraField: 'should not cause drift',
+      extraField: 'tool metadata that the feed does not know about',
+      _buildTime: '2026-05-22T00:00:00Z',
     } as unknown as Playlist
     const r = preparePlaylistForPublish({
       rawDocument: rawWithUnknown,
@@ -165,6 +166,12 @@ describe('preparePlaylistForPublish — create', () => {
       extensionsEnabled: true,
     })
     ok<Playlist>(r)
+    // Unknown keys are absent from both signed bytes AND wire body —
+    // i.e., the feed hashes the same shape we send.
+    expect(r.signedBytes).not.toHaveProperty('extraField')
+    expect(r.signedBytes).not.toHaveProperty('_buildTime')
+    expect(r.wireBody).not.toHaveProperty('extraField')
+    expect(r.wireBody).not.toHaveProperty('_buildTime')
     expect(r.wireBody).toEqual(r.signedBytes)
   })
 

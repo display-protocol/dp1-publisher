@@ -103,4 +103,74 @@ describe('validateChannelFields', () => {
     })
     expect(errors.length).toBeGreaterThanOrEqual(4)
   })
+
+  // Defensive coverage: parseChannelJson only validates title and playlists
+  // before casting to Channel, so publisher / curators can arrive as
+  // arbitrary JSON-derived shapes through the JSON-tab path. The validator
+  // must surface a destructive validation error instead of throwing.
+
+  it('does not throw on non-string publisher.name and reports an error', () => {
+    const errors = validateChannelFields({
+      ...validChannel,
+      publisher: { name: 123 as unknown as string, key: WALLET, url: '' },
+    })
+    expect(errors).toContainEqual({
+      field: 'publisher.name',
+      message: 'Publisher name is required',
+    })
+  })
+
+  it('does not throw on non-object publisher and reports a shape error', () => {
+    const errors = validateChannelFields({
+      ...validChannel,
+      publisher: 'not-an-object' as unknown as Channel['publisher'],
+    })
+    expect(errors).toContainEqual({
+      field: 'publisher',
+      message: 'Publisher must be an object',
+    })
+  })
+
+  it('does not throw on non-array curators and reports a shape error', () => {
+    const errors = validateChannelFields({
+      ...validChannel,
+      curators: {} as unknown as Channel['curators'],
+    })
+    expect(errors).toContainEqual({
+      field: 'curators',
+      message: 'Curators must be an array',
+    })
+  })
+
+  it('does not throw on null curator entries and reports per-entry error', () => {
+    const errors = validateChannelFields({
+      ...validChannel,
+      curators: [null, { name: 'NODE', key: WALLET, url: '' }] as unknown as Channel['curators'],
+    })
+    expect(errors).toContainEqual({
+      field: 'curators[0]',
+      message: 'Curator 1 must be an object',
+    })
+    // The valid second entry passes.
+    expect(errors.find((e) => e.field.startsWith('curators[1]'))).toBeUndefined()
+  })
+
+  it('does not throw on primitive curator entries', () => {
+    const errors = validateChannelFields({
+      ...validChannel,
+      curators: ['string-not-object'] as unknown as Channel['curators'],
+    })
+    expect(errors).toContainEqual({
+      field: 'curators[0]',
+      message: 'Curator 1 must be an object',
+    })
+  })
+
+  it('does not throw on non-string title', () => {
+    const errors = validateChannelFields({
+      ...validChannel,
+      title: 42 as unknown as string,
+    })
+    expect(errors).toContainEqual({ field: 'title', message: 'Title is required' })
+  })
 })

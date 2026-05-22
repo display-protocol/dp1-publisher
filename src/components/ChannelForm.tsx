@@ -538,7 +538,25 @@ export default function ChannelForm({
         }
       }
 
-      const merged = mergeChannelForPatch(base, patchFields)
+      let merged = mergeChannelForPatch(base, patchFields)
+      // Same signer-declaration repair on the edit path: pasted/imported JSON
+      // may carry a non-wallet publisher.key (e.g., did:key from dp1-cli)
+      // through the merge. Reconcile against the connected wallet before
+      // validation + signing so the PATCH posts a payload whose declared
+      // publisher matches the publisher-role signature.
+      const walletDID = ethereumAddressToDIDPKH(getAddress(address))
+      const ensuredEdit = ensureChannelWalletPublisher(merged, walletDID)
+      merged = ensuredEdit.channel
+      if (ensuredEdit.updated) {
+        toast({
+          title: ensuredEdit.previousKey
+            ? 'Publisher key updated'
+            : 'Publisher added',
+          description: ensuredEdit.previousKey
+            ? `Publisher key set to your connected wallet (was ${ensuredEdit.previousKey.slice(0, 32)}…).`
+            : 'No publisher declared after merge — using your connected wallet as publisher. Add a publisher name in the Form tab.',
+        })
+      }
       const validationErrors = validateChannelFields(merged)
       if (validationErrors.length > 0) {
         toast({

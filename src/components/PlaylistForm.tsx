@@ -725,7 +725,26 @@ export default function PlaylistForm({
       }
 
       const merged = mergePlaylistForPatch(base, patchFields)
-      const canon = extensionsEnabled ? merged : stripPlaylistExtensionFields(merged)
+      let canon = extensionsEnabled ? merged : stripPlaylistExtensionFields(merged)
+      // Same signer-declaration repair applies to edits: when JSON imported
+      // from an externally-authored playlist (e.g., signed under did:key via
+      // dp1-cli) flows into a PATCH, the merged curators[] may still not
+      // declare the connected wallet. Ensure it does before signing.
+      if (extensionsEnabled) {
+        const walletDID = ethereumAddressToDIDPKH(getAddress(address))
+        const ensured = ensurePlaylistWalletCurator(canon, walletDID)
+        canon = ensured.playlist
+        if (ensured.injected) {
+          toast({
+            title:
+              ensured.previousCount === 0 ? 'Curator auto-added' : 'Wallet added as curator',
+            description:
+              ensured.previousCount === 0
+                ? 'Merged playlist had no curators — signing with your connected wallet as the curator.'
+                : 'Merged playlist declares other curators; appending your connected wallet so the curator-role signature verifies.',
+          })
+        }
+      }
       setIsPublishing(true)
       try {
         const signature = await signDocument(

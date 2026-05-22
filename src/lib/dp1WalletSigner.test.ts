@@ -75,7 +75,7 @@ describe('ensurePlaylistWalletCurator', () => {
     expect(r.playlist.curators?.[1].key).toBe(WALLET)
   })
 
-  it('is a no-op when the wallet is the only curator', () => {
+  it('does not inject when the wallet is the only curator', () => {
     const original = {
       ...basePlaylist,
       curators: [{ name: 'Sean', key: WALLET, url: '' }],
@@ -83,10 +83,10 @@ describe('ensurePlaylistWalletCurator', () => {
     const r = ensurePlaylistWalletCurator(original, WALLET)
     expect(r.injected).toBe(false)
     expect(r.previousCount).toBe(1)
-    expect(r.playlist).toBe(original)
+    expect(r.playlist.curators).toEqual([{ name: 'Sean', key: WALLET, url: '' }])
   })
 
-  it('is a no-op when the wallet is already present alongside others', () => {
+  it('does not inject when the wallet is already present alongside others', () => {
     const original = {
       ...basePlaylist,
       curators: [
@@ -97,7 +97,33 @@ describe('ensurePlaylistWalletCurator', () => {
     const r = ensurePlaylistWalletCurator(original, WALLET)
     expect(r.injected).toBe(false)
     expect(r.previousCount).toBe(2)
-    expect(r.playlist).toBe(original)
+    expect(r.playlist.curators).toEqual([
+      { name: 'NODE', key: DID_KEY, url: '' },
+      { name: 'Sean', key: WALLET, url: '' },
+    ])
+  })
+
+  // Regression: bot review found that `{ key: WALLET }` without name was
+  // returned as-is, then entityWire emitted name: undefined which JSON.stringify
+  // drops — contradicting the wire contract that name is always emitted.
+  it('defaults missing name to empty string on preserved wallet entry', () => {
+    const playlist = {
+      ...basePlaylist,
+      curators: [{ key: WALLET } as unknown as Entity],
+    }
+    const r = ensurePlaylistWalletCurator(playlist, WALLET)
+    expect(r.injected).toBe(false)
+    expect(r.playlist.curators).toEqual([{ name: '', key: WALLET, url: undefined }])
+  })
+
+  it('coerces non-string name to empty string on preserved wallet entry', () => {
+    const playlist = {
+      ...basePlaylist,
+      curators: [{ name: 123, key: WALLET } as unknown as Entity],
+    }
+    const r = ensurePlaylistWalletCurator(playlist, WALLET)
+    expect(r.injected).toBe(false)
+    expect(r.playlist.curators?.[0].name).toBe('')
   })
 
   it('does not mutate the input playlist', () => {

@@ -29,13 +29,34 @@ export interface CuratorEnsureResult {
  *
  * No-op when the wallet is already declared (idempotent on re-imports).
  */
-function isValidCurator(c: unknown): c is Entity {
+/**
+ * True when the value looks like a curator with a non-empty string `key`.
+ * Used as a runtime filter at the JSON boundary, since `parsePlaylistJson`
+ * doesn't type-check `curators[]`.
+ */
+function hasValidKey(c: unknown): c is { key: string } {
   return (
     !!c &&
     typeof c === 'object' &&
     typeof (c as { key?: unknown }).key === 'string' &&
-    ((c as Entity).key as string).length > 0
+    ((c as { key: string }).key as string).length > 0
   )
+}
+
+/**
+ * Normalize a curator-like value to the wire shape `{ name, key, url? }`:
+ * defaults missing or non-string `name` to `''` so the entity wire layer
+ * never emits `name: undefined` (which JSON.stringify drops, contradicting
+ * the wire contract that `name` is always emitted). Defaults non-string
+ * `url` to undefined.
+ */
+function normalizeCurator(c: unknown): Entity {
+  const o = c as { name?: unknown; key?: unknown; url?: unknown }
+  return {
+    name: typeof o.name === 'string' ? o.name : '',
+    key: o.key as string, // hasValidKey guarantees key is a string
+    url: typeof o.url === 'string' ? o.url : undefined,
+  }
 }
 
 export function ensurePlaylistWalletCurator(
@@ -44,25 +65,17 @@ export function ensurePlaylistWalletCurator(
 ): CuratorEnsureResult {
   // Defensive: `parsePlaylistJson` only validates `title` and `items`, so an
   // imported playlist's `curators` can be any shape — object, null, array
-  // with nulls, etc. Coerce to a clean Entity[] up front so the helper
-  // (and downstream signing) can't crash on garbage from the JSON boundary.
-  const rawCurators = playlist.curators
-  const isWellFormedArray =
-    Array.isArray(rawCurators) && rawCurators.every(isValidCurator)
-  const validCurators: Entity[] = Array.isArray(rawCurators)
-    ? rawCurators.filter(isValidCurator)
-    : []
+  // with nulls, entries missing `name`, etc. Coerce to a clean Entity[] up
+  // front so the helper and downstream signing can't crash on garbage from
+  // the JSON boundary, AND so preserved entries are normalized (no
+  // `name: undefined` slipping into the wire payload).
+  const rawArray: unknown[] = Array.isArray(playlist.curators) ? playlist.curators : []
+  const validCurators: Entity[] = rawArray.filter(hasValidKey).map(normalizeCurator)
 
   const previousCount = validCurators.length
   const alreadyDeclared = validCurators.some((c) => c.key === walletDID)
 
-  if (alreadyDeclared && isWellFormedArray) {
-    return { playlist, injected: false, previousCount }
-  }
-
   if (alreadyDeclared) {
-    // Wallet already declared but curators[] had garbage entries — return
-    // a cleaned playlist with only the valid curators.
     return {
       playlist: { ...playlist, curators: validCurators },
       injected: false,

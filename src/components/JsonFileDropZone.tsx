@@ -3,6 +3,7 @@ import { Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/hooks/use-toast'
+import { validateJsonFile } from '@/lib/jsonFileValidation'
 
 interface Props {
   value: string
@@ -18,8 +19,13 @@ interface Props {
  * - "Upload .json" button (opens a native file picker)
  * - drag-and-drop a JSON file onto the textarea
  *
- * Both paths feed file contents through `onChange` exactly like a paste, so
- * existing parse / form-sync / publish logic doesn't need to know about uploads.
+ * Both paths share one `loadFile` entry point which:
+ * 1. Validates the file before reading (the drop path bypasses the picker's
+ *    `accept` attribute, and `accept` is advisory even for the picker).
+ * 2. Guards against stale reads — if a second file is selected while the
+ *    first is still reading, only the latest read is applied. Otherwise an
+ *    earlier-started, later-resolving read could overwrite the user's
+ *    subsequent choice and (on a publish path) sign the wrong document.
  */
 export default function JsonFileDropZone({
   value,
@@ -28,18 +34,35 @@ export default function JsonFileDropZone({
   placeholder = 'Drop a .json file here or paste DP-1 JSON…',
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const loadTokenRef = useRef(0)
   const [isDragging, setIsDragging] = useState(false)
   const { toast } = useToast()
 
   const loadFile = async (file: File) => {
+    const myToken = ++loadTokenRef.current
+
+    const validation = validateJsonFile(file)
+    if (!validation.ok) {
+      toast({
+        title: 'Invalid file',
+        description: validation.reason,
+        variant: 'destructive',
+      })
+      return
+    }
+
     try {
       const text = await file.text()
+      // Stale-read guard: a later load may have superseded this one while
+      // we were reading. Drop our result if it has.
+      if (myToken !== loadTokenRef.current) return
       onChange(text)
       toast({
         title: 'Loaded',
         description: `${file.name} · ${(file.size / 1024).toFixed(1)} KB`,
       })
     } catch (err) {
+      if (myToken !== loadTokenRef.current) return
       toast({
         title: 'Failed to read file',
         description: err instanceof Error ? err.message : 'Unknown error',

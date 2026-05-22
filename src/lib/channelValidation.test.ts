@@ -214,4 +214,40 @@ describe('validateChannelFields', () => {
       validateChannelFields({ ...validChannel, slug: undefined, summary: '', coverImage: undefined })
     ).toEqual([])
   })
+
+  // Round-12 preemptive guard: feed reconstructs playlists as []string; a
+  // non-string entry would survive in client signed bytes but be dropped
+  // feed-side → signature mismatch on the JSON-import path.
+  it('rejects a non-string entry in playlists[]', () => {
+    const errors = validateChannelFields({
+      ...validChannel,
+      playlists: ['https://feed.example.com/p.json', 42 as unknown as string],
+    })
+    expect(errors).toContainEqual({
+      field: 'playlists[1]',
+      message: 'playlists[1] must be a string URI',
+    })
+  })
+
+  it('rejects empty-string entry in playlists[]', () => {
+    const errors = validateChannelFields({
+      ...validChannel,
+      playlists: ['https://feed.example.com/p.json', ''],
+    })
+    expect(errors).toContainEqual({
+      field: 'playlists[1]',
+      message: 'playlists[1] must be a non-empty string',
+    })
+  })
+
+  it('rejects null entry in playlists[]', () => {
+    const errors = validateChannelFields({
+      ...validChannel,
+      playlists: ['https://feed.example.com/p.json', null as unknown as string],
+    })
+    expect(errors).toContainEqual({
+      field: 'playlists[1]',
+      message: 'playlists[1] must be a string URI',
+    })
+  })
 })

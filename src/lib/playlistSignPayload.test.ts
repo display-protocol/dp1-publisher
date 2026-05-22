@@ -98,6 +98,41 @@ describe('playlistUnsignedPayloadForSigning', () => {
     expect(display.scaling).toBe('fit')
   })
 
+  // Documented intentional open dictionaries — these are typed as
+  // `Record<string, …>` in dp1.ts, so arbitrary keys are *part of the
+  // contract*. They must survive verbatim through the canonicalizer.
+  it('preserves arbitrary keys inside intentional open dictionaries (override, userOverrides, headers)', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      items: [
+        {
+          source: 'https://example.com/v.m3u8',
+          override: { customRendererKey: 'value', anotherKey: 42 },
+          display: {
+            scaling: 'fit',
+            userOverrides: { background: true, scaling: false },
+          },
+        },
+      ],
+      dynamicQuery: {
+        profile: 'https-json-v1',
+        endpoint: 'https://example.com/api',
+        headers: { Authorization: 'Bearer token', 'X-Custom': 'value' },
+        responseMapping: { itemsPath: 'data', itemSchema: 'dp1/1.1' },
+      },
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const item = (payload.items as Array<Record<string, unknown>>)[0]
+    // override: open dictionary → arbitrary keys survive verbatim
+    expect(item.override).toEqual({ customRendererKey: 'value', anotherKey: 42 })
+    // userOverrides: open dictionary inside DisplayPrefs → arbitrary keys survive
+    const display = item.display as Record<string, unknown>
+    expect(display.userOverrides).toEqual({ background: true, scaling: false })
+    // headers: open dictionary inside DynamicQuery → arbitrary keys survive
+    const dq = payload.dynamicQuery as Record<string, unknown>
+    expect(dq.headers).toEqual({ Authorization: 'Bearer token', 'X-Custom': 'value' })
+  })
+
   it('drops unknown fields inside dynamicQuery and dynamicQuery.responseMapping', () => {
     const playlist = {
       ...minimalPlaylist,

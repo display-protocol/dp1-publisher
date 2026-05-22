@@ -682,11 +682,7 @@ export default function PlaylistForm({
     // Step 3: sign and POST/PATCH.
     setIsPublishing(true)
     try {
-      const signature = await signDocument(
-        playlistUnsignedPayloadForSigning(prepared.signedPayload),
-        walletClient,
-        'curator'
-      )
+      const signature = await signDocument(prepared.signedBytes, walletClient, 'curator')
       const body = { ...prepared.wireBody, signatures: [signature] }
 
       if (isEdit && editId) {

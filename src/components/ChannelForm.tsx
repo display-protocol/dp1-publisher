@@ -531,11 +531,7 @@ export default function ChannelForm({
     // Step 3: sign and POST/PATCH.
     setIsPublishing(true)
     try {
-      const signature = await signDocument(
-        channelUnsignedPayloadForSigning(prepared.signedPayload),
-        walletClient,
-        'publisher'
-      )
+      const signature = await signDocument(prepared.signedBytes, walletClient, 'publisher')
       const body = { ...prepared.wireBody, signatures: [signature] }
 
       if (isEdit && editId) {

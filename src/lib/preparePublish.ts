@@ -22,6 +22,8 @@ import {
   ensurePlaylistWalletCurator,
 } from '@/lib/dp1WalletSigner'
 import { validateChannelFields } from '@/lib/channelValidation'
+import { playlistUnsignedPayloadForSigning } from '@/lib/playlistSignPayload'
+import { channelUnsignedPayloadForSigning } from '@/lib/channelSignPayload'
 
 /** Shape compatible with the `useToast` hook's `toast({...})` call. */
 export interface ToastInput {
@@ -31,9 +33,26 @@ export interface ToastInput {
 }
 
 export interface PreparedDocument<T> {
-  /** What to canonicalize and pass to signDocument. */
+  /**
+   * Typed canonical document (after merge/strip/ensure). Mostly informational
+   * for callers; the source of truth for both signing and wire is `signedBytes`.
+   */
   signedPayload: T
-  /** What to POST/PATCH (caller adds `signatures` after signing). */
+  /**
+   * The exact canonical JSON object that gets hashed for the signature
+   * (output of `*UnsignedPayloadForSigning`). Pass directly to `signDocument`.
+   * Always includes `id` and `created`.
+   */
+  signedBytes: Record<string, unknown>
+  /**
+   * What to POST/PATCH (caller adds `signatures`).
+   *   - CREATE: equals `signedBytes` exactly — the POST body matches the
+   *     bytes the feed will hash to verify the signature.
+   *   - EDIT (PATCH): `signedBytes` minus `id` (URL path) and `created`
+   *     (immutable). These are the only documented PATCH omissions.
+   * Derived from `signedBytes`, so it cannot drift from what was signed
+   * except in the documented ways above.
+   */
   wireBody: Record<string, unknown>
   /** Informational toasts the caller should show (e.g., "Wallet added as curator"). */
   toasts: ToastInput[]
@@ -103,38 +122,19 @@ export function preparePlaylistForPublish(
   }
   if (validationErrors.length) return { validationErrors }
 
-  // Step 5: build wire body from the canonical document. By construction this
-  // matches the signed payload — they're computed from the same source.
-  //
-  // Create vs edit body shaping:
-  //   - CREATE (no `base`): include `id` and `created`. The POST body must
-  //     equal the signed payload (plus signatures), so the feed can verify
-  //     the signature against the same bytes it's about to persist.
-  //   - EDIT (PATCH, `base` provided): omit `id` (in the URL path) and
-  //     `created` (immutable metadata). Matches dp1-feed-v2's PATCH contract.
-  const isCreate = base === undefined
-  const wireBody: Record<string, unknown> = {
-    dpVersion: canonical.dpVersion,
-    title: canonical.title,
-    slug: canonical.slug ?? '',
-    items: canonical.items,
-  }
-  if (isCreate) {
-    if (canonical.id !== undefined) wireBody.id = canonical.id
-    if (canonical.created !== undefined) wireBody.created = canonical.created
-  }
-  if (canonical.defaults !== undefined) wireBody.defaults = canonical.defaults
-  if (extensionsEnabled) {
-    if (canonical.curators && canonical.curators.length > 0) {
-      wireBody.curators = canonical.curators
-    }
-    if (canonical.summary !== undefined) wireBody.summary = canonical.summary
-    if (canonical.coverImage !== undefined) wireBody.coverImage = canonical.coverImage
-    if (canonical.dynamicQuery !== undefined) wireBody.dynamicQuery = canonical.dynamicQuery
-    if (canonical.note !== undefined) wireBody.note = canonical.note
+  // Step 5: canonicalize ONCE. `playlistUnsignedPayloadForSigning` is the
+  // single source of truth for the exact bytes the feed will hash. wireBody
+  // is derived from it, so it can't drift from what was signed except in the
+  // intentional PATCH omissions below.
+  const signedBytes = playlistUnsignedPayloadForSigning(canonical)
+  const wireBody: Record<string, unknown> = { ...signedBytes }
+  if (base !== undefined) {
+    // PATCH: id is in the URL path, created is immutable.
+    delete wireBody.id
+    delete wireBody.created
   }
 
-  return { signedPayload: canonical, wireBody, toasts }
+  return { signedPayload: canonical, signedBytes, wireBody, toasts }
 }
 
 // ----------------------------------------------------------------------------
@@ -177,29 +177,28 @@ export function prepareChannelForPublish(
     return { validationErrors: fieldErrors.map((e) => e.message) }
   }
 
-  // Step 4: build wire body from the merged document (the same source the
-  // signed payload is built from).
-  //
-  // Create vs edit body shaping (same rationale as playlist):
-  //   - CREATE: include `id` and `created` so the POST body equals the
-  //     signed payload + signatures (feed verifies signature over the same
-  //     bytes it persists).
-  //   - EDIT (PATCH): omit them (id is in the URL, created is immutable).
-  const isCreate = base === undefined
-  const wireBody: Record<string, unknown> = {
-    title: merged.title,
-    slug: merged.slug,
-    version: merged.version,
-    playlists: merged.playlists,
-    publisher: merged.publisher,
+  // Step 4: canonicalize ONCE. `channelUnsignedPayloadForSigning` is the
+  // single source of truth for the exact bytes the feed will hash (slug
+  // auto-generation, default version, entity URL normalization, blank
+  // stripping all live there). wireBody is derived from it, so it cannot
+  // drift from what was signed except in the intentional PATCH omissions
+  // below.
+  let signedBytes: Record<string, unknown>
+  try {
+    signedBytes = channelUnsignedPayloadForSigning(merged)
+  } catch (e) {
+    return {
+      validationErrors: [
+        e instanceof Error ? e.message : 'Channel could not be canonicalized for signing.',
+      ],
+    }
   }
-  if (isCreate) {
-    if (merged.id !== undefined) wireBody.id = merged.id
-    if (merged.created !== undefined) wireBody.created = merged.created
+  const wireBody: Record<string, unknown> = { ...signedBytes }
+  if (base !== undefined) {
+    // PATCH: id is in the URL path, created is immutable.
+    delete wireBody.id
+    delete wireBody.created
   }
-  if (merged.curators !== undefined) wireBody.curators = merged.curators
-  if (merged.summary !== undefined) wireBody.summary = merged.summary
-  if (merged.coverImage !== undefined) wireBody.coverImage = merged.coverImage
 
-  return { signedPayload: merged, wireBody, toasts }
+  return { signedPayload: merged, signedBytes, wireBody, toasts }
 }

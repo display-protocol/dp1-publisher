@@ -36,20 +36,25 @@ function ok<T>(r: PrepareResult<T>): asserts r is Extract<PrepareResult<T>, { si
 
 const basePlaylist: Playlist = {
   dpVersion: '1.1.0',
+  id: 'pl-base-0000',
+  created: '2026-05-22T00:00:00Z',
   title: 'Season 1',
   items: [{ source: 'https://example.com/v.m3u8' }],
 }
 
 describe('preparePlaylistForPublish — create', () => {
-  it('injects wallet curator when missing (extensions on) and wire matches signed', () => {
+  it('injects wallet curator when missing (extensions on) and wire matches signed bytes', () => {
     const r = preparePlaylistForPublish({
       rawDocument: basePlaylist,
       walletDID: WALLET,
       extensionsEnabled: true,
     })
     ok<Playlist>(r)
+    // signedPayload (typed) retains empty url; signedBytes (canonical) drops it.
     expect(r.signedPayload.curators).toEqual([{ name: '', key: WALLET, url: '' }])
-    expect(r.wireBody.curators).toEqual(r.signedPayload.curators)
+    expect(r.signedBytes.curators).toEqual([{ name: '', key: WALLET }])
+    // The critical invariant: what gets POSTed exactly equals what was hashed.
+    expect(r.wireBody).toEqual(r.signedBytes)
     expect(r.toasts).toHaveLength(1)
     expect(r.toasts[0].title).toMatch(/curator/i)
   })
@@ -68,7 +73,12 @@ describe('preparePlaylistForPublish — create', () => {
       { name: 'NODE', key: DID_KEY, url: 'https://node.art' },
       { name: '', key: WALLET, url: '' },
     ])
-    expect(r.wireBody.curators).toEqual(r.signedPayload.curators)
+    // Canonical form drops empty url from the appended wallet entry.
+    expect(r.signedBytes.curators).toEqual([
+      { name: 'NODE', key: DID_KEY, url: 'https://node.art' },
+      { name: '', key: WALLET },
+    ])
+    expect(r.wireBody).toEqual(r.signedBytes)
   })
 
   it('strips extension fields when extensions are off', () => {
@@ -101,32 +111,25 @@ describe('preparePlaylistForPublish — create', () => {
     }
   })
 
-  // Round-8 regression guard: the consolidation lost id/created from
-  // wireBody on create, so the POST body diverged from the signed payload.
-  // Now wireBody must include id and created on create — and the wire body
-  // (modulo signatures) must equal the signed payload.
-  it('CREATE wire body includes id and created and equals signed payload (minus signatures)', () => {
-    const playlist: Playlist = {
-      ...basePlaylist,
-      id: 'pl-abc-123',
-      created: '2026-05-22T08:30:00Z',
-    }
+  // Round-9 regression guards: wireBody is now derived from signedBytes (the
+  // canonical hashing target), so create-mode wireBody MUST equal signedBytes
+  // exactly. The previous round-8 fix added id/created but didn't catch the
+  // parallel canonicalization in slug/version/blanks/entity-url paths.
+  it('CREATE wireBody equals signedBytes exactly (full canonical parity)', () => {
     const r = preparePlaylistForPublish({
-      rawDocument: playlist,
+      rawDocument: {
+        ...basePlaylist,
+        id: 'pl-abc-123',
+        created: '2026-05-22T08:30:00Z',
+      },
       walletDID: WALLET,
       extensionsEnabled: true,
     })
     ok<Playlist>(r)
-    expect(r.wireBody.id).toBe('pl-abc-123')
-    expect(r.wireBody.created).toBe('2026-05-22T08:30:00Z')
-    // The wire body shape should mirror the signed payload (no signatures yet).
-    expect(r.wireBody.id).toBe(r.signedPayload.id)
-    expect(r.wireBody.created).toBe(r.signedPayload.created)
-    expect(r.wireBody.title).toBe(r.signedPayload.title)
-    expect(r.wireBody.items).toBe(r.signedPayload.items)
+    expect(r.wireBody).toEqual(r.signedBytes)
   })
 
-  it('EDIT wire body omits id and created (PATCH semantics)', () => {
+  it('EDIT wireBody equals signedBytes minus id+created (only documented omissions)', () => {
     const existing: Playlist = {
       ...basePlaylist,
       id: 'pl-abc-123',
@@ -139,12 +142,61 @@ describe('preparePlaylistForPublish — create', () => {
       extensionsEnabled: true,
     })
     ok<Playlist>(r)
-    // Signed payload still carries id and created (used for signing).
-    expect(r.signedPayload.id).toBe('pl-abc-123')
-    // PATCH body omits them.
-    expect(r.wireBody.id).toBeUndefined()
-    expect(r.wireBody.created).toBeUndefined()
-    expect(r.wireBody.title).toBe('edited')
+    expect(r.signedBytes.id).toBe('pl-abc-123')
+    const { id: _id, created: _c, ...signedMinusOmissions } = r.signedBytes
+    expect(r.wireBody).toEqual(signedMinusOmissions)
+  })
+
+  it('preserves unknown top-level fields imported from JSON (or omits them in both signed AND wire)', () => {
+    // The previous wireBody construction only emitted known fields, so an
+    // unknown imported top-level key would survive in the signed payload but
+    // not the wire body — drift. With wireBody derived from signedBytes, the
+    // two paths agree by construction (whether the canonicalizer keeps it
+    // or drops it, both see the same shape).
+    const rawWithUnknown = {
+      ...basePlaylist,
+      id: 'pl-1',
+      created: '2026-05-22T00:00:00Z',
+      extraField: 'should not cause drift',
+    } as unknown as Playlist
+    const r = preparePlaylistForPublish({
+      rawDocument: rawWithUnknown,
+      walletDID: WALLET,
+      extensionsEnabled: true,
+    })
+    ok<Playlist>(r)
+    expect(r.wireBody).toEqual(r.signedBytes)
+  })
+
+  it('empty curators array is handled identically in signed and wire', () => {
+    const r = preparePlaylistForPublish({
+      rawDocument: {
+        ...basePlaylist,
+        id: 'pl-1',
+        created: '2026-05-22T00:00:00Z',
+        curators: [],
+      },
+      walletDID: WALLET,
+      extensionsEnabled: true,
+    })
+    ok<Playlist>(r)
+    expect(r.wireBody).toEqual(r.signedBytes)
+  })
+
+  it('blank summary / coverImage handled identically (stripped or kept) in signed and wire', () => {
+    const r = preparePlaylistForPublish({
+      rawDocument: {
+        ...basePlaylist,
+        id: 'pl-1',
+        created: '2026-05-22T00:00:00Z',
+        summary: '',
+        coverImage: '',
+      } as Playlist,
+      walletDID: WALLET,
+      extensionsEnabled: true,
+    })
+    ok<Playlist>(r)
+    expect(r.wireBody).toEqual(r.signedBytes)
   })
 })
 
@@ -171,8 +223,9 @@ describe('preparePlaylistForPublish — edit', () => {
     // Wallet appended even though merged inherited did:key curator from base.
     expect(r.signedPayload.curators?.some((c) => c.key === WALLET)).toBe(true)
     expect(r.signedPayload.curators?.some((c) => c.key === DID_KEY)).toBe(true)
-    // Body matches signed exactly.
-    expect(r.wireBody.curators).toEqual(r.signedPayload.curators)
+    // wireBody equals signedBytes minus PATCH omissions.
+    const { id: _id, created: _c, ...signedMinusOmissions } = r.signedBytes
+    expect(r.wireBody).toEqual(signedMinusOmissions)
   })
 
   it('idempotent when the merged document already declares the wallet', () => {
@@ -197,6 +250,8 @@ describe('preparePlaylistForPublish — edit', () => {
 // ----------------------------------------------------------------------------
 
 const baseChannel: Channel = {
+  id: 'ch-base-0000',
+  created: '2026-05-22T00:00:00Z',
   title: 'OCCUPY',
   slug: 'occupy',
   version: '1.0.0',
@@ -212,11 +267,11 @@ describe('prepareChannelForPublish — create', () => {
     })
     ok<Channel>(r)
     expect(r.signedPayload.publisher).toEqual(baseChannel.publisher)
-    expect(r.wireBody.publisher).toEqual(r.signedPayload.publisher)
+    expect(r.wireBody.publisher).toEqual(r.signedBytes.publisher)
     expect(r.toasts).toHaveLength(0)
   })
 
-  it('replaces did:key publisher key with wallet; wire matches signed', () => {
+  it('replaces did:key publisher key with wallet; wire matches signed bytes', () => {
     const r = prepareChannelForPublish({
       rawDocument: {
         ...baseChannel,
@@ -228,8 +283,8 @@ describe('prepareChannelForPublish — create', () => {
     expect(r.signedPayload.publisher?.key).toBe(WALLET)
     expect(r.signedPayload.publisher?.name).toBe('NODE')
     expect(r.signedPayload.publisher?.url).toBe('https://node.art')
-    // Identity invariant.
-    expect(r.wireBody.publisher).toEqual(r.signedPayload.publisher)
+    // Identity invariant: wire body equals signed bytes exactly on create.
+    expect(r.wireBody).toEqual(r.signedBytes)
   })
 
   it('returns validation errors when injected publisher has empty name', () => {
@@ -266,7 +321,11 @@ describe('prepareChannelForPublish — edit (round-6 regression guards)', () => 
     })
     ok<Channel>(r)
     expect(r.signedPayload.publisher?.key).toBe(WALLET)
-    expect(r.wireBody.publisher).toEqual(r.signedPayload.publisher)
+    // Edit-mode invariant: wire body equals signed bytes minus the documented
+    // PATCH omissions. Publisher specifically must match exactly (round-6).
+    expect(r.wireBody.publisher).toEqual(r.signedBytes.publisher)
+    const { id: _id, created: _c, ...signedMinusOmissions } = r.signedBytes
+    expect(r.wireBody).toEqual(signedMinusOmissions)
     expect(r.toasts.some((t) => /publisher/i.test(t.title))).toBe(true)
   })
 
@@ -281,23 +340,23 @@ describe('prepareChannelForPublish — edit (round-6 regression guards)', () => 
     expect(r.toasts).toHaveLength(0)
   })
 
-  it('CREATE wire body includes id and created (round-8 regression guard)', () => {
-    const channel: Channel = {
-      ...baseChannel,
-      id: 'ch-xyz-456',
-      created: '2026-05-22T08:30:00Z',
-    }
+  // Round-9 regression guards: full canonical parity. wireBody must equal
+  // signedBytes exactly (on create) or signedBytes minus id+created (on
+  // edit), with no parallel canonicalization paths producing drift.
+  it('CREATE wireBody equals signedBytes exactly (full canonical parity)', () => {
     const r = prepareChannelForPublish({
-      rawDocument: channel,
+      rawDocument: {
+        ...baseChannel,
+        id: 'ch-xyz-456',
+        created: '2026-05-22T08:30:00Z',
+      },
       walletDID: WALLET,
     })
     ok<Channel>(r)
-    expect(r.wireBody.id).toBe('ch-xyz-456')
-    expect(r.wireBody.created).toBe('2026-05-22T08:30:00Z')
-    expect(r.wireBody.publisher).toEqual(r.signedPayload.publisher)
+    expect(r.wireBody).toEqual(r.signedBytes)
   })
 
-  it('EDIT wire body omits id and created', () => {
+  it('EDIT wireBody equals signedBytes minus id+created (only documented omissions)', () => {
     const existing: Channel = {
       ...baseChannel,
       id: 'ch-xyz-456',
@@ -309,10 +368,92 @@ describe('prepareChannelForPublish — edit (round-6 regression guards)', () => 
       base: existing,
     })
     ok<Channel>(r)
-    expect(r.signedPayload.id).toBe('ch-xyz-456')
-    expect(r.wireBody.id).toBeUndefined()
-    expect(r.wireBody.created).toBeUndefined()
-    expect(r.wireBody.title).toBe('edited')
+    expect(r.signedBytes.id).toBe('ch-xyz-456')
+    const { id: _id, created: _c, ...signedMinusOmissions } = r.signedBytes
+    expect(r.wireBody).toEqual(signedMinusOmissions)
+  })
+
+  // Channel-specific cases the reviewer explicitly named. Each one was a
+  // potential drift point where the previous hand-built wireBody could
+  // diverge from what the canonicalizer produced.
+  it('channel CREATE with no slug — auto-generated slug appears identically in signed and wire', () => {
+    const r = prepareChannelForPublish({
+      rawDocument: {
+        ...baseChannel,
+        slug: undefined,
+        id: 'ch-1',
+        created: '2026-05-22T00:00:00Z',
+      },
+      walletDID: WALLET,
+    })
+    ok<Channel>(r)
+    expect(r.wireBody).toEqual(r.signedBytes)
+    // And the auto-generated slug is actually present (not undefined).
+    expect(typeof r.wireBody.slug).toBe('string')
+    expect((r.wireBody.slug as string).length).toBeGreaterThan(0)
+  })
+
+  it('channel CREATE with blank version — defaulted version appears identically in signed and wire', () => {
+    const r = prepareChannelForPublish({
+      rawDocument: {
+        ...baseChannel,
+        version: '',
+        id: 'ch-1',
+        created: '2026-05-22T00:00:00Z',
+      },
+      walletDID: WALLET,
+    })
+    ok<Channel>(r)
+    expect(r.wireBody).toEqual(r.signedBytes)
+    expect(r.wireBody.version).toBe('1.0.0')
+  })
+
+  it('channel CREATE with blank summary/coverImage — stripped identically in signed and wire', () => {
+    const r = prepareChannelForPublish({
+      rawDocument: {
+        ...baseChannel,
+        summary: '',
+        coverImage: '',
+        id: 'ch-1',
+        created: '2026-05-22T00:00:00Z',
+      },
+      walletDID: WALLET,
+    })
+    ok<Channel>(r)
+    expect(r.wireBody).toEqual(r.signedBytes)
+    expect(r.wireBody.summary).toBeUndefined()
+    expect(r.wireBody.coverImage).toBeUndefined()
+  })
+
+  it('channel CREATE with empty entity url — normalized identically in signed and wire', () => {
+    const r = prepareChannelForPublish({
+      rawDocument: {
+        ...baseChannel,
+        publisher: { name: 'NODE', key: WALLET, url: '' },
+        id: 'ch-1',
+        created: '2026-05-22T00:00:00Z',
+      },
+      walletDID: WALLET,
+    })
+    ok<Channel>(r)
+    expect(r.wireBody).toEqual(r.signedBytes)
+    // entityWire drops empty url
+    const pub = r.wireBody.publisher as { name: string; key: string; url?: string }
+    expect(pub.url).toBeUndefined()
+  })
+
+  it('channel CREATE with empty curators array — handled identically in signed and wire', () => {
+    const r = prepareChannelForPublish({
+      rawDocument: {
+        ...baseChannel,
+        curators: [],
+        id: 'ch-1',
+        created: '2026-05-22T00:00:00Z',
+      },
+      walletDID: WALLET,
+    })
+    ok<Channel>(r)
+    expect(r.wireBody).toEqual(r.signedBytes)
   })
 
   it('does not throw on malformed pasted publisher (non-string key) and reports validation', () => {
@@ -332,6 +473,6 @@ describe('prepareChannelForPublish — edit (round-6 regression guards)', () => 
     // undefined would make the toast pick the "Publisher added" branch.
     ok<Channel>(r)
     expect(r.signedPayload.publisher?.key).toBe(WALLET)
-    expect(r.wireBody.publisher).toEqual(r.signedPayload.publisher)
+    expect(r.wireBody.publisher).toEqual(r.signedBytes.publisher)
   })
 })

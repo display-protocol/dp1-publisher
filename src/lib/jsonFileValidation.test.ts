@@ -49,6 +49,18 @@ describe('validateJsonFile', () => {
     expect(r.reason).toMatch(/\.json/i)
   })
 
+  it('rejects a non-.json file with text/plain MIME (regression: notes.txt sneaking through)', () => {
+    const r = validateJsonFile(makeFile('notes.txt', 'text/plain'))
+    expect(r.ok).toBe(false)
+    expect(r.reason).toMatch(/\.json/i)
+  })
+
+  it('rejects an extension-less file with empty MIME (regression: ambiguous drops)', () => {
+    const r = validateJsonFile(makeFile('payload', ''))
+    expect(r.ok).toBe(false)
+    expect(r.reason).toMatch(/\.json/i)
+  })
+
   it('rejects a file over the size cap', () => {
     const huge = makeFile('big.json', 'application/json', MAX_JSON_FILE_BYTES + 1)
     const r = validateJsonFile(huge)

@@ -19,9 +19,14 @@ export interface JsonFileValidation {
  * Accept the file when:
  * - size is within the cap, AND
  * - filename ends in `.json` (case-insensitive), OR
- * - MIME hints JSON / plain text (browsers occasionally report an empty
- *   `file.type` on drop; we treat empty as inconclusive and fall back to the
- *   name check rather than rejecting).
+ * - MIME explicitly contains "json" (e.g., application/json).
+ *
+ * Ambiguous MIME (empty, `text/plain`, anything else) is **only** accepted
+ * when the filename ends in `.json`. This blocks `notes.txt`-style files
+ * with a `text/*` MIME and extension-less files with empty MIME from
+ * landing in the JSON editor before downstream parse validation runs.
+ * Drop sources that report empty `file.type` still work as long as the
+ * filename has a `.json` extension.
  */
 export function validateJsonFile(file: File): JsonFileValidation {
   if (file.size > MAX_JSON_FILE_BYTES) {
@@ -30,9 +35,8 @@ export function validateJsonFile(file: File): JsonFileValidation {
     return { ok: false, reason: `File is ${mb} MB — over the ${cap} MB limit.` }
   }
   const nameOk = /\.json$/i.test(file.name)
-  const type = (file.type || '').toLowerCase()
-  const typeOk = type === '' || type.includes('json') || type.startsWith('text/')
-  if (!nameOk && !typeOk) {
+  const mimeIsJson = (file.type || '').toLowerCase().includes('json')
+  if (!nameOk && !mimeIsJson) {
     const got = file.name || file.type || 'unknown'
     return { ok: false, reason: `Expected a .json file (got ${got}).` }
   }

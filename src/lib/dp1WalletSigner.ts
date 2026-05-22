@@ -8,7 +8,7 @@
  * match the on-the-wire signature to a declared identity.
  */
 
-import type { Channel, Playlist } from '@/types/dp1'
+import type { Channel, Entity, Playlist } from '@/types/dp1'
 
 export interface CuratorEnsureResult {
   playlist: Playlist
@@ -29,25 +29,51 @@ export interface CuratorEnsureResult {
  *
  * No-op when the wallet is already declared (idempotent on re-imports).
  */
+function isValidCurator(c: unknown): c is Entity {
+  return (
+    !!c &&
+    typeof c === 'object' &&
+    typeof (c as { key?: unknown }).key === 'string' &&
+    ((c as Entity).key as string).length > 0
+  )
+}
+
 export function ensurePlaylistWalletCurator(
   playlist: Playlist,
   walletDID: string
 ): CuratorEnsureResult {
-  const previousCount = playlist.curators?.length ?? 0
-  const alreadyDeclared =
-    playlist.curators?.some((c) => c.key === walletDID) ?? false
+  // Defensive: `parsePlaylistJson` only validates `title` and `items`, so an
+  // imported playlist's `curators` can be any shape — object, null, array
+  // with nulls, etc. Coerce to a clean Entity[] up front so the helper
+  // (and downstream signing) can't crash on garbage from the JSON boundary.
+  const rawCurators = playlist.curators
+  const isWellFormedArray =
+    Array.isArray(rawCurators) && rawCurators.every(isValidCurator)
+  const validCurators: Entity[] = Array.isArray(rawCurators)
+    ? rawCurators.filter(isValidCurator)
+    : []
+
+  const previousCount = validCurators.length
+  const alreadyDeclared = validCurators.some((c) => c.key === walletDID)
+
+  if (alreadyDeclared && isWellFormedArray) {
+    return { playlist, injected: false, previousCount }
+  }
 
   if (alreadyDeclared) {
-    return { playlist, injected: false, previousCount }
+    // Wallet already declared but curators[] had garbage entries — return
+    // a cleaned playlist with only the valid curators.
+    return {
+      playlist: { ...playlist, curators: validCurators },
+      injected: false,
+      previousCount,
+    }
   }
 
   return {
     playlist: {
       ...playlist,
-      curators: [
-        ...(playlist.curators ?? []),
-        { name: '', key: walletDID, url: '' },
-      ],
+      curators: [...validCurators, { name: '', key: walletDID, url: '' }],
     },
     injected: true,
     previousCount,

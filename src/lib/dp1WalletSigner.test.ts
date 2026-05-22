@@ -13,7 +13,7 @@ import {
   ensureChannelWalletPublisher,
   ensurePlaylistWalletCurator,
 } from '@/lib/dp1WalletSigner'
-import type { Channel, Playlist } from '@/types/dp1'
+import type { Channel, Entity, Playlist } from '@/types/dp1'
 
 const WALLET = 'did:pkh:eip155:1:0xabcdef0123456789abcdef0123456789abcdef01'
 const DID_KEY = 'did:key:z6MkExampleDidKeyFromDp1Cli'
@@ -108,6 +108,80 @@ describe('ensurePlaylistWalletCurator', () => {
     const snapshot = JSON.stringify(input)
     ensurePlaylistWalletCurator(input, WALLET)
     expect(JSON.stringify(input)).toBe(snapshot)
+  })
+
+  // Defensiveness: parsePlaylistJson only validates `title` and `items`, so
+  // imported `curators` can be any shape. These regression tests guard the
+  // JSON-tab create path against signing on garbage curator data.
+
+  it('treats curators-as-object as no curators and injects wallet', () => {
+    const playlist = {
+      ...basePlaylist,
+      curators: {} as unknown as Entity[],
+    }
+    const r = ensurePlaylistWalletCurator(playlist, WALLET)
+    expect(r.injected).toBe(true)
+    expect(r.previousCount).toBe(0)
+    expect(r.playlist.curators).toEqual([{ name: '', key: WALLET, url: '' }])
+  })
+
+  it('treats curators-as-null as no curators and injects wallet', () => {
+    const playlist = {
+      ...basePlaylist,
+      curators: null as unknown as Entity[],
+    }
+    const r = ensurePlaylistWalletCurator(playlist, WALLET)
+    expect(r.injected).toBe(true)
+    expect(r.playlist.curators).toEqual([{ name: '', key: WALLET, url: '' }])
+  })
+
+  it('drops null entries from a curators array and appends wallet', () => {
+    const playlist = {
+      ...basePlaylist,
+      curators: [
+        null,
+        { name: 'NODE', key: DID_KEY, url: '' },
+        undefined,
+      ] as unknown as Entity[],
+    }
+    const r = ensurePlaylistWalletCurator(playlist, WALLET)
+    expect(r.injected).toBe(true)
+    expect(r.previousCount).toBe(1)
+    expect(r.playlist.curators).toEqual([
+      { name: 'NODE', key: DID_KEY, url: '' },
+      { name: '', key: WALLET, url: '' },
+    ])
+  })
+
+  it('drops entries missing key and appends wallet', () => {
+    const playlist = {
+      ...basePlaylist,
+      curators: [
+        { name: 'Anonymous', url: '' } as unknown as Entity,
+        { name: 'NODE', key: DID_KEY, url: '' },
+      ],
+    }
+    const r = ensurePlaylistWalletCurator(playlist, WALLET)
+    expect(r.injected).toBe(true)
+    expect(r.previousCount).toBe(1)
+    expect(r.playlist.curators).toHaveLength(2)
+    expect(r.playlist.curators?.[0].key).toBe(DID_KEY)
+    expect(r.playlist.curators?.[1].key).toBe(WALLET)
+  })
+
+  it('cleans garbage entries even when wallet is already declared', () => {
+    const playlist = {
+      ...basePlaylist,
+      curators: [
+        null,
+        { name: 'Sean', key: WALLET, url: '' },
+        { invalid: true } as unknown as Entity,
+      ] as unknown as Entity[],
+    }
+    const r = ensurePlaylistWalletCurator(playlist, WALLET)
+    expect(r.injected).toBe(false)
+    expect(r.previousCount).toBe(1)
+    expect(r.playlist.curators).toEqual([{ name: 'Sean', key: WALLET, url: '' }])
   })
 })
 

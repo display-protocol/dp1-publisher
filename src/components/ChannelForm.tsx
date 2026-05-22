@@ -28,6 +28,7 @@ import {
 import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription'
 import JsonFileDropZone from './JsonFileDropZone'
 import { ensureChannelWalletPublisher } from '@/lib/dp1WalletSigner'
+import { validateChannelFields } from '@/lib/channelValidation'
 import type { Channel, Entity } from '@/types/dp1'
 import CuratorList from './CuratorList'
 
@@ -37,72 +38,6 @@ interface PlaylistURIStatus {
   reachable?: boolean
   reason?: string
   checking: boolean
-}
-
-interface ValidationError {
-  field: string
-  message: string
-}
-
-function validateChannelFields(channel: Partial<Channel>): ValidationError[] {
-  const errors: ValidationError[] = []
-  
-  // Title validation
-  if (!channel.title || channel.title.trim().length === 0) {
-    errors.push({ field: 'title', message: 'Title is required' })
-  } else if (channel.title.length > 200) {
-    errors.push({ field: 'title', message: 'Title must be 200 characters or less' })
-  }
-  
-  // Slug validation (lowercase, hyphens only)
-  if (channel.slug && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(channel.slug)) {
-    errors.push({ field: 'slug', message: 'Slug must contain only lowercase letters, numbers, and hyphens' })
-  }
-  
-  // Summary validation
-  if (channel.summary && channel.summary.length > 2000) {
-    errors.push({ field: 'summary', message: 'Summary must be 2000 characters or less' })
-  }
-  
-  // Cover image validation (basic URI format)
-  if (channel.coverImage && !/^(https?|ipfs|ar):\/\/.+/.test(channel.coverImage)) {
-    errors.push({ field: 'coverImage', message: 'Cover image must be a valid URI (https://, ipfs://, or ar://)' })
-  }
-  
-  // Playlists validation
-  if (!channel.playlists || channel.playlists.length === 0) {
-    errors.push({ field: 'playlists', message: 'At least one playlist URI is required' })
-  }
-  
-  // Publisher validation
-  if (channel.publisher) {
-    if (!channel.publisher.name || channel.publisher.name.trim().length === 0) {
-      errors.push({ field: 'publisher.name', message: 'Publisher name is required' })
-    }
-    if (!channel.publisher.key || !/^did:[a-z]+:.+$/.test(channel.publisher.key)) {
-      errors.push({ field: 'publisher.key', message: 'Publisher key must be in DID format' })
-    }
-    if (channel.publisher.url && !/^https?:\/\/.+/.test(channel.publisher.url)) {
-      errors.push({ field: 'publisher.url', message: 'Publisher URL must be a valid HTTP(S) URL' })
-    }
-  }
-  
-  // Curators validation
-  if (channel.curators) {
-    channel.curators.forEach((curator, index) => {
-      if (!curator.name || curator.name.trim().length === 0) {
-        errors.push({ field: `curators[${index}].name`, message: `Curator ${index + 1} name is required` })
-      }
-      if (!curator.key || !/^did:[a-z]+:.+$/.test(curator.key)) {
-        errors.push({ field: `curators[${index}].key`, message: `Curator ${index + 1} key must be in DID format` })
-      }
-      if (curator.url && !/^https?:\/\/.+/.test(curator.url)) {
-        errors.push({ field: `curators[${index}].url`, message: `Curator ${index + 1} URL must be a valid HTTP(S) URL` })
-      }
-    })
-  }
-  
-  return errors
 }
 
 function parseChannelJson(text: string): { channel: Channel } | { error: string } {
@@ -690,8 +625,23 @@ export default function ChannelForm({
           title: ensured.previousKey ? 'Publisher key updated' : 'Publisher added',
           description: ensured.previousKey
             ? `Publisher key set to your connected wallet (was ${ensured.previousKey.slice(0, 32)}…).`
-            : 'No publisher declared in JSON — using your connected wallet as publisher.',
+            : 'No publisher declared in JSON — using your connected wallet as publisher. Add a publisher name in the Form tab.',
         })
+      }
+
+      // Re-run channel-field validation post-injection. The Form-tab path
+      // does this; the JSON-tab path used to skip it, which meant the auto-
+      // injected `{ name: '', key: walletDID }` could sign and POST a
+      // payload the feed would reject (empty publisher name). With this
+      // check the error surfaces before the wallet ever signs.
+      const validationErrors = validateChannelFields(unsignedChannel)
+      if (validationErrors.length > 0) {
+        toast({
+          title: 'Validation Error',
+          description: validationErrors[0].message,
+          variant: 'destructive',
+        })
+        return
       }
     } else {
       // Build channel from form

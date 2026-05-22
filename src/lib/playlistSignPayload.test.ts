@@ -16,12 +16,12 @@ describe('playlistUnsignedPayloadForSigning', () => {
     expect(payload).toHaveProperty('items')
   })
 
-  // Round-10 regression guard: imported JSON can carry tool metadata (build
-  // times, debug fields, etc.). The feed reconstructs a typed Playlist via
-  // json.Marshal, which silently omits unknown fields — so anything we let
-  // through the canonicalizer would be hashed by us but not by the feed,
-  // producing a signature mismatch on the JSON-import/re-sign path this PR
-  // exists to fix.
+  // Round-10/11 regression guards: imported JSON can carry tool metadata
+  // at any nesting level. The feed reconstructs a typed Playlist via
+  // json.Marshal, which silently omits unknown fields top-level AND nested
+  // — so anything we let through the canonicalizer would be hashed by us
+  // but not by the feed, producing a signature mismatch on the JSON-import/
+  // re-sign path this PR exists to fix.
   it('drops unknown top-level fields (feed-contract whitelist)', () => {
     const playlist = {
       ...minimalPlaylist,
@@ -37,6 +37,88 @@ describe('playlistUnsignedPayloadForSigning', () => {
     expect(payload).toHaveProperty('dpVersion')
     expect(payload).toHaveProperty('title')
     expect(payload).toHaveProperty('items')
+  })
+
+  it('drops unknown fields inside items[i] (the round-11 finding)', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      items: [
+        {
+          source: 'https://example.com/v.m3u8',
+          title: 'Item with tool metadata',
+          _buildMeta: { stale: true },
+          customTag: 'should-not-survive',
+        },
+      ],
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const items = payload.items as Array<Record<string, unknown>>
+    expect(items[0]).not.toHaveProperty('_buildMeta')
+    expect(items[0]).not.toHaveProperty('customTag')
+    expect(items[0]).toHaveProperty('source')
+    expect(items[0]).toHaveProperty('title')
+  })
+
+  it('drops unknown fields inside items[i].display (nested DisplayPrefs)', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      items: [
+        {
+          source: 'https://example.com/v.m3u8',
+          display: {
+            scaling: 'fit',
+            customDisplayHint: 'ignore-me',
+            __debug: true,
+          },
+        },
+      ],
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const display = (payload.items as Array<{ display: Record<string, unknown> }>)[0].display
+    expect(display).not.toHaveProperty('customDisplayHint')
+    expect(display).not.toHaveProperty('__debug')
+    expect(display.scaling).toBe('fit')
+  })
+
+  it('drops unknown fields inside defaults and defaults.display', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      defaults: {
+        display: { scaling: 'fit', extraDisplay: 'nope' },
+        license: 'open',
+        unknownTopInDefaults: 42,
+      },
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const defaults = payload.defaults as Record<string, unknown>
+    expect(defaults).not.toHaveProperty('unknownTopInDefaults')
+    expect(defaults).toHaveProperty('license')
+    const display = defaults.display as Record<string, unknown>
+    expect(display).not.toHaveProperty('extraDisplay')
+    expect(display.scaling).toBe('fit')
+  })
+
+  it('drops unknown fields inside dynamicQuery and dynamicQuery.responseMapping', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      dynamicQuery: {
+        profile: 'https-json-v1',
+        endpoint: 'https://example.com/api',
+        responseMapping: {
+          itemsPath: 'data',
+          itemSchema: 'dp1/1.1',
+          extraInRM: 'remove me',
+        },
+        extraInDQ: 'remove me too',
+      },
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const dq = payload.dynamicQuery as Record<string, unknown>
+    expect(dq).not.toHaveProperty('extraInDQ')
+    expect(dq.profile).toBe('https-json-v1')
+    const rm = dq.responseMapping as Record<string, unknown>
+    expect(rm).not.toHaveProperty('extraInRM')
+    expect(rm.itemsPath).toBe('data')
   })
 
   it('should strip signatures array', () => {

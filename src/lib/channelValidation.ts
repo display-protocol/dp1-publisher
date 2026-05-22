@@ -32,40 +32,46 @@ export function validateChannelFields(
     errors.push({ field: 'title', message: 'Title must be 200 characters or less' })
   }
 
-  // Slug (lowercase, hyphens only)
-  if (
-    channel.slug &&
-    typeof channel.slug === 'string' &&
-    !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(channel.slug)
-  ) {
-    errors.push({
-      field: 'slug',
-      message: 'Slug must contain only lowercase letters, numbers, and hyphens',
-    })
+  // Slug (lowercase, hyphens only). Non-string slug from imported JSON would
+  // otherwise pass this gate silently and crash later inside the unsigned-
+  // payload construction (`generateChannelSlug` / `.trim()` on a non-string).
+  if (channel.slug !== undefined && channel.slug !== null && channel.slug !== '') {
+    if (typeof channel.slug !== 'string') {
+      errors.push({ field: 'slug', message: 'Slug must be a string' })
+    } else if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(channel.slug)) {
+      errors.push({
+        field: 'slug',
+        message: 'Slug must contain only lowercase letters, numbers, and hyphens',
+      })
+    }
   }
 
   // Summary
-  if (
-    channel.summary &&
-    typeof channel.summary === 'string' &&
-    channel.summary.length > 2000
-  ) {
-    errors.push({
-      field: 'summary',
-      message: 'Summary must be 2000 characters or less',
-    })
+  if (channel.summary !== undefined && channel.summary !== null && channel.summary !== '') {
+    if (typeof channel.summary !== 'string') {
+      errors.push({ field: 'summary', message: 'Summary must be a string' })
+    } else if (channel.summary.length > 2000) {
+      errors.push({
+        field: 'summary',
+        message: 'Summary must be 2000 characters or less',
+      })
+    }
   }
 
   // Cover image URI
   if (
-    channel.coverImage &&
-    typeof channel.coverImage === 'string' &&
-    !/^(https?|ipfs|ar):\/\/.+/.test(channel.coverImage)
+    channel.coverImage !== undefined &&
+    channel.coverImage !== null &&
+    channel.coverImage !== ''
   ) {
-    errors.push({
-      field: 'coverImage',
-      message: 'Cover image must be a valid URI (https://, ipfs://, or ar://)',
-    })
+    if (typeof channel.coverImage !== 'string') {
+      errors.push({ field: 'coverImage', message: 'Cover image must be a string' })
+    } else if (!/^(https?|ipfs|ar):\/\/.+/.test(channel.coverImage)) {
+      errors.push({
+        field: 'coverImage',
+        message: 'Cover image must be a valid URI (https://, ipfs://, or ar://)',
+      })
+    }
   }
 
   // Playlists

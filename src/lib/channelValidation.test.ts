@@ -173,4 +173,45 @@ describe('validateChannelFields', () => {
     })
     expect(errors).toContainEqual({ field: 'title', message: 'Title is required' })
   })
+
+  // Round-7 finding: non-string optional scalars (slug / summary / coverImage)
+  // were silently passing this gate, then crashing in the unsigned-payload
+  // construction at `.trim()` / `generateChannelSlug`. These tests ensure
+  // they now surface as validation errors before signing.
+
+  it('rejects non-string slug (would crash later in generateChannelSlug)', () => {
+    const errors = validateChannelFields({
+      ...validChannel,
+      slug: 123 as unknown as string,
+    })
+    expect(errors).toContainEqual({ field: 'slug', message: 'Slug must be a string' })
+  })
+
+  it('rejects non-string summary', () => {
+    const errors = validateChannelFields({
+      ...validChannel,
+      summary: { lang: 'en', text: 'oops' } as unknown as string,
+    })
+    expect(errors).toContainEqual({
+      field: 'summary',
+      message: 'Summary must be a string',
+    })
+  })
+
+  it('rejects non-string coverImage', () => {
+    const errors = validateChannelFields({
+      ...validChannel,
+      coverImage: ['https://example.com/cover.jpg'] as unknown as string,
+    })
+    expect(errors).toContainEqual({
+      field: 'coverImage',
+      message: 'Cover image must be a string',
+    })
+  })
+
+  it('still allows undefined / empty-string optional scalars', () => {
+    expect(
+      validateChannelFields({ ...validChannel, slug: undefined, summary: '', coverImage: undefined })
+    ).toEqual([])
+  })
 })

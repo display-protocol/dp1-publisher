@@ -100,6 +100,52 @@ describe('preparePlaylistForPublish — create', () => {
       expect(r.validationErrors[0]).toMatch(/title/i)
     }
   })
+
+  // Round-8 regression guard: the consolidation lost id/created from
+  // wireBody on create, so the POST body diverged from the signed payload.
+  // Now wireBody must include id and created on create — and the wire body
+  // (modulo signatures) must equal the signed payload.
+  it('CREATE wire body includes id and created and equals signed payload (minus signatures)', () => {
+    const playlist: Playlist = {
+      ...basePlaylist,
+      id: 'pl-abc-123',
+      created: '2026-05-22T08:30:00Z',
+    }
+    const r = preparePlaylistForPublish({
+      rawDocument: playlist,
+      walletDID: WALLET,
+      extensionsEnabled: true,
+    })
+    ok<Playlist>(r)
+    expect(r.wireBody.id).toBe('pl-abc-123')
+    expect(r.wireBody.created).toBe('2026-05-22T08:30:00Z')
+    // The wire body shape should mirror the signed payload (no signatures yet).
+    expect(r.wireBody.id).toBe(r.signedPayload.id)
+    expect(r.wireBody.created).toBe(r.signedPayload.created)
+    expect(r.wireBody.title).toBe(r.signedPayload.title)
+    expect(r.wireBody.items).toBe(r.signedPayload.items)
+  })
+
+  it('EDIT wire body omits id and created (PATCH semantics)', () => {
+    const existing: Playlist = {
+      ...basePlaylist,
+      id: 'pl-abc-123',
+      created: '2026-05-20T08:30:00Z',
+    }
+    const r = preparePlaylistForPublish({
+      rawDocument: { ...basePlaylist, title: 'edited' },
+      walletDID: WALLET,
+      base: existing,
+      extensionsEnabled: true,
+    })
+    ok<Playlist>(r)
+    // Signed payload still carries id and created (used for signing).
+    expect(r.signedPayload.id).toBe('pl-abc-123')
+    // PATCH body omits them.
+    expect(r.wireBody.id).toBeUndefined()
+    expect(r.wireBody.created).toBeUndefined()
+    expect(r.wireBody.title).toBe('edited')
+  })
 })
 
 describe('preparePlaylistForPublish — edit', () => {
@@ -233,6 +279,40 @@ describe('prepareChannelForPublish — edit (round-6 regression guards)', () => 
     })
     ok<Channel>(r)
     expect(r.toasts).toHaveLength(0)
+  })
+
+  it('CREATE wire body includes id and created (round-8 regression guard)', () => {
+    const channel: Channel = {
+      ...baseChannel,
+      id: 'ch-xyz-456',
+      created: '2026-05-22T08:30:00Z',
+    }
+    const r = prepareChannelForPublish({
+      rawDocument: channel,
+      walletDID: WALLET,
+    })
+    ok<Channel>(r)
+    expect(r.wireBody.id).toBe('ch-xyz-456')
+    expect(r.wireBody.created).toBe('2026-05-22T08:30:00Z')
+    expect(r.wireBody.publisher).toEqual(r.signedPayload.publisher)
+  })
+
+  it('EDIT wire body omits id and created', () => {
+    const existing: Channel = {
+      ...baseChannel,
+      id: 'ch-xyz-456',
+      created: '2026-05-20T08:30:00Z',
+    }
+    const r = prepareChannelForPublish({
+      rawDocument: { ...baseChannel, title: 'edited' },
+      walletDID: WALLET,
+      base: existing,
+    })
+    ok<Channel>(r)
+    expect(r.signedPayload.id).toBe('ch-xyz-456')
+    expect(r.wireBody.id).toBeUndefined()
+    expect(r.wireBody.created).toBeUndefined()
+    expect(r.wireBody.title).toBe('edited')
   })
 
   it('does not throw on malformed pasted publisher (non-string key) and reports validation', () => {

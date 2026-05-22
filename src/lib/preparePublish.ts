@@ -105,11 +105,23 @@ export function preparePlaylistForPublish(
 
   // Step 5: build wire body from the canonical document. By construction this
   // matches the signed payload — they're computed from the same source.
+  //
+  // Create vs edit body shaping:
+  //   - CREATE (no `base`): include `id` and `created`. The POST body must
+  //     equal the signed payload (plus signatures), so the feed can verify
+  //     the signature against the same bytes it's about to persist.
+  //   - EDIT (PATCH, `base` provided): omit `id` (in the URL path) and
+  //     `created` (immutable metadata). Matches dp1-feed-v2's PATCH contract.
+  const isCreate = base === undefined
   const wireBody: Record<string, unknown> = {
     dpVersion: canonical.dpVersion,
     title: canonical.title,
     slug: canonical.slug ?? '',
     items: canonical.items,
+  }
+  if (isCreate) {
+    if (canonical.id !== undefined) wireBody.id = canonical.id
+    if (canonical.created !== undefined) wireBody.created = canonical.created
   }
   if (canonical.defaults !== undefined) wireBody.defaults = canonical.defaults
   if (extensionsEnabled) {
@@ -166,16 +178,24 @@ export function prepareChannelForPublish(
   }
 
   // Step 4: build wire body from the merged document (the same source the
-  // signed payload is built from). Channel edit's round-6 bug came from
-  // building this from the user's `patchFields.publisher` instead — the
-  // imported (e.g., did:key) value — while signing the wallet-repaired
-  // merged. Building both from `merged` makes drift impossible.
+  // signed payload is built from).
+  //
+  // Create vs edit body shaping (same rationale as playlist):
+  //   - CREATE: include `id` and `created` so the POST body equals the
+  //     signed payload + signatures (feed verifies signature over the same
+  //     bytes it persists).
+  //   - EDIT (PATCH): omit them (id is in the URL, created is immutable).
+  const isCreate = base === undefined
   const wireBody: Record<string, unknown> = {
     title: merged.title,
     slug: merged.slug,
     version: merged.version,
     playlists: merged.playlists,
     publisher: merged.publisher,
+  }
+  if (isCreate) {
+    if (merged.id !== undefined) wireBody.id = merged.id
+    if (merged.created !== undefined) wireBody.created = merged.created
   }
   if (merged.curators !== undefined) wireBody.curators = merged.curators
   if (merged.summary !== undefined) wireBody.summary = merged.summary

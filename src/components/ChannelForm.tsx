@@ -27,8 +27,7 @@ import {
 } from '@/lib/api'
 import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription'
 import JsonFileDropZone from './JsonFileDropZone'
-import { ensureChannelWalletPublisher } from '@/lib/dp1WalletSigner'
-import { validateChannelFields } from '@/lib/channelValidation'
+import { prepareChannelForPublish } from '@/lib/preparePublish'
 import type { Channel, Entity } from '@/types/dp1'
 import CuratorList from './CuratorList'
 
@@ -451,176 +450,41 @@ export default function ChannelForm({
     setJsonMode('json')
   }
 
+  /**
+   * Form-tab URI-validation gate: ensures every line in the playlists box was
+   * checked and passed before we go anywhere near signing. JSON-tab mode
+   * skips this — `parseChannelJson` enforces URI shape on its own.
+   */
+  const validateFormTabUris = (): string | null => {
+    const playlists = playlistsText
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+    if (uriStatuses.length !== playlists.length) {
+      return 'Please validate URIs before publishing'
+    }
+    if (uriStatuses.some((status) => !status.valid)) {
+      return 'Please fix invalid URIs before publishing'
+    }
+    return null
+  }
+
   const handlePublish = async () => {
     if (!walletClient || !address) {
       toast({ title: 'Error', description: 'Wallet not connected', variant: 'destructive' })
       return
     }
-
-    if (isEdit) {
-      if (!editId || !loadedRef.current) {
-        toast({
-          title: 'Error',
-          description: loadError || 'Channel not loaded yet.',
-          variant: 'destructive',
-        })
-        return
-      }
-
-      const base = loadedRef.current
-
-      let patchFields: Parameters<typeof mergeChannelForPatch>[1]
-
-      if (jsonMode === 'json') {
-        const trimmed = jsonText.trim()
-        if (!trimmed) {
-          toast({
-            title: 'Error',
-            description: 'Paste channel JSON here, or use the Form tab.',
-            variant: 'destructive',
-          })
-          return
-        }
-        const parsed = parseChannelJson(trimmed)
-        if ('error' in parsed) {
-          toast({ title: 'Invalid channel', description: parsed.error, variant: 'destructive' })
-          return
-        }
-        const p = parsed.channel
-        patchFields = {
-          title: p.title.trim(),
-          slug: p.slug ?? base.slug,
-          version: p.version || base.version || '1.0.0',
-          playlists: p.playlists,
-          publisher: p.publisher ?? base.publisher,
-          curators: p.curators,
-          summary: p.summary,
-          coverImage: p.coverImage,
-        }
-      } else {
-        const playlists = playlistsText
-          .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => line.length > 0)
-
-        const publisher: Entity = {
-          name: publisherName || '',
-          key: ethereumAddressToDIDPKH(getAddress(address)),
-          url: publisherUrl || undefined,
-        }
-        patchFields = {
-          title: title.trim(),
-          slug: displaySlug,
-          version,
-          playlists,
-          publisher,
-          curators,
-          summary: summary.trim() || undefined,
-          coverImage: coverImage.trim() || undefined,
-        }
-
-        const allValidated = uriStatuses.length === playlists.length
-        if (!allValidated) {
-          toast({
-            title: 'Validation Required',
-            description: 'Please validate URIs before saving',
-            variant: 'destructive',
-          })
-          return
-        }
-        if (uriStatuses.some((s) => !s.valid)) {
-          toast({
-            title: 'Invalid URIs',
-            description: 'Please fix invalid URIs before saving',
-            variant: 'destructive',
-          })
-          return
-        }
-      }
-
-      let merged = mergeChannelForPatch(base, patchFields)
-      // Same signer-declaration repair on the edit path: pasted/imported JSON
-      // may carry a non-wallet publisher.key (e.g., did:key from dp1-cli)
-      // through the merge. Reconcile against the connected wallet before
-      // validation + signing so the PATCH posts a payload whose declared
-      // publisher matches the publisher-role signature.
-      const walletDID = ethereumAddressToDIDPKH(getAddress(address))
-      const ensuredEdit = ensureChannelWalletPublisher(merged, walletDID)
-      merged = ensuredEdit.channel
-      if (ensuredEdit.updated) {
-        // Reflect the repaired publisher back into patchFields so the PATCH
-        // body (built from patchFields below) matches the signed document.
-        // Without this, signature signs the wallet-repaired publisher but
-        // the body sent to the feed still carries the original (e.g.,
-        // did:key) publisher → declared publisher ≠ signature signer → feed
-        // rejects. This is the exact partner-identity migration failure
-        // mode this PR exists to fix.
-        patchFields.publisher = merged.publisher
-        toast({
-          title: ensuredEdit.previousKey
-            ? 'Publisher key updated'
-            : 'Publisher added',
-          description: ensuredEdit.previousKey
-            ? `Publisher key set to your connected wallet (was ${ensuredEdit.previousKey.slice(0, 32)}…).`
-            : 'No publisher declared after merge — using your connected wallet as publisher. Add a publisher name in the Form tab.',
-        })
-      }
-      const validationErrors = validateChannelFields(merged)
-      if (validationErrors.length > 0) {
-        toast({
-          title: 'Validation Error',
-          description: validationErrors[0].message,
-          variant: 'destructive',
-        })
-        return
-      }
-
-      setIsPublishing(true)
-      try {
-        const signature = await signDocument(
-          channelUnsignedPayloadForSigning(merged),
-          walletClient,
-          'publisher'
-        )
-        const body: Record<string, unknown> = {
-          title: patchFields.title,
-          slug: patchFields.slug,
-          version: patchFields.version,
-          playlists: patchFields.playlists,
-          publisher: patchFields.publisher,
-          signatures: [signature],
-        }
-        if (patchFields.curators !== undefined) body.curators = patchFields.curators
-        if (patchFields.summary !== undefined) body.summary = patchFields.summary
-        if (patchFields.coverImage !== undefined) body.coverImage = patchFields.coverImage
-
-        const updated = await patchChannel(editId, body)
-        recordPublishedChannel(address, updated)
-        onPublished?.()
-        loadedRef.current = updated
-        toast({
-          title: 'Updated',
-          description: (
-            <FeedUrlToastDescription
-              url={feedChannelResourceUrl(updated.slug?.trim() || updated.id || '')}
-            />
-          ),
-        })
-      } catch (error) {
-        console.error('Update failed:', error)
-        toast({
-          title: 'Update failed',
-          description: error instanceof Error ? error.message : 'Unknown error',
-          variant: 'destructive',
-        })
-      } finally {
-        setIsPublishing(false)
-      }
+    if (isEdit && (!editId || !loadedRef.current)) {
+      toast({
+        title: 'Error',
+        description: loadError || 'Channel not loaded yet.',
+        variant: 'destructive',
+      })
       return
     }
 
-    let unsignedChannel: Channel
-
+    // Step 1: resolve raw document — from form state or imported JSON.
+    let rawDocument: Channel
     if (jsonMode === 'json') {
       const trimmed = jsonText.trim()
       if (!trimmed) {
@@ -636,124 +500,85 @@ export default function ChannelForm({
         toast({ title: 'Invalid channel', description: parsed.error, variant: 'destructive' })
         return
       }
-      unsignedChannel = channelFromJsonImport(parsed.channel, id)
-      // Ensure publisher.key matches the connected wallet (the signer).
-      // Channel has a single publisher (vs. playlist's curator array), so
-      // replace just the key while preserving the pasted name/url. This
-      // lets a partner channel signed locally under did:key (via dp1-cli)
-      // be re-signed under the partner's wallet did:pkh without hand-
-      // editing JSON.
-      const walletDID = ethereumAddressToDIDPKH(getAddress(address))
-      const ensured = ensureChannelWalletPublisher(unsignedChannel, walletDID)
-      unsignedChannel = ensured.channel
-      if (ensured.updated) {
-        toast({
-          title: ensured.previousKey ? 'Publisher key updated' : 'Publisher added',
-          description: ensured.previousKey
-            ? `Publisher key set to your connected wallet (was ${ensured.previousKey.slice(0, 32)}…).`
-            : 'No publisher declared in JSON — using your connected wallet as publisher. Add a publisher name in the Form tab.',
-        })
-      }
-
-      // Re-run channel-field validation post-injection. The Form-tab path
-      // does this; the JSON-tab path used to skip it, which meant the auto-
-      // injected `{ name: '', key: walletDID }` could sign and POST a
-      // payload the feed would reject (empty publisher name). With this
-      // check the error surfaces before the wallet ever signs.
-      const validationErrors = validateChannelFields(unsignedChannel)
-      if (validationErrors.length > 0) {
-        toast({
-          title: 'Validation Error',
-          description: validationErrors[0].message,
-          variant: 'destructive',
-        })
-        return
-      }
+      rawDocument = channelFromJsonImport(parsed.channel, id)
     } else {
-      // Build channel from form
-      const channel = buildChannel()
-
-      // Validate the channel
-      const validationErrors = validateChannelFields(channel)
-      if (validationErrors.length > 0) {
-        toast({ 
-          title: 'Validation Error', 
-          description: validationErrors[0].message,
-          variant: 'destructive' 
-        })
+      const uriError = validateFormTabUris()
+      if (uriError) {
+        toast({ title: 'Invalid URIs', description: uriError, variant: 'destructive' })
         return
       }
-
-      // Check if all URIs are validated
-      const playlists = playlistsText
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0)
-
-      const allValidated = uriStatuses.length === playlists.length
-      if (!allValidated) {
-        toast({ 
-          title: 'Validation Required', 
-          description: 'Please validate URIs before publishing', 
-          variant: 'destructive' 
-        })
-        return
-      }
-
-      const hasInvalidURIs = uriStatuses.some(status => !status.valid)
-      if (hasInvalidURIs) {
-        toast({ 
-          title: 'Invalid URIs', 
-          description: 'Please fix invalid URIs before publishing', 
-          variant: 'destructive' 
-        })
-        return
-      }
-
-      unsignedChannel = channel
+      rawDocument = buildChannel()
     }
 
-    setIsPublishing(true)
-
-    try {
-      const signPayload = channelUnsignedPayloadForSigning(unsignedChannel)
-      const signature = await signDocument(signPayload, walletClient, 'publisher')
-
-      const signedChannel = {
-        ...signPayload,
-        signatures: [signature],
-      } as Channel
-
-      // Publish to feed server
-      const published = await publishChannel(signedChannel)
-      recordPublishedChannel(address, published)
-      onPublished?.()
-
+    // Step 2: route through the single publish pipeline. signedPayload and
+    // wireBody come out together so they can't drift.
+    const walletDID = ethereumAddressToDIDPKH(getAddress(address))
+    const prepared = prepareChannelForPublish({
+      rawDocument,
+      walletDID,
+      base: isEdit ? loadedRef.current ?? undefined : undefined,
+    })
+    if ('validationErrors' in prepared) {
       toast({
-        title: 'Success!',
-        description: (
-          <FeedUrlToastDescription
-            url={feedChannelResourceUrl(published.slug?.trim() || published.id || '')}
-          />
-        ),
+        title: 'Validation Error',
+        description: prepared.validationErrors[0],
+        variant: 'destructive',
       })
+      return
+    }
+    prepared.toasts.forEach((t) => toast(t))
 
-      // Reset form
-      setTitle('')
-      setSummary('')
-      setCoverImage('')
-      setPlaylistsText('')
-      setUriStatuses([])
-      setPublisherName('')
-      setPublisherUrl('')
-      setCurators([])
-      setJsonText('')
-      newChannelCreatedRef.current = new Date().toISOString()
-      
+    // Step 3: sign and POST/PATCH.
+    setIsPublishing(true)
+    try {
+      const signature = await signDocument(
+        channelUnsignedPayloadForSigning(prepared.signedPayload),
+        walletClient,
+        'publisher'
+      )
+      const body = { ...prepared.wireBody, signatures: [signature] }
+
+      if (isEdit && editId) {
+        const updated = await patchChannel(editId, body)
+        recordPublishedChannel(address, updated)
+        onPublished?.()
+        loadedRef.current = updated
+        toast({
+          title: 'Updated',
+          description: (
+            <FeedUrlToastDescription
+              url={feedChannelResourceUrl(updated.slug?.trim() || updated.id || '')}
+            />
+          ),
+        })
+      } else {
+        const published = await publishChannel(body as Channel)
+        recordPublishedChannel(address, published)
+        onPublished?.()
+        toast({
+          title: 'Success!',
+          description: (
+            <FeedUrlToastDescription
+              url={feedChannelResourceUrl(published.slug?.trim() || published.id || '')}
+            />
+          ),
+        })
+        // Reset form (create only)
+        setTitle('')
+        setSummary('')
+        setCoverImage('')
+        setPlaylistsText('')
+        setUriStatuses([])
+        setPublisherName('')
+        setPublisherUrl('')
+        setCurators([])
+        setJsonText('')
+        newChannelCreatedRef.current = new Date().toISOString()
+      }
     } catch (error) {
-      console.error('Publish failed:', error)
+      console.error(isEdit ? 'Update failed:' : 'Publish failed:', error)
       toast({
-        title: 'Publish Failed',
+        title: isEdit ? 'Update failed' : 'Publish Failed',
         description: error instanceof Error ? error.message : 'Unknown error',
         variant: 'destructive',
       })

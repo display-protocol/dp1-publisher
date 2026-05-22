@@ -116,7 +116,19 @@ export function ensureChannelWalletPublisher(
   channel: Channel,
   walletDID: string
 ): PublisherEnsureResult {
-  const previousKey = channel.publisher?.key
+  // Defensive against malformed JSON-imported publishers: `parseChannelJson`
+  // only validates `title` and `playlists`, so `publisher` can arrive as a
+  // non-object or carry non-string fields. Coerce up front so the helper
+  // (and the toast that uses `previousKey.slice(...)` in the caller) can't
+  // crash on garbage from the JSON boundary.
+  const rawPublisher = channel.publisher
+  const isObjectPublisher =
+    !!rawPublisher && typeof rawPublisher === 'object' && !Array.isArray(rawPublisher)
+  const p = isObjectPublisher
+    ? (rawPublisher as { name?: unknown; key?: unknown; url?: unknown })
+    : {}
+  const previousKey = typeof p.key === 'string' ? p.key : undefined
+
   if (previousKey === walletDID) {
     return { channel, updated: false, previousKey }
   }
@@ -124,9 +136,9 @@ export function ensureChannelWalletPublisher(
     channel: {
       ...channel,
       publisher: {
-        name: channel.publisher?.name ?? '',
+        name: typeof p.name === 'string' ? p.name : '',
         key: walletDID,
-        url: channel.publisher?.url,
+        url: typeof p.url === 'string' ? p.url : undefined,
       },
     },
     updated: true,

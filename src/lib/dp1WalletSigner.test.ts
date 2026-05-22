@@ -267,4 +267,91 @@ describe('ensureChannelWalletPublisher', () => {
     ensureChannelWalletPublisher(input, WALLET)
     expect(JSON.stringify(input)).toBe(snapshot)
   })
+
+  // Defensive coverage for malformed JSON-imported publishers. The bot
+  // review noted that `previousKey` could end up as a non-string (e.g.,
+  // a number from `{ key: 123 }`), which crashed the caller's toast at
+  // `previousKey.slice(...)`. The helper now always exposes `previousKey`
+  // as `string | undefined`.
+
+  it('treats non-string publisher.key as missing and exposes undefined previousKey', () => {
+    const r = ensureChannelWalletPublisher(
+      {
+        ...baseChannel,
+        publisher: { name: 'NODE', key: 123 as unknown as string, url: '' },
+      },
+      WALLET
+    )
+    expect(r.updated).toBe(true)
+    expect(r.previousKey).toBeUndefined()
+    expect(r.channel.publisher?.key).toBe(WALLET)
+    expect(r.channel.publisher?.name).toBe('NODE')
+  })
+
+  it('treats non-object publisher (string) as missing and reports undefined previousKey', () => {
+    const r = ensureChannelWalletPublisher(
+      { ...baseChannel, publisher: 'oops' as unknown as Channel['publisher'] },
+      WALLET
+    )
+    expect(r.updated).toBe(true)
+    expect(r.previousKey).toBeUndefined()
+    expect(r.channel.publisher).toEqual({ name: '', key: WALLET, url: undefined })
+  })
+
+  it('treats null publisher as missing', () => {
+    const r = ensureChannelWalletPublisher(
+      { ...baseChannel, publisher: null as unknown as Channel['publisher'] },
+      WALLET
+    )
+    expect(r.updated).toBe(true)
+    expect(r.previousKey).toBeUndefined()
+    expect(r.channel.publisher?.key).toBe(WALLET)
+  })
+
+  it('coerces non-string publisher.name to empty string while replacing key', () => {
+    const r = ensureChannelWalletPublisher(
+      {
+        ...baseChannel,
+        publisher: { name: 42 as unknown as string, key: DID_KEY, url: 'https://node.art' },
+      },
+      WALLET
+    )
+    expect(r.updated).toBe(true)
+    expect(r.previousKey).toBe(DID_KEY)
+    expect(r.channel.publisher).toEqual({
+      name: '',
+      key: WALLET,
+      url: 'https://node.art',
+    })
+  })
+
+  // Regression guard for the channel JSON-edit PATCH body bug: the previous
+  // edit-path code signed the helper-repaired document (good) but built the
+  // PATCH body from the original `patchFields.publisher` (bad — the imported
+  // did:key publisher, not the wallet-repaired one). The feed then received a
+  // doc whose declared publisher didn't match the wallet-signed payload.
+  //
+  // After the fix, the PATCH body publisher MUST equal the repaired
+  // `ensured.channel.publisher` — the value used to build the signed payload.
+  it('repaired publisher is suitable for use as both the signed doc and the PATCH body publisher', () => {
+    const importedPublisher = {
+      name: 'NODE',
+      key: DID_KEY,
+      url: 'https://node.art',
+    }
+    const channel: Channel = { ...baseChannel, publisher: importedPublisher }
+    const r = ensureChannelWalletPublisher(channel, WALLET)
+
+    // Signed document uses r.channel.publisher.
+    expect(r.channel.publisher?.key).toBe(WALLET)
+    expect(r.channel.publisher?.name).toBe('NODE')
+    expect(r.channel.publisher?.url).toBe('https://node.art')
+
+    // If a caller passes the *original* importedPublisher into the PATCH
+    // body (the previous bug), the declared publisher wouldn't match the
+    // wallet-signed payload. The helper's `ensured.channel.publisher` is
+    // therefore the only correct source for both signing AND PATCH body —
+    // which the edit handler now uses by writing it back into patchFields.
+    expect(r.channel.publisher).not.toEqual(importedPublisher)
+  })
 })

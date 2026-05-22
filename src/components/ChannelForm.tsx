@@ -548,6 +548,14 @@ export default function ChannelForm({
       const ensuredEdit = ensureChannelWalletPublisher(merged, walletDID)
       merged = ensuredEdit.channel
       if (ensuredEdit.updated) {
+        // Reflect the repaired publisher back into patchFields so the PATCH
+        // body (built from patchFields below) matches the signed document.
+        // Without this, signature signs the wallet-repaired publisher but
+        // the body sent to the feed still carries the original (e.g.,
+        // did:key) publisher → declared publisher ≠ signature signer → feed
+        // rejects. This is the exact partner-identity migration failure
+        // mode this PR exists to fix.
+        patchFields.publisher = merged.publisher
         toast({
           title: ensuredEdit.previousKey
             ? 'Publisher key updated'

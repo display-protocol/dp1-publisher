@@ -1,0 +1,170 @@
+/**
+ * Tests for wallet signer-identity helpers.
+ *
+ * The critical regression guard is the non-empty-curators-without-wallet case
+ * — when an imported playlist already declares a `did:key` curator from
+ * `dp1-cli` and the JSON-tab CREATE path signs with the connected wallet's
+ * `did:pkh`, the published payload must include the wallet DID in
+ * `curators[]` or the feed rejects ("no valid curator signature found").
+ */
+
+import { describe, it, expect } from 'vitest'
+import {
+  ensureChannelWalletPublisher,
+  ensurePlaylistWalletCurator,
+} from '@/lib/dp1WalletSigner'
+import type { Channel, Playlist } from '@/types/dp1'
+
+const WALLET = 'did:pkh:eip155:1:0xabcdef0123456789abcdef0123456789abcdef01'
+const DID_KEY = 'did:key:z6MkExampleDidKeyFromDp1Cli'
+const OTHER_PKH = 'did:pkh:eip155:1:0x0000000000000000000000000000000000000001'
+
+const basePlaylist: Playlist = {
+  dpVersion: '1.1.0',
+  title: 'Test',
+  items: [{ source: 'https://example.com/v.m3u8' }],
+}
+
+const baseChannel: Channel = {
+  title: 'Test channel',
+  version: '1.0.0',
+  playlists: ['https://example.com/p.json'],
+}
+
+describe('ensurePlaylistWalletCurator', () => {
+  it('injects when curators is missing', () => {
+    const r = ensurePlaylistWalletCurator(basePlaylist, WALLET)
+    expect(r.injected).toBe(true)
+    expect(r.previousCount).toBe(0)
+    expect(r.playlist.curators).toEqual([{ name: '', key: WALLET, url: '' }])
+  })
+
+  it('injects when curators is empty', () => {
+    const r = ensurePlaylistWalletCurator({ ...basePlaylist, curators: [] }, WALLET)
+    expect(r.injected).toBe(true)
+    expect(r.previousCount).toBe(0)
+    expect(r.playlist.curators).toEqual([{ name: '', key: WALLET, url: '' }])
+  })
+
+  it('appends wallet when curators present without it (regression guard for did:key from dp1-cli)', () => {
+    const r = ensurePlaylistWalletCurator(
+      {
+        ...basePlaylist,
+        curators: [{ name: 'NODE', key: DID_KEY, url: 'https://node.art' }],
+      },
+      WALLET
+    )
+    expect(r.injected).toBe(true)
+    expect(r.previousCount).toBe(1)
+    expect(r.playlist.curators).toHaveLength(2)
+    expect(r.playlist.curators?.[0]).toEqual({
+      name: 'NODE',
+      key: DID_KEY,
+      url: 'https://node.art',
+    })
+    expect(r.playlist.curators?.[1]).toEqual({ name: '', key: WALLET, url: '' })
+  })
+
+  it('appends wallet when curators contains other PKH addresses', () => {
+    const r = ensurePlaylistWalletCurator(
+      { ...basePlaylist, curators: [{ name: 'Alice', key: OTHER_PKH, url: '' }] },
+      WALLET
+    )
+    expect(r.injected).toBe(true)
+    expect(r.playlist.curators).toHaveLength(2)
+    expect(r.playlist.curators?.[1].key).toBe(WALLET)
+  })
+
+  it('is a no-op when the wallet is the only curator', () => {
+    const original = {
+      ...basePlaylist,
+      curators: [{ name: 'Sean', key: WALLET, url: '' }],
+    }
+    const r = ensurePlaylistWalletCurator(original, WALLET)
+    expect(r.injected).toBe(false)
+    expect(r.previousCount).toBe(1)
+    expect(r.playlist).toBe(original)
+  })
+
+  it('is a no-op when the wallet is already present alongside others', () => {
+    const original = {
+      ...basePlaylist,
+      curators: [
+        { name: 'NODE', key: DID_KEY, url: '' },
+        { name: 'Sean', key: WALLET, url: '' },
+      ],
+    }
+    const r = ensurePlaylistWalletCurator(original, WALLET)
+    expect(r.injected).toBe(false)
+    expect(r.previousCount).toBe(2)
+    expect(r.playlist).toBe(original)
+  })
+
+  it('does not mutate the input playlist', () => {
+    const input = {
+      ...basePlaylist,
+      curators: [{ name: 'NODE', key: DID_KEY, url: '' }],
+    }
+    const snapshot = JSON.stringify(input)
+    ensurePlaylistWalletCurator(input, WALLET)
+    expect(JSON.stringify(input)).toBe(snapshot)
+  })
+})
+
+describe('ensureChannelWalletPublisher', () => {
+  it('adds publisher when missing', () => {
+    const r = ensureChannelWalletPublisher(baseChannel, WALLET)
+    expect(r.updated).toBe(true)
+    expect(r.previousKey).toBeUndefined()
+    expect(r.channel.publisher).toEqual({ name: '', key: WALLET, url: undefined })
+  })
+
+  it('replaces did:key publisher with wallet, preserving name and url', () => {
+    const r = ensureChannelWalletPublisher(
+      {
+        ...baseChannel,
+        publisher: { name: 'NODE', key: DID_KEY, url: 'https://node.art' },
+      },
+      WALLET
+    )
+    expect(r.updated).toBe(true)
+    expect(r.previousKey).toBe(DID_KEY)
+    expect(r.channel.publisher).toEqual({
+      name: 'NODE',
+      key: WALLET,
+      url: 'https://node.art',
+    })
+  })
+
+  it('replaces a different PKH publisher with the connected wallet', () => {
+    const r = ensureChannelWalletPublisher(
+      { ...baseChannel, publisher: { name: 'Alice', key: OTHER_PKH, url: '' } },
+      WALLET
+    )
+    expect(r.updated).toBe(true)
+    expect(r.previousKey).toBe(OTHER_PKH)
+    expect(r.channel.publisher?.key).toBe(WALLET)
+    expect(r.channel.publisher?.name).toBe('Alice')
+  })
+
+  it('is a no-op when publisher.key already matches the wallet', () => {
+    const original = {
+      ...baseChannel,
+      publisher: { name: 'NODE', key: WALLET, url: '' },
+    }
+    const r = ensureChannelWalletPublisher(original, WALLET)
+    expect(r.updated).toBe(false)
+    expect(r.previousKey).toBe(WALLET)
+    expect(r.channel).toBe(original)
+  })
+
+  it('does not mutate the input channel', () => {
+    const input = {
+      ...baseChannel,
+      publisher: { name: 'NODE', key: DID_KEY, url: 'https://node.art' },
+    }
+    const snapshot = JSON.stringify(input)
+    ensureChannelWalletPublisher(input, WALLET)
+    expect(JSON.stringify(input)).toBe(snapshot)
+  })
+})

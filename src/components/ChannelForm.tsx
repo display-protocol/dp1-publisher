@@ -27,6 +27,7 @@ import {
 } from '@/lib/api'
 import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription'
 import JsonFileDropZone from './JsonFileDropZone'
+import { ensureChannelWalletPublisher } from '@/lib/dp1WalletSigner'
 import type { Channel, Entity } from '@/types/dp1'
 import CuratorList from './CuratorList'
 
@@ -676,25 +677,19 @@ export default function ChannelForm({
       }
       unsignedChannel = channelFromJsonImport(parsed.channel, id)
       // Ensure publisher.key matches the connected wallet (the signer).
-      // The feed rejects channels whose publisher.key doesn't match the
-      // publisher-role signature. Keep the pasted name/url; replace only
-      // the key so a partner-published channel can be re-signed under
-      // the connected wallet without hand-editing JSON.
-      const walletKey = ethereumAddressToDIDPKH(getAddress(address))
-      if (unsignedChannel.publisher?.key !== walletKey) {
-        const previousKey = unsignedChannel.publisher?.key
-        unsignedChannel = {
-          ...unsignedChannel,
-          publisher: {
-            name: unsignedChannel.publisher?.name ?? '',
-            key: walletKey,
-            url: unsignedChannel.publisher?.url,
-          },
-        }
+      // Channel has a single publisher (vs. playlist's curator array), so
+      // replace just the key while preserving the pasted name/url. This
+      // lets a partner channel signed locally under did:key (via dp1-cli)
+      // be re-signed under the partner's wallet did:pkh without hand-
+      // editing JSON.
+      const walletDID = ethereumAddressToDIDPKH(getAddress(address))
+      const ensured = ensureChannelWalletPublisher(unsignedChannel, walletDID)
+      unsignedChannel = ensured.channel
+      if (ensured.updated) {
         toast({
-          title: previousKey ? 'Publisher key updated' : 'Publisher added',
-          description: previousKey
-            ? `Publisher key set to your connected wallet (was ${previousKey.slice(0, 32)}…).`
+          title: ensured.previousKey ? 'Publisher key updated' : 'Publisher added',
+          description: ensured.previousKey
+            ? `Publisher key set to your connected wallet (was ${ensured.previousKey.slice(0, 32)}…).`
             : 'No publisher declared in JSON — using your connected wallet as publisher.',
         })
       }

@@ -24,6 +24,7 @@ import type { DynamicQuery, Entity, Playlist, PlaylistItem } from '@/types/dp1'
 import PlaylistItemForm from './PlaylistItemForm'
 import CuratorList from './CuratorList'
 import JsonFileDropZone from './JsonFileDropZone'
+import { ensurePlaylistWalletCurator } from '@/lib/dp1WalletSigner'
 
 function parsePlaylistJson(
   text: string,
@@ -795,22 +796,27 @@ export default function PlaylistForm({
       unsignedPlaylist = playlistFromJsonImport(parsed.playlist, id)
       if (!extensionsEnabled) {
         unsignedPlaylist = stripPlaylistExtensionFields(unsignedPlaylist)
-      } else if (!unsignedPlaylist.curators?.length) {
-        // Auto-seed the connected wallet as curator when the pasted JSON
-        // omits `curators` — parity with the Form tab's default. Without
-        // this, the feed rejects with "no valid curator signature found"
-        // because the curator-role signature has no declared curator to
-        // match against.
-        const fallbackKey = ethereumAddressToDIDPKH(getAddress(address))
-        unsignedPlaylist = {
-          ...unsignedPlaylist,
-          curators: [{ name: '', key: fallbackKey, url: '' }],
+      } else {
+        // Ensure the wallet DID is *declared* in curators[] before signing.
+        // The feed rejects with "no valid curator signature found" whenever
+        // the curator-role signature has no matching declared curator — this
+        // includes the case where curators[] is non-empty but contains only
+        // a non-wallet signer (e.g., a leftover did:key from dp1-cli).
+        const walletDID = ethereumAddressToDIDPKH(getAddress(address))
+        const ensured = ensurePlaylistWalletCurator(unsignedPlaylist, walletDID)
+        unsignedPlaylist = ensured.playlist
+        if (ensured.injected) {
+          toast({
+            title:
+              ensured.previousCount === 0
+                ? 'Curator auto-added'
+                : 'Wallet added as curator',
+            description:
+              ensured.previousCount === 0
+                ? 'Pasted JSON had no curators — signing with your connected wallet as the curator.'
+                : 'Pasted JSON declares other curators; appending your connected wallet so the curator-role signature verifies.',
+          })
         }
-        toast({
-          title: 'Curator auto-added',
-          description:
-            'Pasted JSON had no curators — signing with your connected wallet as the curator.',
-        })
       }
     } else {
       if (!title.trim()) {

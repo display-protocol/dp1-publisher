@@ -11,18 +11,7 @@ function hasBrowserEthereumProvider(): boolean {
   return typeof window !== 'undefined' && Boolean(window.ethereum)
 }
 
-export type WalletNavSection = 'publish' | 'published'
-
-export default function WalletConnect({
-  onNavigatePublish,
-  onNavigatePublished,
-  activeSection = 'publish',
-}: {
-  /** Shown when connected; enables the header menu. */
-  onNavigatePublish?: () => void
-  onNavigatePublished?: () => void
-  activeSection?: WalletNavSection
-} = {}) {
+export default function WalletConnect() {
   const { toast } = useToast()
   const { address, isConnected, chain } = useAccount()
   const { disconnect } = useDisconnect()
@@ -60,8 +49,6 @@ export default function WalletConnect({
       : undefined
 
   const isWrongNetwork = isConnected && chain?.id !== mainnet.id
-
-  const showNavLinks = Boolean(onNavigatePublish && onNavigatePublished)
 
   if (isConnected && address) {
     return (
@@ -111,47 +98,16 @@ export default function WalletConnect({
             )}
           >
             <div className="min-w-[11rem] overflow-hidden rounded-xl border border-border/60 bg-card/95 py-1 shadow-lg backdrop-blur-sm">
-            {showNavLinks ? (
-              <>
-                <button
-                  type="button"
-                  className={cn(
-                    'flex w-full px-3 py-2 text-left text-[13px] font-medium text-foreground transition-colors hover:bg-muted/70',
-                    activeSection === 'publish' && 'bg-muted/40',
-                  )}
-                  onClick={() => {
-                    onNavigatePublish?.()
-                    setMenuOpen(false)
-                  }}
-                >
-                  Publish
-                </button>
-                <button
-                  type="button"
-                  className={cn(
-                    'flex w-full px-3 py-2 text-left text-[13px] font-medium text-foreground transition-colors hover:bg-muted/70',
-                    activeSection === 'published' && 'bg-muted/40',
-                  )}
-                  onClick={() => {
-                    onNavigatePublished?.()
-                    setMenuOpen(false)
-                  }}
-                >
-                  Published
-                </button>
-                <div className="my-1 h-px bg-border/60" />
-              </>
-            ) : null}
-            <button
-              type="button"
-              className="flex w-full px-3 py-2 text-left text-[13px] font-medium text-destructive transition-colors hover:bg-destructive/10"
-              onClick={() => {
-                disconnect()
-                setMenuOpen(false)
-              }}
-            >
-              Disconnect
-            </button>
+              <button
+                type="button"
+                className="flex w-full px-3 py-2 text-left text-[13px] font-medium text-destructive transition-colors hover:bg-destructive/10"
+                onClick={() => {
+                  disconnect()
+                  setMenuOpen(false)
+                }}
+              >
+                Disconnect
+              </button>
             </div>
           </div>
         </div>

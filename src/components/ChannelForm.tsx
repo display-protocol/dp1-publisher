@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, Check, Loader2, MinusCircle } from 'lucide-react'
 import { useAccount, useWalletClient } from 'wagmi'
 import { v4 as uuidv4 } from 'uuid'
@@ -15,9 +15,16 @@ import { ethereumAddressToDIDPKH } from '@/lib/signing'
 import { signDocument, stripSignatureFields } from '@/lib/signing'
 import { channelUnsignedPayloadForSigning } from '@/lib/channelSignPayload'
 import { mergeChannelForPatch } from '@/lib/dp1Merge'
-import { recordPublishedChannel } from '@/lib/publishedStorage'
 import {
+  loadPublished,
+  recordPublishedChannel,
+  sortByCreatedDesc,
+} from '@/lib/publishedStorage'
+import {
+  FeedAPIError,
   feedChannelResourceUrl,
+  feedPlaylistResourceUrl,
+  friendlyPublishError,
   getChannel,
   patchChannel,
   publishChannel,
@@ -27,6 +34,7 @@ import {
 import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription'
 import JsonFileDropZone from './JsonFileDropZone'
 import { prepareChannelForPublish } from '@/lib/preparePublish'
+import PostPublishPanel from './PostPublishPanel'
 import type { Channel, Entity } from '@/types/dp1'
 import CuratorList from './CuratorList'
 
@@ -112,10 +120,21 @@ export default function ChannelForm({
   editId,
   onCancelEdit,
   onPublished,
+  onViewPublished,
+  initialPlaylistsText,
+  appendPlaylistUrl,
 }: {
   editId?: string
   onCancelEdit?: () => void
   onPublished?: () => void
+  /** Called when the user clicks "View all published" after a create publish. */
+  onViewPublished?: () => void
+  /** Pre-fills the `playlists[]` field on initial mount. Used by the "Use in a channel" flow
+   * after publishing a playlist. Ignored in edit mode. */
+  initialPlaylistsText?: string
+  /** In edit mode, appends this URL to the loaded channel's `playlists[]` after
+   * fetch completes. Used by the "Add to: <channel>" flow. */
+  appendPlaylistUrl?: string
 } = {}) {
   const { address } = useAccount()
   const { data: walletClient } = useWalletClient()
@@ -141,15 +160,49 @@ export default function ChannelForm({
   // Curators (optional)
   const [curators, setCurators] = useState<Entity[]>([])
 
-  // Playlist URIs
-  const [playlistsText, setPlaylistsText] = useState('')
-  const [uriStatuses, setUriStatuses] = useState<PlaylistURIStatus[]>([])
+  // Playlist URIs. Seeded by initialPlaylistsText on first mount so the "Use in a channel"
+  // flow lands a freshly published playlist URL directly into the field.
+  const [playlistsText, setPlaylistsText] = useState(
+    () => (editId ? '' : initialPlaylistsText?.trim() ?? '')
+  )
+  /** Sticky pre-fill from "Use in a channel". If set, dropping a channel JSON
+   * whose `playlists[]` lacks this URL overrides it (with a toast), so the
+   * user's explicit intent survives a JSON template drop. Cleared by remount
+   * via the Dashboard's `key={pendingChannelPlaylistsText}`. */
+  const useInChannelRef = useRef<string>(
+    editId ? '' : initialPlaylistsText?.trim() ?? ''
+  )
+  const [uriStatuses, setUriStatuses] = useState<PlaylistURIStatus[]>(() => {
+    if (editId) return []
+    const seeded = (initialPlaylistsText ?? '')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0)
+    return seeded.map((uri) => {
+      const validation = validatePlaylistURI(uri)
+      return {
+        uri,
+        valid: validation.valid,
+        reason: validation.reason,
+      }
+    })
+  })
 
   // JSON editor
   const [jsonMode, setJsonMode] = useState<'form' | 'json'>('form')
   const [jsonText, setJsonText] = useState('')
 
   const [isPublishing, setIsPublishing] = useState(false)
+  const [publishedDoc, setPublishedDoc] = useState<{
+    feedUrl: string
+    title: string
+    mode: 'create' | 'update'
+    receipts: { title: string; description: string }[]
+  } | null>(null)
+  /** Set when an `appendPlaylistUrl` arrived via the "Add to: <channel>" flow.
+   * Drives the sticky banner above the form. Cleared after a successful update
+   * (or when the user cancels edit). */
+  const [appendBanner, setAppendBanner] = useState<string | null>(null)
 
   const isEdit = Boolean(editId)
 
@@ -176,14 +229,24 @@ export default function ChannelForm({
         setPublisherName(pub?.name || '')
         setPublisherUrl(pub?.url || '')
         setCurators(ch.curators?.length ? ch.curators : [])
-        const lines = (ch.playlists ?? []).join('\n')
+
+        // "Add to: <channel>" flow: append the incoming playlist URL once,
+        // dedupe-aware. Banner stays up until the user publishes or cancels.
+        const incoming = (ch.playlists ?? [])
+          .map((p) => (typeof p === 'string' ? p.trim() : ''))
+          .filter((p) => p.length > 0)
+        const toAppend = appendPlaylistUrl?.trim() ?? ''
+        const merged =
+          toAppend && !incoming.includes(toAppend)
+            ? [...incoming, toAppend]
+            : incoming
+        if (toAppend && !incoming.includes(toAppend)) {
+          setAppendBanner(toAppend)
+        }
+        const lines = merged.join('\n')
         setPlaylistsText(lines)
-        const uris = lines
-          .split('\n')
-          .map((l) => l.trim())
-          .filter((l) => l.length > 0)
         setUriStatuses(
-          uris.map((uri) => {
+          merged.map((uri) => {
             const validation = validatePlaylistURI(uri)
             return {
               uri,
@@ -192,10 +255,13 @@ export default function ChannelForm({
             }
           })
         )
+        const chForJson = { ...ch, playlists: merged }
         try {
-          setJsonText(JSON.stringify(channelUnsignedPayloadForSigning(ch), null, 2))
+          setJsonText(
+            JSON.stringify(channelUnsignedPayloadForSigning(chForJson), null, 2)
+          )
         } catch {
-          setJsonText(JSON.stringify(stripSignatureFields(ch as object), null, 2))
+          setJsonText(JSON.stringify(stripSignatureFields(chForJson as object), null, 2))
         }
         setJsonMode('form')
       })
@@ -211,7 +277,7 @@ export default function ChannelForm({
     return () => {
       cancelled = true
     }
-  }, [editId, address])
+  }, [editId, address, appendPlaylistUrl])
 
   // Auto-generate slug
   const autoSlug = generateChannelSlug(title, id)
@@ -245,13 +311,15 @@ export default function ChannelForm({
     toast({ title: 'Validation Complete', description: `Checked ${uris.length} URIs` })
   }
 
-  const buildChannel = useCallback((): Channel => {
+  const buildChannel = useCallback((overridePlaylists?: string[]): Channel => {
     const created = newChannelCreatedRef.current
 
-    const playlists = playlistsText
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
+    const playlists =
+      overridePlaylists ??
+      playlistsText
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
 
     const publisher: Entity = {
       name: publisherName || '',
@@ -398,7 +466,29 @@ export default function ChannelForm({
     if (!channel) {
       return
     }
-    applyParsedChannelToForm(channel)
+
+    // "Use in a channel" pre-fill is the user's explicit intent — if the
+    // dropped JSON's `playlists[]` doesn't already include it, override it
+    // and update the JSON editor so what's visible matches what will publish.
+    // Consumed after the first swap so manual edits afterward stay manual.
+    const preFill = useInChannelRef.current
+    let next = channel
+    if (!isEdit && preFill) {
+      const existing = (channel.playlists ?? [])
+        .map((p) => (typeof p === 'string' ? p.trim() : ''))
+        .filter((p) => p.length > 0)
+      if (!existing.includes(preFill)) {
+        next = { ...channel, playlists: [preFill] }
+        setJsonText(JSON.stringify(next, null, 2))
+        toast({
+          title: 'Playlist URL replaced',
+          description: `Using the playlist you just published (${preFill}). Edit the JSON to use a different URL.`,
+        })
+      }
+      useInChannelRef.current = ''
+    }
+
+    applyParsedChannelToForm(next)
   }
 
   useEffect(() => {
@@ -493,27 +583,42 @@ export default function ChannelForm({
       rawDocument = buildChannel()
     }
 
-    // Step 2: route through the single publish pipeline. signedPayload and
-    // wireBody come out together so they can't drift.
-    const walletDID = ethereumAddressToDIDPKH(getAddress(address))
-    const prepared = prepareChannelForPublish({
-      rawDocument,
-      walletDID,
-      base: isEdit ? loadedRef.current ?? undefined : undefined,
-    })
-    if ('validationErrors' in prepared) {
-      toast({
-        title: 'Validation Error',
-        description: prepared.validationErrors[0],
-        variant: 'destructive',
-      })
-      return
-    }
-    prepared.toasts.forEach((t) => toast(t))
-
-    // Step 3: sign and POST/PATCH.
     setIsPublishing(true)
     try {
+      // Step 2: pre-flight overwrite detection. See PlaylistForm for the
+      // rationale — same wallet re-publishing transparently PATCHes; different
+      // wallet falls through to a friendly "wrong wallet" error from PATCH.
+      const targetId = rawDocument.id
+      let overwriteBase: Channel | undefined
+      if (!isEdit && targetId) {
+        try {
+          overwriteBase = await getChannel(targetId)
+        } catch (e) {
+          if (!(e instanceof FeedAPIError) || e.status !== 404) {
+            // swallowed by design
+          }
+        }
+      }
+
+      // Step 3: route through the single publish pipeline. signedPayload and
+      // wireBody come out together so they can't drift.
+      const walletDID = ethereumAddressToDIDPKH(getAddress(address))
+      const prepared = prepareChannelForPublish({
+        rawDocument,
+        walletDID,
+        base: isEdit ? loadedRef.current ?? undefined : overwriteBase,
+      })
+      if ('validationErrors' in prepared) {
+        toast({
+          title: 'Validation Error',
+          description: prepared.validationErrors[0],
+          variant: 'destructive',
+        })
+        return
+      }
+      prepared.toasts.forEach((t) => toast(t))
+
+      // Step 4: sign and POST/PATCH.
       const signature = await signDocument(prepared.signedBytes, walletClient, 'publisher')
       const body = { ...prepared.wireBody, signatures: [signature] }
 
@@ -522,6 +627,7 @@ export default function ChannelForm({
         recordPublishedChannel(address, updated)
         onPublished?.()
         loadedRef.current = updated
+        setAppendBanner(null)
         toast({
           title: 'Updated',
           description: (
@@ -530,17 +636,47 @@ export default function ChannelForm({
             />
           ),
         })
+      } else if (overwriteBase && targetId) {
+        const updated = await patchChannel(targetId, body)
+        recordPublishedChannel(address, updated)
+        onPublished?.()
+        const feedUrl = feedChannelResourceUrl(
+          updated.slug?.trim() || updated.id || ''
+        )
+        setPublishedDoc({
+          feedUrl,
+          title: updated.title?.trim() || 'Untitled channel',
+          mode: 'update',
+          receipts: prepared.toasts.map((t) => ({
+            title: t.title,
+            description: t.description,
+          })),
+        })
+        setTitle('')
+        setSummary('')
+        setCoverImage('')
+        setPlaylistsText('')
+        setUriStatuses([])
+        setPublisherName('')
+        setPublisherUrl('')
+        setCurators([])
+        setJsonText('')
+        newChannelCreatedRef.current = new Date().toISOString()
       } else {
         const published = await publishChannel(body as Channel)
         recordPublishedChannel(address, published)
         onPublished?.()
-        toast({
-          title: 'Success!',
-          description: (
-            <FeedUrlToastDescription
-              url={feedChannelResourceUrl(published.slug?.trim() || published.id || '')}
-            />
-          ),
+        const feedUrl = feedChannelResourceUrl(
+          published.slug?.trim() || published.id || ''
+        )
+        setPublishedDoc({
+          feedUrl,
+          title: published.title?.trim() || 'Untitled channel',
+          mode: 'create',
+          receipts: prepared.toasts.map((t) => ({
+            title: t.title,
+            description: t.description,
+          })),
         })
         // Reset form (create only)
         setTitle('')
@@ -557,8 +693,12 @@ export default function ChannelForm({
     } catch (error) {
       console.error(isEdit ? 'Update failed:' : 'Publish failed:', error)
       toast({
-        title: isEdit ? 'Update failed' : 'Publish Failed',
-        description: error instanceof Error ? error.message : 'Unknown error',
+        title: isEdit ? 'Update failed' : 'Publish failed',
+        description: friendlyPublishError(
+          error,
+          'channel',
+          isEdit ? 'update' : 'create'
+        ),
         variant: 'destructive',
       })
     } finally {
@@ -566,8 +706,102 @@ export default function ChannelForm({
     }
   }
 
+  /** User's published playlists, surfaced as a one-click picker so they can
+   * compose this channel without copy/pasting URLs. Recomputed on each render
+   * — cheap, and avoids stale data after a side-tab publish. */
+  const availablePlaylists = useMemo(() => {
+    if (!address) return []
+    const bucket = loadPublished(address)
+    return sortByCreatedDesc(bucket.playlists).map((p) => ({
+      id: p.id,
+      title: p.title || 'Untitled playlist',
+      feedUrl: feedPlaylistResourceUrl(p.slug?.trim() || p.id || ''),
+    }))
+  }, [address])
+
+  const currentPlaylistUrls = useMemo(
+    () =>
+      new Set(
+        playlistsText
+          .split('\n')
+          .map((l) => l.trim())
+          .filter((l) => l.length > 0)
+      ),
+    [playlistsText]
+  )
+
+  const handleAddPlaylistFromPicker = (url: string) => {
+    if (currentPlaylistUrls.has(url)) {
+      return
+    }
+    const current = playlistsText
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0)
+    const next = [...current, url]
+    setPlaylistsText(next.join('\n'))
+    setUriStatuses(
+      next.map((uri) => {
+        const v = validatePlaylistURI(uri)
+        return { uri, valid: v.valid, reason: v.reason }
+      })
+    )
+    // Keep the JSON tab in sync even when not actively visible — otherwise a
+    // user on the JSON tab clicking the picker would see no change in the
+    // editor and assume nothing happened.
+    if (address) {
+      try {
+        const channel = buildChannel(next)
+        setJsonText(
+          JSON.stringify(channelUnsignedPayloadForSigning(channel), null, 2)
+        )
+      } catch {
+        // serialization failure surfaces on form-tab switch via the existing
+        // serializeChannelJsonPreview effect; safe to no-op here.
+      }
+    }
+    // The "Use in a channel" sticky ref is now redundant for this URL.
+    if (useInChannelRef.current === url) {
+      useInChannelRef.current = ''
+    }
+  }
+
+  if (publishedDoc) {
+    return (
+      <PostPublishPanel
+        kind="channel"
+        mode={publishedDoc.mode}
+        feedUrl={publishedDoc.feedUrl}
+        title={publishedDoc.title}
+        receipts={publishedDoc.receipts}
+        onPublishAnother={() => setPublishedDoc(null)}
+        onViewPublished={() => {
+          if (onViewPublished) {
+            onViewPublished()
+          } else {
+            setPublishedDoc(null)
+          }
+        }}
+      />
+    )
+  }
+
   return (
-    <Card className="border-border/45 shadow-[0_2px_40px_-20px_rgba(15,23,42,0.15)]">
+    <>
+      {appendBanner ? (
+        <div className="mb-6 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3">
+          <p className="text-[13px] font-medium text-foreground">
+            Adding playlist to this channel
+          </p>
+          <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
+            {appendBanner}
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Review the playlists list below, then Sign &amp; update to apply.
+          </p>
+        </div>
+      ) : null}
+      <Card className="border-border/45 shadow-[0_2px_40px_-20px_rgba(15,23,42,0.15)]">
       <CardHeader className="space-y-2 pb-6">
         <p className="section-label">Channel</p>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -605,6 +839,35 @@ export default function ChannelForm({
             {loadError}
           </p>
         ) : (
+        <>
+        {availablePlaylists.length > 0 ? (
+          <div className="mb-6 rounded-xl border border-border/60 bg-muted/20 p-4">
+            <p className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Your published playlists
+            </p>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Click to add to this channel's <code className="font-mono">playlists</code> list. Works whether you're on the Form or JSON tab.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {availablePlaylists.map((p) => {
+                const already = currentPlaylistUrls.has(p.feedUrl)
+                return (
+                  <Button
+                    key={p.id}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={already}
+                    onClick={() => handleAddPlaylistFromPicker(p.feedUrl)}
+                    className="h-8 gap-2 rounded-full text-[12px]"
+                  >
+                    {already ? '✓' : '+'} {p.title}
+                  </Button>
+                )
+              })}
+            </div>
+          </div>
+        ) : null}
         <Tabs value={jsonMode} onValueChange={(v) => setJsonMode(v as 'form' | 'json')}>
           <TabsList className="mb-2 h-11 w-full max-w-xs rounded-full">
             <TabsTrigger value="form" className="flex-1 rounded-full text-[13px]">
@@ -829,8 +1092,10 @@ export default function ChannelForm({
             </div>
           </TabsContent>
         </Tabs>
+        </>
         )}
       </CardContent>
     </Card>
+    </>
   )
 }

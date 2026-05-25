@@ -81,6 +81,64 @@ export class FeedAPIError extends Error {
 }
 
 /**
+ * Translate raw feed/HTTP errors into messages a non-developer can act on.
+ * Use for publish/update toasts so the surface never shows raw Postgres or
+ * protocol-level signature complaints.
+ */
+export function friendlyPublishError(
+  err: unknown,
+  kind: 'playlist' | 'playlist-group' | 'channel',
+  intent: 'create' | 'update'
+): string {
+  const noun =
+    kind === 'playlist'
+      ? 'playlist'
+      : kind === 'channel'
+        ? 'channel'
+        : 'playlist group'
+
+  if (err instanceof FeedAPIError) {
+    const raw = err.message || ''
+    const lower = raw.toLowerCase()
+
+    // Wrong wallet trying to overwrite someone else's document.
+    if (
+      err.status === 401 ||
+      err.status === 403 ||
+      lower.includes('signature') ||
+      lower.includes('unauthorized') ||
+      lower.includes('forbidden')
+    ) {
+      return intent === 'update'
+        ? `This ${noun} was published by a different wallet. Connect that wallet to update it, or publish under a new id.`
+        : `Signing failed: the feed rejected your signature. Make sure the connected wallet matches the curator declared in the document.`
+    }
+
+    // Duplicate primary/unique key from Postgres (safety net — the
+    // pre-flight check in the publish handler usually intercepts this).
+    if (
+      lower.includes('duplicate key') ||
+      lower.includes('unique constraint') ||
+      lower.includes('sqlstate 23505')
+    ) {
+      return `A ${noun} with this id or slug already exists on the feed. Upload again to overwrite it, or change the slug.`
+    }
+
+    if (err.status === 404 && intent === 'update') {
+      return `The ${noun} you tried to update is no longer on the feed.`
+    }
+
+    // Generic feed message but stripped of leading "store: insert …" noise.
+    return raw.replace(/^store:\s*\w+\s*\w+:\s*/i, '').trim() || `Feed rejected the ${noun}.`
+  }
+
+  if (err instanceof Error) {
+    return err.message
+  }
+  return `Unknown error while ${intent === 'update' ? 'updating' : 'publishing'} the ${noun}.`
+}
+
+/**
  * POST /api/v1/playlists
  * Create a new playlist with signature-based authentication
  */

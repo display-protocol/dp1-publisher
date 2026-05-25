@@ -15,7 +15,15 @@ import { generateSlug } from '@/lib/utils'
 import { ethereumAddressToDIDPKH } from '@/lib/signing'
 import { signDocument } from '@/lib/signing'
 import { playlistUnsignedPayloadForSigning } from '@/lib/playlistSignPayload'
-import { feedPlaylistResourceUrl, getPlaylist, patchPlaylist, publishPlaylist, validatePlaylistURI } from '@/lib/api'
+import {
+  FeedAPIError,
+  feedPlaylistResourceUrl,
+  friendlyPublishError,
+  getPlaylist,
+  patchPlaylist,
+  publishPlaylist,
+  validatePlaylistURI,
+} from '@/lib/api'
 import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription'
 import { mergePlaylistForPatch } from '@/lib/dp1Merge'
 import { stripPlaylistExtensionFields, stripItemExtensionFields } from '@/lib/dp1ExtensionPolicy'
@@ -25,6 +33,7 @@ import PlaylistItemForm from './PlaylistItemForm'
 import CuratorList from './CuratorList'
 import JsonFileDropZone from './JsonFileDropZone'
 import { preparePlaylistForPublish } from '@/lib/preparePublish'
+import PostPublishPanel from './PostPublishPanel'
 
 function parsePlaylistJson(
   text: string,
@@ -156,11 +165,24 @@ export default function PlaylistForm({
   editId,
   onCancelEdit,
   onPublished,
+  onUseInNewChannel,
+  existingChannels,
+  onAddToExistingChannel,
+  onViewPublished,
   extensionsEnabled,
 }: {
   editId?: string
   onCancelEdit?: () => void
   onPublished?: () => void
+  /** Fires when the user clicks "Start a new channel" on the post-publish panel. */
+  onUseInNewChannel?: (feedUrl: string) => void
+  /** User's existing channels (read from localStorage); each renders as an
+   * "Add to: <title>" CTA on the post-publish panel. */
+  existingChannels?: { id: string; title: string }[]
+  /** Fires when the user picks an existing channel to add this playlist to. */
+  onAddToExistingChannel?: (channelId: string, feedUrl: string) => void
+  /** Called when the user clicks "View all published" after a create publish. */
+  onViewPublished?: () => void
   extensionsEnabled: boolean
 }) {
   const { address } = useAccount()
@@ -216,6 +238,18 @@ export default function PlaylistForm({
   const [jsonText, setJsonText] = useState('')
 
   const [isPublishing, setIsPublishing] = useState(false)
+  /** After a successful create publish, hold the feed URL + title so the
+   * post-publish panel can replace the form until the user picks a next step.
+   * `mode='update'` means the publish detected an existing playlist with the
+   * same id and replaced it via PATCH; `mode='create'` is a fresh POST.
+   * `receipts` captures the prepare-pipeline notes (wallet identity replacement,
+   * curator injection, etc.) so the user has a permanent record. */
+  const [publishedDoc, setPublishedDoc] = useState<{
+    feedUrl: string
+    title: string
+    mode: 'create' | 'update'
+    receipts: { title: string; description: string }[]
+  } | null>(null)
 
   const isEdit = Boolean(editId)
 
@@ -659,28 +693,48 @@ export default function PlaylistForm({
       rawDocument = buildPlaylist()
     }
 
-    // Step 2: route through the single publish pipeline. signedPayload and
-    // wireBody come out together so they can't drift.
-    const walletDID = ethereumAddressToDIDPKH(getAddress(address))
-    const prepared = preparePlaylistForPublish({
-      rawDocument,
-      walletDID,
-      base: isEdit ? loadedRef.current ?? undefined : undefined,
-      extensionsEnabled,
-    })
-    if ('validationErrors' in prepared) {
-      toast({
-        title: 'Validation error',
-        description: prepared.validationErrors[0],
-        variant: 'destructive',
-      })
-      return
-    }
-    prepared.toasts.forEach((t) => toast(t))
-
-    // Step 3: sign and POST/PATCH.
     setIsPublishing(true)
     try {
+      // Step 2: pre-flight overwrite detection. On create publishes, look up
+      // the document's id on the feed; if it already exists, switch to PATCH
+      // so the user transparently overwrites their own prior publish (same
+      // wallet → feed accepts). A different wallet's signature will fail at
+      // PATCH and surface a friendly "wrong wallet" error.
+      const targetId = rawDocument.id
+      let overwriteBase: Playlist | undefined
+      if (!isEdit && targetId) {
+        try {
+          overwriteBase = await getPlaylist(targetId)
+        } catch (e) {
+          // 404 is the happy path — proceed with POST. Other errors:
+          // ignore the pre-flight signal and let the POST surface whatever
+          // happens next, so we don't false-fail on a transient feed blip.
+          if (!(e instanceof FeedAPIError) || e.status !== 404) {
+            // swallowed by design
+          }
+        }
+      }
+
+      // Step 3: route through the single publish pipeline. signedPayload and
+      // wireBody come out together so they can't drift.
+      const walletDID = ethereumAddressToDIDPKH(getAddress(address))
+      const prepared = preparePlaylistForPublish({
+        rawDocument,
+        walletDID,
+        base: isEdit ? loadedRef.current ?? undefined : overwriteBase,
+        extensionsEnabled,
+      })
+      if ('validationErrors' in prepared) {
+        toast({
+          title: 'Validation error',
+          description: prepared.validationErrors[0],
+          variant: 'destructive',
+        })
+        return
+      }
+      prepared.toasts.forEach((t) => toast(t))
+
+      // Step 4: sign and POST/PATCH.
       const signature = await signDocument(prepared.signedBytes, walletClient, 'curator')
       const body = { ...prepared.wireBody, signatures: [signature] }
 
@@ -697,17 +751,56 @@ export default function PlaylistForm({
             />
           ),
         })
+      } else if (overwriteBase && targetId) {
+        // Overwrite-on-create: feed already has this id, PATCH instead.
+        const updated = await patchPlaylist(targetId, body)
+        recordPublishedPlaylist(address, updated)
+        onPublished?.()
+        const feedUrl = feedPlaylistResourceUrl(
+          updated.slug?.trim() || updated.id || ''
+        )
+        setPublishedDoc({
+          feedUrl,
+          title: updated.title?.trim() || 'Untitled playlist',
+          mode: 'update',
+          receipts: prepared.toasts.map((t) => ({
+            title: t.title,
+            description: t.description,
+          })),
+        })
+        // Reset form so "Publish another" returns to a clean state.
+        setTitle('')
+        setSummary('')
+        setCoverImage('')
+        setPlaylistNoteText('')
+        setPlaylistNoteDuration('')
+        setJsonText('')
+        newPlaylistCreatedRef.current = new Date().toISOString()
+        setItems([{ source: '', title: '', duration: undefined, license: undefined }])
+        setEnableDynamicQuery(false)
+        setDynamicProfile('https-json-v1')
+        setDynamicEndpoint('')
+        setDynamicMethod('GET')
+        setDynamicHeaders('')
+        setDynamicQuery('')
+        setDynamicItemsPath('')
+        setDynamicItemSchema('dp1/1.1')
+        setDynamicItemMap('')
       } else {
         const published = await publishPlaylist(body as Playlist)
         recordPublishedPlaylist(address, published)
         onPublished?.()
-        toast({
-          title: 'Success!',
-          description: (
-            <FeedUrlToastDescription
-              url={feedPlaylistResourceUrl(published.slug?.trim() || published.id || '')}
-            />
-          ),
+        const feedUrl = feedPlaylistResourceUrl(
+          published.slug?.trim() || published.id || ''
+        )
+        setPublishedDoc({
+          feedUrl,
+          title: published.title?.trim() || 'Untitled playlist',
+          mode: 'create',
+          receipts: prepared.toasts.map((t) => ({
+            title: t.title,
+            description: t.description,
+          })),
         })
         // Reset form (create only — edit leaves the form populated)
         setTitle('')
@@ -731,13 +824,49 @@ export default function PlaylistForm({
     } catch (error) {
       console.error(isEdit ? 'Update failed:' : 'Publish failed:', error)
       toast({
-        title: isEdit ? 'Update failed' : 'Publish Failed',
-        description: error instanceof Error ? error.message : 'Unknown error',
+        title: isEdit ? 'Update failed' : 'Publish failed',
+        description: friendlyPublishError(
+          error,
+          'playlist',
+          isEdit ? 'update' : 'create'
+        ),
         variant: 'destructive',
       })
     } finally {
       setIsPublishing(false)
     }
+  }
+
+  if (publishedDoc) {
+    return (
+      <PostPublishPanel
+        kind="playlist"
+        mode={publishedDoc.mode}
+        feedUrl={publishedDoc.feedUrl}
+        title={publishedDoc.title}
+        receipts={publishedDoc.receipts}
+        onUseInNewChannel={
+          extensionsEnabled && onUseInNewChannel
+            ? () => onUseInNewChannel(publishedDoc.feedUrl)
+            : undefined
+        }
+        existingChannels={extensionsEnabled ? existingChannels : []}
+        onAddToExistingChannel={
+          extensionsEnabled && onAddToExistingChannel
+            ? (channelId) =>
+                onAddToExistingChannel(channelId, publishedDoc.feedUrl)
+            : undefined
+        }
+        onPublishAnother={() => setPublishedDoc(null)}
+        onViewPublished={() => {
+          if (onViewPublished) {
+            onViewPublished()
+          } else {
+            setPublishedDoc(null)
+          }
+        }}
+      />
+    )
   }
 
   return (

@@ -429,27 +429,6 @@ export async function patchChannel(
 }
 
 /**
- * Check if a playlist URI is reachable (HEAD request)
- * Returns true if status is 200, false otherwise
- */
-export async function checkPlaylistReachable(uri: string): Promise<boolean> {
-  try {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 5000) // 5s timeout
-
-    const response = await fetch(uri, {
-      method: 'HEAD',
-      signal: controller.signal,
-    })
-
-    clearTimeout(timeoutId)
-    return response.ok
-  } catch {
-    return false
-  }
-}
-
-/**
  * Check if an IPv4 address (as 4 bytes) is in a private/loopback range (RFC1918, RFC3927, loopback).
  * Returns true if the address should be blocked.
  */

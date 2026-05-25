@@ -19,10 +19,13 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 | ---- | -------- | ---- |
 | **Entry / shell** | `src/main.tsx`, `src/App.tsx` | Bootstrap React, wagmi chain config (Ethereum mainnet), TanStack Query, extensions provider. |
 | **Layouts / screens** | `src/components/Dashboard.tsx` | Connect gate, Publish vs Published navigation, tabs for Playlist / Group / Channel when extensions permit. |
-| **Forms & editors** | `src/components/PlaylistForm.tsx`, `PlaylistGroupForm.tsx`, `ChannelForm.tsx` | Composer UI, JSON editor paths, PATCH/Publish orchestration per resource. |
+| **Forms & editors** | `src/components/PlaylistForm.tsx`, `PlaylistGroupForm.tsx`, `ChannelForm.tsx` | Composer UI, JSON editor paths. Forms resolve a *raw document* from form state or pasted JSON, then route it through the publish-preparation boundary below — they no longer build wire JSON or run canonicalization themselves. |
+| **Publish preparation** | `src/lib/preparePublish.ts` | **Single chokepoint** for the `raw document → signed bytes + wire body` pipeline. Merges with base (edit), strips extensions when off (playlist), ensures the connected wallet is declared as signer (`curators[]` for playlist, `curator` for playlist group, `publisher.key` for channel), validates, then canonicalizes once via `*UnsignedPayloadForSigning` and derives the wire body from that canonical form. **Invariant:** CREATE wire body equals signed bytes; PATCH wire body equals signed bytes minus `id` and `created` (the only documented PATCH omissions). |
 | **Published registry (local)** | `src/components/PublishedView.tsx`, `src/lib/publishedStorage.ts` | Per-wallet list metadata in `localStorage`; edits always refetch via GET—never PATCH from stale cache alone. |
 | **Feed HTTP client** | `src/lib/api.ts` | Base URL helpers, GET metadata, POST create, PATCH update, GET list/detail, playlist URI helpers. Throws `FeedAPIError` with status + stable `error` code when present. |
-| **DP-1 signing** | `src/lib/signing.ts`, `*SignPayload.ts` | Strip signatures, JCS canonicalize (RFC 8785), newline-terminated signing bytes, SHA-256 digest, EIP-191 personal sign via wagmi wallet client; build `kid` (`did:pkh:…`). |
+| **DP-1 signing** | `src/lib/signing.ts`, `*SignPayload.ts` | Strip signatures, JCS canonicalize (RFC 8785), newline-terminated signing bytes, SHA-256 digest, EIP-191 personal sign via wagmi wallet client; build `kid` (`did:pkh:…`). `*UnsignedPayloadForSigning` whitelists typed top-level fields so unknown imported-JSON keys can't survive into hashed bytes (the feed reconstructs a typed struct that drops them). |
+| **Signer-identity helpers** | `src/lib/dp1WalletSigner.ts` | `ensurePlaylistWalletCurator` / `ensurePlaylistGroupWalletCurator` / `ensureChannelWalletPublisher`: declare the connected wallet as a signer on a document before signing, defensively normalizing malformed entities from the JSON boundary. |
+| **Field validation** | `src/lib/channelValidation.ts`, `src/lib/playlistGroupValidation.ts`, inline playlist gate in `preparePublish.ts` | Defensive checks that run before signing on both Form-tab and JSON-tab paths. |
 | **Merge helpers** | `src/lib/dp1Merge.ts`, `dp1EntityWire.ts` | Server-aligned partial document shapes before PATCH/sign. |
 | **Extension policy** | `src/context/Dp1ExtensionsContext.tsx`, `src/lib/dp1ExtensionPolicy.ts` | Effective `extensionsEnabled` from env override or `GET /api/v1`; gates Channel UI and playlist extension fields. |
 | **Types** | `src/types/dp1.ts` | Shared shapes aligned with DP-1 / feed JSON. |
@@ -31,11 +34,22 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 
 ## Data flow (publish)
 
-1. User edits a playlist, playlist-group, or channel in a form or JSON editor.
-2. The UI builds the wire JSON (`id`, `created`, curator/publisher keys, body fields—per feed rules for signature-only creates).
-3. Signing strips `signature` / `signatures`, stabilizes optional fields (`JSON.stringify` round-trip), canonicalizes with JCS, hashes with SHA-256, signs digest with EIP-191.
-4. The completed document (including non-empty `signatures`) is sent with `POST /api/v1/...` or `PATCH /api/v1/.../{id}` as implemented in `api.ts`.
-5. The feed validates, may add feed operator signatures, persists, and returns the stored document.
+1. The form resolves a **raw document** from form state (Form tab) or parsed imported JSON (JSON tab).
+2. `preparePublish.ts` runs the pipeline:
+   - merge with base if editing (otherwise pass through),
+   - strip extension fields when extensions are off (playlist),
+   - ensure the connected wallet is declared as the signer (`curators[]` for playlist, `curator` for playlist group, `publisher.key` for channel),
+   - validate field rules,
+   - canonicalize **once** via `*UnsignedPayloadForSigning` — the single source of truth for the bytes the feed will hash. The canonicalizer whitelists typed top-level fields, so unknown imported-JSON keys are dropped at this boundary.
+3. The form receives `{ signedPayload, signedBytes, wireBody, toasts }`. It passes `signedBytes` directly to `signDocument` and POSTs/PATCHes `{ ...wireBody, signatures }`.
+4. The completed document is sent with `POST /api/v1/...` or `PATCH /api/v1/.../{id}` as implemented in `api.ts`.
+5. The feed validates, may add feed-operator signatures, persists, and returns the stored document.
+
+**Invariant** (enforced by `preparePublish.ts`, tested in `preparePublish.test.ts`):
+- **CREATE**: `wireBody === signedBytes` — the POST body equals the bytes that were hashed, so the feed verifies the signature against exactly what we sent.
+- **PATCH**: `wireBody === signedBytes` minus `{ id, created }`. `id` is in the URL path; `created` is immutable. These are the only intentional omissions.
+
+`wireBody` is derived from `signedBytes` directly (not built in parallel) — drift between them is structurally impossible at this layer.
 
 **PATCH:** signatures must verify against the **merged** stored document overlaid with patch fields—the app refetches GET before merging for edit flows (see `publishedStorage.ts` comments).
 
@@ -51,8 +65,7 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 
 ## Security posture (browser)
 
-- **Playlist item URIs** in Channel flows: validated in-browser (`validatePlaylistURI`); production allows **https://** and **ipfs://** only and blocks obvious private/local hosts unless **dev** + `VITE_DEBUG_MODE=true`.
-- **Reachability checks** use HEAD with a timeout; failures are UX hints, not a guarantee.
+- **Playlist URIs** in channel and playlist-group flows: validated in-browser (`validatePlaylistURI`); production allows **https://** and **ipfs://** only and blocks obvious private/local hosts unless **dev** + `VITE_DEBUG_MODE=true`. Form-tab publish requires an explicit **Check URLs** pass; the publish pipeline re-validates before signing.
 - **No API keys** in the dashboard path: authenticated writes rely on cryptographic signatures acceptable to the feed’s `SignatureOrAPIKeyAuth` policy.
 - **Secrets:** never commit `.env`; WalletConnect project id is optional public config embedded at build time.
 

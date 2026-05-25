@@ -16,6 +16,146 @@ describe('playlistUnsignedPayloadForSigning', () => {
     expect(payload).toHaveProperty('items')
   })
 
+  // Round-10/11 regression guards: imported JSON can carry tool metadata
+  // at any nesting level. The feed reconstructs a typed Playlist via
+  // json.Marshal, which silently omits unknown fields top-level AND nested
+  // — so anything we let through the canonicalizer would be hashed by us
+  // but not by the feed, producing a signature mismatch on the JSON-import/
+  // re-sign path this PR exists to fix.
+  it('drops unknown top-level fields (feed-contract whitelist)', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      extraField: 'tool metadata',
+      _buildTime: '2026-05-22T00:00:00Z',
+      __debug: { something: true },
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    expect(payload).not.toHaveProperty('extraField')
+    expect(payload).not.toHaveProperty('_buildTime')
+    expect(payload).not.toHaveProperty('__debug')
+    // But typed fields still survive.
+    expect(payload).toHaveProperty('dpVersion')
+    expect(payload).toHaveProperty('title')
+    expect(payload).toHaveProperty('items')
+  })
+
+  it('drops unknown fields inside items[i] (the round-11 finding)', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      items: [
+        {
+          source: 'https://example.com/v.m3u8',
+          title: 'Item with tool metadata',
+          _buildMeta: { stale: true },
+          customTag: 'should-not-survive',
+        },
+      ],
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const items = payload.items as Array<Record<string, unknown>>
+    expect(items[0]).not.toHaveProperty('_buildMeta')
+    expect(items[0]).not.toHaveProperty('customTag')
+    expect(items[0]).toHaveProperty('source')
+    expect(items[0]).toHaveProperty('title')
+  })
+
+  it('drops unknown fields inside items[i].display (nested DisplayPrefs)', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      items: [
+        {
+          source: 'https://example.com/v.m3u8',
+          display: {
+            scaling: 'fit',
+            customDisplayHint: 'ignore-me',
+            __debug: true,
+          },
+        },
+      ],
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const display = (payload.items as Array<{ display: Record<string, unknown> }>)[0].display
+    expect(display).not.toHaveProperty('customDisplayHint')
+    expect(display).not.toHaveProperty('__debug')
+    expect(display.scaling).toBe('fit')
+  })
+
+  it('drops unknown fields inside defaults and defaults.display', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      defaults: {
+        display: { scaling: 'fit', extraDisplay: 'nope' },
+        license: 'open',
+        unknownTopInDefaults: 42,
+      },
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const defaults = payload.defaults as Record<string, unknown>
+    expect(defaults).not.toHaveProperty('unknownTopInDefaults')
+    expect(defaults).toHaveProperty('license')
+    const display = defaults.display as Record<string, unknown>
+    expect(display).not.toHaveProperty('extraDisplay')
+    expect(display.scaling).toBe('fit')
+  })
+
+  // Documented intentional open dictionaries — these are typed as
+  // `Record<string, …>` in dp1.ts, so arbitrary keys are *part of the
+  // contract*. They must survive verbatim through the canonicalizer.
+  it('preserves arbitrary keys inside intentional open dictionaries (override, userOverrides, headers)', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      items: [
+        {
+          source: 'https://example.com/v.m3u8',
+          override: { customRendererKey: 'value', anotherKey: 42 },
+          display: {
+            scaling: 'fit',
+            userOverrides: { background: true, scaling: false },
+          },
+        },
+      ],
+      dynamicQuery: {
+        profile: 'https-json-v1',
+        endpoint: 'https://example.com/api',
+        headers: { Authorization: 'Bearer token', 'X-Custom': 'value' },
+        responseMapping: { itemsPath: 'data', itemSchema: 'dp1/1.1' },
+      },
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const item = (payload.items as Array<Record<string, unknown>>)[0]
+    // override: open dictionary → arbitrary keys survive verbatim
+    expect(item.override).toEqual({ customRendererKey: 'value', anotherKey: 42 })
+    // userOverrides: open dictionary inside DisplayPrefs → arbitrary keys survive
+    const display = item.display as Record<string, unknown>
+    expect(display.userOverrides).toEqual({ background: true, scaling: false })
+    // headers: open dictionary inside DynamicQuery → arbitrary keys survive
+    const dq = payload.dynamicQuery as Record<string, unknown>
+    expect(dq.headers).toEqual({ Authorization: 'Bearer token', 'X-Custom': 'value' })
+  })
+
+  it('drops unknown fields inside dynamicQuery and dynamicQuery.responseMapping', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      dynamicQuery: {
+        profile: 'https-json-v1',
+        endpoint: 'https://example.com/api',
+        responseMapping: {
+          itemsPath: 'data',
+          itemSchema: 'dp1/1.1',
+          extraInRM: 'remove me',
+        },
+        extraInDQ: 'remove me too',
+      },
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const dq = payload.dynamicQuery as Record<string, unknown>
+    expect(dq).not.toHaveProperty('extraInDQ')
+    expect(dq.profile).toBe('https-json-v1')
+    const rm = dq.responseMapping as Record<string, unknown>
+    expect(rm).not.toHaveProperty('extraInRM')
+    expect(rm.itemsPath).toBe('data')
+  })
+
   it('should strip signatures array', () => {
     const playlist: Playlist = {
       ...minimalPlaylist,

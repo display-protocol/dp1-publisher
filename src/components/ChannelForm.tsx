@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Check, Loader2, MinusCircle, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Check, Loader2, MinusCircle } from 'lucide-react'
 import { useAccount, useWalletClient } from 'wagmi'
 import { v4 as uuidv4 } from 'uuid'
 import { getAddress } from 'viem'
@@ -22,85 +22,18 @@ import {
   patchChannel,
   publishChannel,
   validatePlaylistURI,
-  checkPlaylistReachable,
   isDebugMode,
 } from '@/lib/api'
 import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription'
+import JsonFileDropZone from './JsonFileDropZone'
+import { prepareChannelForPublish } from '@/lib/preparePublish'
 import type { Channel, Entity } from '@/types/dp1'
 import CuratorList from './CuratorList'
 
 interface PlaylistURIStatus {
   uri: string
   valid: boolean
-  reachable?: boolean
   reason?: string
-  checking: boolean
-}
-
-interface ValidationError {
-  field: string
-  message: string
-}
-
-function validateChannelFields(channel: Partial<Channel>): ValidationError[] {
-  const errors: ValidationError[] = []
-  
-  // Title validation
-  if (!channel.title || channel.title.trim().length === 0) {
-    errors.push({ field: 'title', message: 'Title is required' })
-  } else if (channel.title.length > 200) {
-    errors.push({ field: 'title', message: 'Title must be 200 characters or less' })
-  }
-  
-  // Slug validation (lowercase, hyphens only)
-  if (channel.slug && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(channel.slug)) {
-    errors.push({ field: 'slug', message: 'Slug must contain only lowercase letters, numbers, and hyphens' })
-  }
-  
-  // Summary validation
-  if (channel.summary && channel.summary.length > 2000) {
-    errors.push({ field: 'summary', message: 'Summary must be 2000 characters or less' })
-  }
-  
-  // Cover image validation (basic URI format)
-  if (channel.coverImage && !/^(https?|ipfs|ar):\/\/.+/.test(channel.coverImage)) {
-    errors.push({ field: 'coverImage', message: 'Cover image must be a valid URI (https://, ipfs://, or ar://)' })
-  }
-  
-  // Playlists validation
-  if (!channel.playlists || channel.playlists.length === 0) {
-    errors.push({ field: 'playlists', message: 'At least one playlist URI is required' })
-  }
-  
-  // Publisher validation
-  if (channel.publisher) {
-    if (!channel.publisher.name || channel.publisher.name.trim().length === 0) {
-      errors.push({ field: 'publisher.name', message: 'Publisher name is required' })
-    }
-    if (!channel.publisher.key || !/^did:[a-z]+:.+$/.test(channel.publisher.key)) {
-      errors.push({ field: 'publisher.key', message: 'Publisher key must be in DID format' })
-    }
-    if (channel.publisher.url && !/^https?:\/\/.+/.test(channel.publisher.url)) {
-      errors.push({ field: 'publisher.url', message: 'Publisher URL must be a valid HTTP(S) URL' })
-    }
-  }
-  
-  // Curators validation
-  if (channel.curators) {
-    channel.curators.forEach((curator, index) => {
-      if (!curator.name || curator.name.trim().length === 0) {
-        errors.push({ field: `curators[${index}].name`, message: `Curator ${index + 1} name is required` })
-      }
-      if (!curator.key || !/^did:[a-z]+:.+$/.test(curator.key)) {
-        errors.push({ field: `curators[${index}].key`, message: `Curator ${index + 1} key must be in DID format` })
-      }
-      if (curator.url && !/^https?:\/\/.+/.test(curator.url)) {
-        errors.push({ field: `curators[${index}].url`, message: `Curator ${index + 1} URL must be a valid HTTP(S) URL` })
-      }
-    })
-  }
-  
-  return errors
 }
 
 function parseChannelJson(text: string): { channel: Channel } | { error: string } {
@@ -170,7 +103,6 @@ function channelFromJsonImport(raw: Channel, fallbackId: string): Channel {
       : new Date().toISOString()
   return {
     ...rest,
-    version: rest.version || '1.0.0',
     id: rest.id || fallbackId,
     created,
   }
@@ -257,8 +189,6 @@ export default function ChannelForm({
               uri,
               valid: validation.valid,
               reason: validation.reason,
-              checking: false,
-              reachable: validation.valid ? true : undefined,
             }
           })
         )
@@ -287,46 +217,31 @@ export default function ChannelForm({
   const autoSlug = generateChannelSlug(title, id)
   const displaySlug = isAutoSlug ? autoSlug : slug
 
-  const handleValidateURIs = async () => {
+  const handleValidateURIs = () => {
     const uris = playlistsText
       .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
 
     if (uris.length === 0) {
-      toast({ title: 'Error', description: 'Please enter at least one playlist URI', variant: 'destructive' })
+      toast({
+        title: 'Error',
+        description: 'Please enter at least one playlist URI',
+        variant: 'destructive',
+      })
       return
     }
 
-    // Validate format first
-    const statuses: PlaylistURIStatus[] = uris.map(uri => {
+    const statuses: PlaylistURIStatus[] = uris.map((uri) => {
       const validation = validatePlaylistURI(uri)
-      const skipReachability = validation.valid && isDebugMode()
       return {
         uri,
         valid: validation.valid,
         reason: validation.reason,
-        checking: validation.valid && !skipReachability,
-        reachable: skipReachability ? true : undefined,
       }
     })
 
     setUriStatuses(statuses)
-
-    // Check reachability for valid URIs (skipped in dev debug mode: avoids CORS on local APIs)
-    const reachabilityPromises = statuses.map(async (status, index) => {
-      if (status.valid && !isDebugMode()) {
-        const reachable = await checkPlaylistReachable(status.uri)
-        setUriStatuses(prev => {
-          const updated = [...prev]
-          updated[index] = { ...updated[index], reachable, checking: false }
-          return updated
-        })
-      }
-    })
-
-    await Promise.all(reachabilityPromises)
-
     toast({ title: 'Validation Complete', description: `Checked ${uris.length} URIs` })
   }
 
@@ -440,7 +355,13 @@ export default function ChannelForm({
         setIsAutoSlug(false)
         setSlug(ch.slug.trim())
       }
-      setVersion(ch.version || '1.0.0')
+      setVersion(
+        ch.version?.trim()
+          ? ch.version.trim()
+          : isEdit
+            ? (loadedRef.current?.version ?? version)
+            : '1.0.0'
+      )
       setSummary(ch.summary || '')
       setCoverImage(ch.coverImage || '')
       const pub = ch.publisher
@@ -460,13 +381,11 @@ export default function ChannelForm({
             uri,
             valid: validation.valid,
             reason: validation.reason,
-            checking: false,
-            reachable: validation.valid ? true : undefined,
           }
         })
       )
     },
-    [id, isEdit]
+    [id, isEdit, version]
   )
 
   const handleJsonTextChange = (value: string) => {
@@ -514,150 +433,41 @@ export default function ChannelForm({
     setJsonMode('json')
   }
 
+  /**
+   * Form-tab URI-validation gate: ensures every line in the playlists box was
+   * checked and passed before we go anywhere near signing. JSON-tab mode
+   * skips this — `parseChannelJson` enforces URI shape on its own.
+   */
+  const validateFormTabUris = (): string | null => {
+    const playlists = playlistsText
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+    if (uriStatuses.length !== playlists.length) {
+      return 'Please validate URIs before publishing'
+    }
+    if (uriStatuses.some((status) => !status.valid)) {
+      return 'Please fix invalid URIs before publishing'
+    }
+    return null
+  }
+
   const handlePublish = async () => {
     if (!walletClient || !address) {
       toast({ title: 'Error', description: 'Wallet not connected', variant: 'destructive' })
       return
     }
-
-    if (isEdit) {
-      if (!editId || !loadedRef.current) {
-        toast({
-          title: 'Error',
-          description: loadError || 'Channel not loaded yet.',
-          variant: 'destructive',
-        })
-        return
-      }
-
-      const base = loadedRef.current
-
-      let patchFields: Parameters<typeof mergeChannelForPatch>[1]
-
-      if (jsonMode === 'json') {
-        const trimmed = jsonText.trim()
-        if (!trimmed) {
-          toast({
-            title: 'Error',
-            description: 'Paste channel JSON here, or use the Form tab.',
-            variant: 'destructive',
-          })
-          return
-        }
-        const parsed = parseChannelJson(trimmed)
-        if ('error' in parsed) {
-          toast({ title: 'Invalid channel', description: parsed.error, variant: 'destructive' })
-          return
-        }
-        const p = parsed.channel
-        patchFields = {
-          title: p.title.trim(),
-          slug: p.slug ?? base.slug,
-          version: p.version || base.version || '1.0.0',
-          playlists: p.playlists,
-          publisher: p.publisher ?? base.publisher,
-          curators: p.curators,
-          summary: p.summary,
-          coverImage: p.coverImage,
-        }
-      } else {
-        const playlists = playlistsText
-          .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => line.length > 0)
-
-        const publisher: Entity = {
-          name: publisherName || '',
-          key: ethereumAddressToDIDPKH(getAddress(address)),
-          url: publisherUrl || undefined,
-        }
-        patchFields = {
-          title: title.trim(),
-          slug: displaySlug,
-          version,
-          playlists,
-          publisher,
-          curators,
-          summary: summary.trim() || undefined,
-          coverImage: coverImage.trim() || undefined,
-        }
-
-        const allValidated = uriStatuses.length === playlists.length
-        if (!allValidated) {
-          toast({
-            title: 'Validation Required',
-            description: 'Please validate URIs before saving',
-            variant: 'destructive',
-          })
-          return
-        }
-        if (uriStatuses.some((s) => !s.valid)) {
-          toast({
-            title: 'Invalid URIs',
-            description: 'Please fix invalid URIs before saving',
-            variant: 'destructive',
-          })
-          return
-        }
-      }
-
-      const merged = mergeChannelForPatch(base, patchFields)
-      const validationErrors = validateChannelFields(merged)
-      if (validationErrors.length > 0) {
-        toast({
-          title: 'Validation Error',
-          description: validationErrors[0].message,
-          variant: 'destructive',
-        })
-        return
-      }
-
-      setIsPublishing(true)
-      try {
-        const signature = await signDocument(
-          channelUnsignedPayloadForSigning(merged),
-          walletClient,
-          'publisher'
-        )
-        const body: Record<string, unknown> = {
-          title: patchFields.title,
-          slug: patchFields.slug,
-          version: patchFields.version,
-          playlists: patchFields.playlists,
-          publisher: patchFields.publisher,
-          signatures: [signature],
-        }
-        if (patchFields.curators !== undefined) body.curators = patchFields.curators
-        if (patchFields.summary !== undefined) body.summary = patchFields.summary
-        if (patchFields.coverImage !== undefined) body.coverImage = patchFields.coverImage
-
-        const updated = await patchChannel(editId, body)
-        recordPublishedChannel(address, updated)
-        onPublished?.()
-        loadedRef.current = updated
-        toast({
-          title: 'Updated',
-          description: (
-            <FeedUrlToastDescription
-              url={feedChannelResourceUrl(updated.slug?.trim() || updated.id || '')}
-            />
-          ),
-        })
-      } catch (error) {
-        console.error('Update failed:', error)
-        toast({
-          title: 'Update failed',
-          description: error instanceof Error ? error.message : 'Unknown error',
-          variant: 'destructive',
-        })
-      } finally {
-        setIsPublishing(false)
-      }
+    if (isEdit && (!editId || !loadedRef.current)) {
+      toast({
+        title: 'Error',
+        description: loadError || 'Channel not loaded yet.',
+        variant: 'destructive',
+      })
       return
     }
 
-    let unsignedChannel: Channel
-
+    // Step 1: resolve raw document — from form state or imported JSON.
+    let rawDocument: Channel
     if (jsonMode === 'json') {
       const trimmed = jsonText.trim()
       if (!trimmed) {
@@ -673,92 +483,81 @@ export default function ChannelForm({
         toast({ title: 'Invalid channel', description: parsed.error, variant: 'destructive' })
         return
       }
-      unsignedChannel = channelFromJsonImport(parsed.channel, id)
+      rawDocument = channelFromJsonImport(parsed.channel, id)
     } else {
-      // Build channel from form
-      const channel = buildChannel()
-
-      // Validate the channel
-      const validationErrors = validateChannelFields(channel)
-      if (validationErrors.length > 0) {
-        toast({ 
-          title: 'Validation Error', 
-          description: validationErrors[0].message,
-          variant: 'destructive' 
-        })
+      const uriError = validateFormTabUris()
+      if (uriError) {
+        toast({ title: 'Invalid URIs', description: uriError, variant: 'destructive' })
         return
       }
-
-      // Check if all URIs are validated
-      const playlists = playlistsText
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0)
-
-      const allValidated = uriStatuses.length === playlists.length
-      if (!allValidated) {
-        toast({ 
-          title: 'Validation Required', 
-          description: 'Please validate URIs before publishing', 
-          variant: 'destructive' 
-        })
-        return
-      }
-
-      const hasInvalidURIs = uriStatuses.some(status => !status.valid)
-      if (hasInvalidURIs) {
-        toast({ 
-          title: 'Invalid URIs', 
-          description: 'Please fix invalid URIs before publishing', 
-          variant: 'destructive' 
-        })
-        return
-      }
-
-      unsignedChannel = channel
+      rawDocument = buildChannel()
     }
 
-    setIsPublishing(true)
-
-    try {
-      const signPayload = channelUnsignedPayloadForSigning(unsignedChannel)
-      const signature = await signDocument(signPayload, walletClient, 'publisher')
-
-      const signedChannel = {
-        ...signPayload,
-        signatures: [signature],
-      } as Channel
-
-      // Publish to feed server
-      const published = await publishChannel(signedChannel)
-      recordPublishedChannel(address, published)
-      onPublished?.()
-
+    // Step 2: route through the single publish pipeline. signedPayload and
+    // wireBody come out together so they can't drift.
+    const walletDID = ethereumAddressToDIDPKH(getAddress(address))
+    const prepared = prepareChannelForPublish({
+      rawDocument,
+      walletDID,
+      base: isEdit ? loadedRef.current ?? undefined : undefined,
+    })
+    if ('validationErrors' in prepared) {
       toast({
-        title: 'Success!',
-        description: (
-          <FeedUrlToastDescription
-            url={feedChannelResourceUrl(published.slug?.trim() || published.id || '')}
-          />
-        ),
+        title: 'Validation Error',
+        description: prepared.validationErrors[0],
+        variant: 'destructive',
       })
+      return
+    }
+    prepared.toasts.forEach((t) => toast(t))
 
-      // Reset form
-      setTitle('')
-      setSummary('')
-      setCoverImage('')
-      setPlaylistsText('')
-      setUriStatuses([])
-      setPublisherName('')
-      setPublisherUrl('')
-      setCurators([])
-      setJsonText('')
-      newChannelCreatedRef.current = new Date().toISOString()
-      
+    // Step 3: sign and POST/PATCH.
+    setIsPublishing(true)
+    try {
+      const signature = await signDocument(prepared.signedBytes, walletClient, 'publisher')
+      const body = { ...prepared.wireBody, signatures: [signature] }
+
+      if (isEdit && editId) {
+        const updated = await patchChannel(editId, body)
+        recordPublishedChannel(address, updated)
+        onPublished?.()
+        loadedRef.current = updated
+        toast({
+          title: 'Updated',
+          description: (
+            <FeedUrlToastDescription
+              url={feedChannelResourceUrl(updated.slug?.trim() || updated.id || '')}
+            />
+          ),
+        })
+      } else {
+        const published = await publishChannel(body as Channel)
+        recordPublishedChannel(address, published)
+        onPublished?.()
+        toast({
+          title: 'Success!',
+          description: (
+            <FeedUrlToastDescription
+              url={feedChannelResourceUrl(published.slug?.trim() || published.id || '')}
+            />
+          ),
+        })
+        // Reset form (create only)
+        setTitle('')
+        setSummary('')
+        setCoverImage('')
+        setPlaylistsText('')
+        setUriStatuses([])
+        setPublisherName('')
+        setPublisherUrl('')
+        setCurators([])
+        setJsonText('')
+        newChannelCreatedRef.current = new Date().toISOString()
+      }
     } catch (error) {
-      console.error('Publish failed:', error)
+      console.error(isEdit ? 'Update failed:' : 'Publish failed:', error)
       toast({
-        title: 'Publish Failed',
+        title: isEdit ? 'Update failed' : 'Publish Failed',
         description: error instanceof Error ? error.message : 'Unknown error',
         variant: 'destructive',
       })
@@ -930,7 +729,7 @@ export default function ChannelForm({
               <h3 className="section-label">Playlist URLs</h3>
               {isDebugMode() && (
                 <p className="text-xs text-amber-800 dark:text-amber-200/90">
-                  Debug mode: local and http playlist URLs are allowed; reachability is not checked.
+                  Debug mode: http and local playlist URLs are allowed.
                 </p>
               )}
               <div>
@@ -961,21 +760,14 @@ export default function ChannelForm({
                       <span className="mt-0.5 shrink-0 text-muted-foreground">
                         {!status.valid ? (
                           <MinusCircle className="size-4 text-destructive" aria-hidden />
-                        ) : status.checking ? (
-                          <Loader2 className="size-4 animate-spin" aria-hidden />
-                        ) : status.reachable ? (
-                          <Check className="size-4 text-foreground/70" aria-hidden />
                         ) : (
-                          <AlertCircle className="size-4 text-amber-600" aria-hidden />
+                          <Check className="size-4 text-foreground/70" aria-hidden />
                         )}
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-mono text-[13px] text-foreground">{status.uri}</p>
                         {!status.valid && status.reason && (
                           <p className="mt-1 text-xs text-destructive">{status.reason}</p>
-                        )}
-                        {status.valid && !status.checking && status.reachable === false && (
-                          <p className="mt-1 text-xs text-amber-700">Unreachable (may still work)</p>
                         )}
                       </div>
                     </div>
@@ -1007,12 +799,10 @@ export default function ChannelForm({
 
           <TabsContent value="json" className="mt-8">
             <div className="space-y-6">
-              <Textarea
+              <JsonFileDropZone
                 value={jsonText}
-                onChange={(e) => handleJsonTextChange(e.target.value)}
+                onChange={handleJsonTextChange}
                 rows={20}
-                className="font-mono text-[13px] leading-relaxed"
-                placeholder="Edit channel JSON…"
               />
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                 <Button

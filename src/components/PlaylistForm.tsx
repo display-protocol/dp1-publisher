@@ -23,6 +23,8 @@ import { recordPublishedPlaylist } from '@/lib/publishedStorage'
 import type { DynamicQuery, Entity, Playlist, PlaylistItem } from '@/types/dp1'
 import PlaylistItemForm from './PlaylistItemForm'
 import CuratorList from './CuratorList'
+import JsonFileDropZone from './JsonFileDropZone'
+import { preparePlaylistForPublish } from '@/lib/preparePublish'
 
 function parsePlaylistJson(
   text: string,
@@ -140,7 +142,6 @@ function playlistFromJsonImport(raw: Playlist, fallbackId: string): Playlist {
       : new Date().toISOString()
   return {
     ...rest,
-    dpVersion: rest.dpVersion || '1.1.0',
     id: rest.id || fallbackId,
     created,
     items: rest.items.map((item) => ({
@@ -582,200 +583,57 @@ export default function PlaylistForm({
     setJsonMode('json')
   }
 
+  /**
+   * Form-tab specific pre-publish validation (immediate UX feedback for
+   * fields the user is editing right now). Returns null when OK, or an error
+   * description string to surface in a destructive toast. JSON-tab mode does
+   * not run this — `parsePlaylistJson` covers the schema checks there.
+   */
+  const validateFormTab = (): string | null => {
+    if (!title.trim()) return 'Title is required'
+    const allowEmptyViaDynamic = extensionsEnabled && enableDynamicQuery
+    if (!allowEmptyViaDynamic && (items.length === 0 || items.some((item) => !item.source))) {
+      return extensionsEnabled
+        ? 'At least one item with source URI is required, or enable Dynamic Query'
+        : 'At least one item with source URI is required'
+    }
+    if (extensionsEnabled && enableDynamicQuery) {
+      if (!dynamicEndpoint.trim()) return 'Dynamic Query: Endpoint is required'
+      if (!dynamicItemsPath.trim()) return 'Dynamic Query: Items Path is required'
+      if (dynamicHeaders.trim()) {
+        try {
+          JSON.parse(dynamicHeaders)
+        } catch {
+          return 'Dynamic Query: Headers must be valid JSON'
+        }
+      }
+      if (dynamicItemMap.trim()) {
+        try {
+          JSON.parse(dynamicItemMap)
+        } catch {
+          return 'Dynamic Query: Item Map must be valid JSON'
+        }
+      }
+    }
+    return null
+  }
+
   const handlePublish = async () => {
     if (!walletClient || !address) {
       toast({ title: 'Error', description: 'Wallet not connected', variant: 'destructive' })
       return
     }
-
-    if (isEdit) {
-      if (!editId || !loadedRef.current) {
-        toast({
-          title: 'Error',
-          description: loadError || 'Playlist not loaded yet.',
-          variant: 'destructive',
-        })
-        return
-      }
-
-      const base = loadedRef.current
-
-      let patchFields: Parameters<typeof mergePlaylistForPatch>[1]
-
-      if (jsonMode === 'json') {
-        const trimmed = jsonText.trim()
-        if (!trimmed) {
-          toast({
-            title: 'Error',
-            description: 'Paste playlist JSON here, or use the Form tab.',
-            variant: 'destructive',
-          })
-          return
-        }
-        const parsed = parsePlaylistJson(trimmed, extensionsEnabled)
-        if ('error' in parsed) {
-          toast({ title: 'Invalid playlist', description: parsed.error, variant: 'destructive' })
-          return
-        }
-        const p = parsed.playlist
-        patchFields = {
-          dpVersion: p.dpVersion || base.dpVersion || '1.1.0',
-          title: p.title.trim(),
-          slug: p.slug ?? base.slug ?? '',
-          items: p.items.map((item) => ({
-            ...item,
-            id: item.id || uuidv4(),
-            source: typeof item.source === 'string' ? item.source.trim() : item.source,
-          })),
-          curators: p.curators ?? base.curators,
-          summary: p.summary,
-          coverImage: p.coverImage,
-          defaults: p.defaults,
-          dynamicQuery: p.dynamicQuery,
-          note: p.note,
-        }
-      } else {
-        if (!title.trim()) {
-          toast({ title: 'Error', description: 'Title is required', variant: 'destructive' })
-          return
-        }
-        const allowEmptyViaDynamic = extensionsEnabled && enableDynamicQuery
-        if (!allowEmptyViaDynamic && (items.length === 0 || items.some((item) => !item.source))) {
-          toast({
-            title: 'Error',
-            description: extensionsEnabled
-              ? 'At least one item with source URI is required, or enable Dynamic Query'
-              : 'At least one item with source URI is required',
-            variant: 'destructive',
-          })
-          return
-        }
-        if (extensionsEnabled && enableDynamicQuery) {
-          if (!dynamicEndpoint.trim()) {
-            toast({ title: 'Error', description: 'Dynamic Query: Endpoint is required', variant: 'destructive' })
-            return
-          }
-          if (!dynamicItemsPath.trim()) {
-            toast({ title: 'Error', description: 'Dynamic Query: Items Path is required', variant: 'destructive' })
-            return
-          }
-          if (dynamicHeaders.trim()) {
-            try {
-              JSON.parse(dynamicHeaders)
-            } catch {
-              toast({ title: 'Error', description: 'Dynamic Query: Headers must be valid JSON', variant: 'destructive' })
-              return
-            }
-          }
-          if (dynamicItemMap.trim()) {
-            try {
-              JSON.parse(dynamicItemMap)
-            } catch {
-              toast({ title: 'Error', description: 'Dynamic Query: Item Map must be valid JSON', variant: 'destructive' })
-              return
-            }
-          }
-        }
-
-        const dq = extensionsEnabled ? buildDynamicQuery() : undefined
-        const note =
-          extensionsEnabled && playlistNoteText.trim()
-            ? {
-                text: playlistNoteText.trim(),
-                duration: playlistNoteDuration ? parseFloat(playlistNoteDuration) : undefined,
-              }
-            : undefined
-
-        const mappedItems = items.map((item) => {
-          const baseItem = extensionsEnabled ? item : stripItemExtensionFields(item)
-          return {
-            ...baseItem,
-            id: item.id || uuidv4(),
-            source: typeof item.source === 'string' ? item.source.trim() : item.source,
-          }
-        })
-
-        patchFields = {
-          dpVersion: '1.1.0',
-          title: title.trim(),
-          slug: displaySlug,
-          items: mappedItems,
-          ...(extensionsEnabled
-            ? {
-                curators,
-                summary: summary.trim() || undefined,
-                coverImage: coverImage.trim() || undefined,
-                dynamicQuery: dq,
-                note,
-              }
-            : {}),
-          defaults: {
-            display: {
-              scaling: defaultScaling,
-              autoplay: defaultAutoplay,
-              loop: defaultLoop,
-              background: defaultBackground,
-            },
-            license: defaultLicense,
-            duration: defaultDuration ? parseFloat(defaultDuration) : undefined,
-          },
-        }
-      }
-
-      const merged = mergePlaylistForPatch(base, patchFields)
-      const canon = extensionsEnabled ? merged : stripPlaylistExtensionFields(merged)
-      setIsPublishing(true)
-      try {
-        const signature = await signDocument(
-          playlistUnsignedPayloadForSigning(canon),
-          walletClient,
-          'curator'
-        )
-        const body: Record<string, unknown> = {
-          dpVersion: canon.dpVersion,
-          title: canon.title,
-          slug: canon.slug ?? '',
-          items: canon.items,
-          signatures: [signature],
-        }
-        if (canon.defaults !== undefined) body.defaults = canon.defaults
-        if (extensionsEnabled) {
-          if (canon.curators && canon.curators.length > 0) {
-            body.curators = canon.curators
-          }
-          if (canon.summary !== undefined) body.summary = canon.summary
-          if (canon.coverImage !== undefined) body.coverImage = canon.coverImage
-          if (canon.dynamicQuery !== undefined) body.dynamicQuery = canon.dynamicQuery
-          if (canon.note !== undefined) body.note = canon.note
-        }
-
-        const updated = await patchPlaylist(editId, body)
-        recordPublishedPlaylist(address, updated)
-        onPublished?.()
-        loadedRef.current = updated
-        toast({
-          title: 'Updated',
-          description: (
-            <FeedUrlToastDescription
-              url={feedPlaylistResourceUrl(updated.slug?.trim() || updated.id || '')}
-            />
-          ),
-        })
-      } catch (error) {
-        console.error('Update failed:', error)
-        toast({
-          title: 'Update failed',
-          description: error instanceof Error ? error.message : 'Unknown error',
-          variant: 'destructive',
-        })
-      } finally {
-        setIsPublishing(false)
-      }
+    if (isEdit && (!editId || !loadedRef.current)) {
+      toast({
+        title: 'Error',
+        description: loadError || 'Playlist not loaded yet.',
+        variant: 'destructive',
+      })
       return
     }
 
-    let unsignedPlaylist: Playlist
-
+    // Step 1: resolve raw document — from form state or from imported JSON.
+    let rawDocument: Playlist
     if (jsonMode === 'json') {
       const trimmed = jsonText.trim()
       if (!trimmed) {
@@ -791,108 +649,89 @@ export default function PlaylistForm({
         toast({ title: 'Invalid playlist', description: parsed.error, variant: 'destructive' })
         return
       }
-      unsignedPlaylist = playlistFromJsonImport(parsed.playlist, id)
-      if (!extensionsEnabled) {
-        unsignedPlaylist = stripPlaylistExtensionFields(unsignedPlaylist)
-      }
+      rawDocument = playlistFromJsonImport(parsed.playlist, id)
     } else {
-      if (!title.trim()) {
-        toast({ title: 'Error', description: 'Title is required', variant: 'destructive' })
+      const formError = validateFormTab()
+      if (formError) {
+        toast({ title: 'Error', description: formError, variant: 'destructive' })
         return
       }
-
-      const allowEmptyViaDynamic = extensionsEnabled && enableDynamicQuery
-      if (!allowEmptyViaDynamic && (items.length === 0 || items.some((item) => !item.source))) {
-        toast({
-          title: 'Error',
-          description: extensionsEnabled
-            ? 'At least one item with source URI is required, or enable Dynamic Query'
-            : 'At least one item with source URI is required',
-          variant: 'destructive',
-        })
-        return
-      }
-      if (extensionsEnabled && enableDynamicQuery) {
-        if (!dynamicEndpoint.trim()) {
-          toast({ title: 'Error', description: 'Dynamic Query: Endpoint is required', variant: 'destructive' })
-          return
-        }
-        if (!dynamicItemsPath.trim()) {
-          toast({ title: 'Error', description: 'Dynamic Query: Items Path is required', variant: 'destructive' })
-          return
-        }
-        if (dynamicHeaders.trim()) {
-          try {
-            JSON.parse(dynamicHeaders)
-          } catch {
-            toast({ title: 'Error', description: 'Dynamic Query: Headers must be valid JSON', variant: 'destructive' })
-            return
-          }
-        }
-        if (dynamicItemMap.trim()) {
-          try {
-            JSON.parse(dynamicItemMap)
-          } catch {
-            toast({ title: 'Error', description: 'Dynamic Query: Item Map must be valid JSON', variant: 'destructive' })
-            return
-          }
-        }
-      }
-
-      unsignedPlaylist = buildPlaylist()
+      rawDocument = buildPlaylist()
     }
 
-    const canonPlaylist = extensionsEnabled
-      ? unsignedPlaylist
-      : stripPlaylistExtensionFields(unsignedPlaylist)
-
-    setIsPublishing(true)
-
-    try {
-      const wire = playlistUnsignedPayloadForSigning(canonPlaylist)
-      const signature = await signDocument(wire, walletClient, 'curator')
-
-      const signedPlaylist = {
-        ...wire,
-        signatures: [signature],
-      } as Playlist
-
-      const published = await publishPlaylist(signedPlaylist)
-      recordPublishedPlaylist(address, published)
-      onPublished?.()
-
+    // Step 2: route through the single publish pipeline. signedPayload and
+    // wireBody come out together so they can't drift.
+    const walletDID = ethereumAddressToDIDPKH(getAddress(address))
+    const prepared = preparePlaylistForPublish({
+      rawDocument,
+      walletDID,
+      base: isEdit ? loadedRef.current ?? undefined : undefined,
+      extensionsEnabled,
+    })
+    if ('validationErrors' in prepared) {
       toast({
-        title: 'Success!',
-        description: (
-          <FeedUrlToastDescription
-            url={feedPlaylistResourceUrl(published.slug?.trim() || published.id || '')}
-          />
-        ),
+        title: 'Validation error',
+        description: prepared.validationErrors[0],
+        variant: 'destructive',
       })
+      return
+    }
+    prepared.toasts.forEach((t) => toast(t))
 
-      // Reset form
-      setTitle('')
-      setSummary('')
-      setCoverImage('')
-      setPlaylistNoteText('')
-      setPlaylistNoteDuration('')
-      setJsonText('')
-      newPlaylistCreatedRef.current = new Date().toISOString()
-      setItems([{ source: '', title: '', duration: undefined, license: undefined }])
-      setEnableDynamicQuery(false)
-      setDynamicProfile('https-json-v1')
-      setDynamicEndpoint('')
-      setDynamicMethod('GET')
-      setDynamicHeaders('')
-      setDynamicQuery('')
-      setDynamicItemsPath('')
-      setDynamicItemSchema('dp1/1.1')
-      setDynamicItemMap('')
-      
+    // Step 3: sign and POST/PATCH.
+    setIsPublishing(true)
+    try {
+      const signature = await signDocument(prepared.signedBytes, walletClient, 'curator')
+      const body = { ...prepared.wireBody, signatures: [signature] }
+
+      if (isEdit && editId) {
+        const updated = await patchPlaylist(editId, body)
+        recordPublishedPlaylist(address, updated)
+        onPublished?.()
+        loadedRef.current = updated
+        toast({
+          title: 'Updated',
+          description: (
+            <FeedUrlToastDescription
+              url={feedPlaylistResourceUrl(updated.slug?.trim() || updated.id || '')}
+            />
+          ),
+        })
+      } else {
+        const published = await publishPlaylist(body as Playlist)
+        recordPublishedPlaylist(address, published)
+        onPublished?.()
+        toast({
+          title: 'Success!',
+          description: (
+            <FeedUrlToastDescription
+              url={feedPlaylistResourceUrl(published.slug?.trim() || published.id || '')}
+            />
+          ),
+        })
+        // Reset form (create only — edit leaves the form populated)
+        setTitle('')
+        setSummary('')
+        setCoverImage('')
+        setPlaylistNoteText('')
+        setPlaylistNoteDuration('')
+        setJsonText('')
+        newPlaylistCreatedRef.current = new Date().toISOString()
+        setItems([{ source: '', title: '', duration: undefined, license: undefined }])
+        setEnableDynamicQuery(false)
+        setDynamicProfile('https-json-v1')
+        setDynamicEndpoint('')
+        setDynamicMethod('GET')
+        setDynamicHeaders('')
+        setDynamicQuery('')
+        setDynamicItemsPath('')
+        setDynamicItemSchema('dp1/1.1')
+        setDynamicItemMap('')
+      }
     } catch (error) {
-      console.error('Publish failed:', error)
+      console.error(isEdit ? 'Update failed:' : 'Publish failed:', error)
       toast({
-        title: 'Publish Failed',
+        title: isEdit ? 'Update failed' : 'Publish Failed',
         description: error instanceof Error ? error.message : 'Unknown error',
         variant: 'destructive',
       })
@@ -1326,12 +1165,10 @@ export default function PlaylistForm({
 
           <TabsContent value="json" className="mt-8">
             <div className="space-y-6">
-              <Textarea
+              <JsonFileDropZone
                 value={jsonText}
-                onChange={(e) => handleJsonTextChange(e.target.value)}
+                onChange={handleJsonTextChange}
                 rows={20}
-                className="font-mono text-[13px] leading-relaxed"
-                placeholder="Edit playlist JSON…"
               />
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                 <Button

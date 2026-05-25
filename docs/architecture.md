@@ -65,8 +65,7 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 
 ## Security posture (browser)
 
-- **Playlist item URIs** in Channel flows: validated in-browser (`validatePlaylistURI`); production allows **https://** and **ipfs://** only and blocks obvious private/local hosts unless **dev** + `VITE_DEBUG_MODE=true`.
-- **Reachability checks** use HEAD with a timeout; failures are UX hints, not a guarantee.
+- **Playlist URIs** in channel and playlist-group flows: validated in-browser (`validatePlaylistURI`); production allows **https://** and **ipfs://** only and blocks obvious private/local hosts unless **dev** + `VITE_DEBUG_MODE=true`. Form-tab publish requires an explicit **Check URLs** pass; the publish pipeline re-validates before signing.
 - **No API keys** in the dashboard path: authenticated writes rely on cryptographic signatures acceptable to the feed’s `SignatureOrAPIKeyAuth` policy.
 - **Secrets:** never commit `.env`; WalletConnect project id is optional public config embedded at build time.
 

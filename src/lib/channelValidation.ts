@@ -120,10 +120,16 @@ export function validateChannelFields(
           return
         }
         const c = curator as { name?: unknown; key?: unknown; url?: unknown }
-        if (typeof c.name !== 'string' || c.name.trim().length === 0) {
+        // `name` is optional on the wire — entityWire defaults missing values to ''.
+        if (
+          c.name !== undefined &&
+          c.name !== null &&
+          c.name !== '' &&
+          typeof c.name !== 'string'
+        ) {
           errors.push({
             field: `curators[${index}].name`,
-            message: `Curator ${index + 1} name is required`,
+            message: `Curator ${index + 1} name must be a string`,
           })
         }
         if (typeof c.key !== 'string' || !/^did:[a-z]+:.+$/.test(c.key)) {

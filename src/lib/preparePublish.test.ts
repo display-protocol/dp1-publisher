@@ -16,7 +16,7 @@ import {
   preparePlaylistForPublish,
   preparePlaylistGroupForPublish,
 } from '@/lib/preparePublish'
-import type { Channel, Playlist, PlaylistGroup } from '@/types/dp1'
+import type { Channel, Entity, Playlist, PlaylistGroup } from '@/types/dp1'
 
 const WALLET = 'did:pkh:eip155:1:0xabcdef0123456789abcdef0123456789abcdef01'
 const DID_KEY = 'did:key:z6MkExampleDidKeyFromDp1Cli'
@@ -503,6 +503,22 @@ describe('prepareChannelForPublish — edit (round-6 regression guards)', () => 
       ;(import.meta.env as Record<string, unknown>).VITE_DEBUG_MODE =
         originalEnv.VITE_DEBUG_MODE
     }
+  })
+
+  it('normalizes key-only channel curators before signing', () => {
+    const r = prepareChannelForPublish({
+      rawDocument: {
+        ...baseChannel,
+        curators: [{ key: WALLET } as Entity],
+      },
+      walletDID: WALLET,
+    })
+    ok<Channel>(r)
+    expect(r.signedPayload.curators?.[0]).toEqual({
+      name: '',
+      key: WALLET,
+      url: undefined,
+    })
   })
 })
 

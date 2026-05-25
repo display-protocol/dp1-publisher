@@ -13,6 +13,7 @@ import {
   ensureChannelWalletPublisher,
   ensurePlaylistGroupWalletCurator,
   ensurePlaylistWalletCurator,
+  normalizeChannelCurators,
 } from '@/lib/dp1WalletSigner'
 import type { Channel, Entity, Playlist, PlaylistGroup } from '@/types/dp1'
 
@@ -209,6 +210,17 @@ describe('ensurePlaylistWalletCurator', () => {
     expect(r.injected).toBe(false)
     expect(r.previousCount).toBe(1)
     expect(r.playlist.curators).toEqual([{ name: 'Sean', key: WALLET, url: '' }])
+  })
+})
+
+describe('normalizeChannelCurators', () => {
+  it('defaults missing curator name to empty string', () => {
+    const channel: Channel = {
+      ...baseChannel,
+      curators: [{ key: WALLET } as unknown as Entity],
+    }
+    const normalized = normalizeChannelCurators(channel)
+    expect(normalized.curators?.[0]).toEqual({ name: '', key: WALLET, url: undefined })
   })
 })
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { validateChannelFields } from '@/lib/channelValidation'
-import type { Channel } from '@/types/dp1'
+import type { Channel, Entity } from '@/types/dp1'
 
 const WALLET = 'did:pkh:eip155:1:0xabcdef0123456789abcdef0123456789abcdef01'
 
@@ -267,5 +267,13 @@ describe('validateChannelFields', () => {
       playlists: ['http://example.com/playlist.json'],
     })
     expect(errors.some((e) => e.field === 'playlists[0]')).toBe(true)
+  })
+
+  it('allows curator with key only (name optional on wire)', () => {
+    const errors = validateChannelFields({
+      ...validChannel,
+      curators: [{ key: WALLET } as Entity],
+    })
+    expect(errors.filter((e) => e.field.startsWith('curators'))).toEqual([])
   })
 })

@@ -25,6 +25,7 @@ import {
   ensureChannelWalletPublisher,
   ensurePlaylistGroupWalletCurator,
   ensurePlaylistWalletCurator,
+  normalizeChannelCurators,
 } from '@/lib/dp1WalletSigner'
 import { validateChannelFields } from '@/lib/channelValidation'
 import { validatePlaylistGroupFields } from '@/lib/playlistGroupValidation'
@@ -168,6 +169,7 @@ export function prepareChannelForPublish(
   // replace the key, preserve the name/url.
   const ensured = ensureChannelWalletPublisher(merged, walletDID)
   merged = ensured.channel
+  merged = normalizeChannelCurators(merged)
   if (ensured.updated) {
     toasts.push({
       title: ensured.previousKey ? 'Publisher key updated' : 'Publisher added',

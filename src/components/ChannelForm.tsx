@@ -724,7 +724,7 @@ export default function ChannelForm({
               <h3 className="section-label">Playlist URLs</h3>
               {isDebugMode() && (
                 <p className="text-xs text-amber-800 dark:text-amber-200/90">
-                  Debug mode: local and http playlist URLs are allowed; reachability is not checked.
+                  Debug mode: http and local playlist URLs are allowed.
                 </p>
               )}
               <div>

@@ -59,6 +59,18 @@ function normalizeCurator(c: unknown): Entity {
   }
 }
 
+/**
+ * Normalize channel `curators[]` entries to the wire entity shape, mirroring
+ * playlist curator handling in `ensurePlaylistWalletCurator`.
+ */
+export function normalizeChannelCurators(channel: Channel): Channel {
+  if (!Array.isArray(channel.curators)) return channel
+  return {
+    ...channel,
+    curators: channel.curators.map((c) => (hasValidKey(c) ? normalizeCurator(c) : c)),
+  }
+}
+
 export function ensurePlaylistWalletCurator(
   playlist: Playlist,
   walletDID: string

@@ -26,6 +26,7 @@ import {
 } from '@/lib/api'
 import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription'
 import JsonFileDropZone from './JsonFileDropZone'
+import { preparePlaylistGroupForPublish } from '@/lib/preparePublish'
 import type { PlaylistGroup } from '@/types/dp1'
 
 interface PlaylistURIStatus {
@@ -91,43 +92,6 @@ function groupFromJsonImport(raw: PlaylistGroup, fallbackId: string): PlaylistGr
     created,
     playlists: lines,
   }
-}
-
-function validateGroupFields(
-  group: Partial<PlaylistGroup>,
-  options?: { expectedSignerKid?: string }
-): string[] {
-  const err: string[] = []
-  if (!group.title?.trim()) err.push('Title is required')
-  else if (group.title.length > 200) err.push('Title must be 200 characters or less')
-  if (group.slug && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(group.slug)) {
-    err.push('Slug must be lowercase letters, numbers, and hyphens only')
-  }
-  if (!group.playlists || group.playlists.length === 0) {
-    err.push('At least one playlist URI is required')
-  }
-  if (!group.curator?.trim()) {
-    err.push('Curator DID is required for signature verification on the feed')
-  } else if (!/^did:[a-z]+:.+$/.test(group.curator.trim())) {
-    err.push('Curator must be a W3C DID (e.g. did:pkh:...)')
-  } else if (
-    options?.expectedSignerKid &&
-    group.curator.trim() !== options.expectedSignerKid.trim()
-  ) {
-    err.push(
-      `Curator DID must equal your signing key (${options.expectedSignerKid.slice(0, 24)}…)`
-    )
-  }
-  if (group.summary && group.summary.length > 5000) {
-    err.push('Summary is too long')
-  }
-  if (
-    group.coverImage &&
-    !/^(https?|ipfs|ar):\/\/.+/i.test(group.coverImage.trim())
-  ) {
-    err.push('Cover image must be a valid URI (https://, ipfs://, or ar://)')
-  }
-  return err
 }
 
 export default function PlaylistGroupForm({
@@ -404,145 +368,30 @@ export default function PlaylistGroupForm({
     toast({ title: 'Validation complete', description: `Checked ${uris.length} URI(s)` })
   }
 
+  const validateFormTab = (): string | null => {
+    if (!title.trim()) return 'Title is required'
+    if (playlistsFromText().length === 0) {
+      return 'At least one playlist URI is required.'
+    }
+    return null
+  }
+
   const handlePublish = async () => {
     if (!walletClient || !address) {
       toast({ title: 'Error', description: 'Wallet not connected', variant: 'destructive' })
       return
     }
-
-    const walletKid = ethereumAddressToDIDPKH(getAddress(address))
-
-    if (isEdit) {
-      if (!editId || !loadedRef.current) {
-        toast({
-          title: 'Error',
-          description: loadError || 'Document not loaded yet.',
-          variant: 'destructive',
-        })
-        return
-      }
-
-      let patchFields: Parameters<typeof mergePlaylistGroupForPatch>[1]
-
-      if (jsonMode === 'json') {
-        const trimmed = jsonText.trim()
-        if (!trimmed) {
-          toast({
-            title: 'Error',
-            description: 'Paste playlist group JSON or use the form.',
-            variant: 'destructive',
-          })
-          return
-        }
-        const parsed = parsePlaylistGroupJson(trimmed)
-        if ('error' in parsed) {
-          toast({ title: 'Invalid JSON', description: parsed.error, variant: 'destructive' })
-          return
-        }
-        const p = groupFromJsonImport(parsed.group, id)
-        patchFields = {
-          title: p.title.trim(),
-          slug: p.slug ?? loadedRef.current.slug ?? '',
-          playlists: p.playlists,
-          curator: p.curator?.trim() ?? walletKid,
-          summary: p.summary,
-          coverImage: p.coverImage,
-        }
-      } else {
-        if (!title.trim()) {
-          toast({ title: 'Error', description: 'Title is required', variant: 'destructive' })
-          return
-        }
-        const pls = playlistsFromText()
-        if (pls.length === 0) {
-          toast({
-            title: 'Error',
-            description: 'At least one playlist URI is required.',
-            variant: 'destructive',
-          })
-          return
-        }
-        const cur = curatorDid.trim()
-        if (!cur) {
-          toast({ title: 'Error', description: 'Curator DID is required', variant: 'destructive' })
-          return
-        }
-        patchFields = {
-          title: title.trim(),
-          slug: displaySlug,
-          playlists: pls,
-          curator: cur,
-          summary: summary.trim() || undefined,
-          coverImage: coverImage.trim() || undefined,
-        }
-      }
-
-      const merged = mergePlaylistGroupForPatch(loadedRef.current, patchFields)
-      const v = validateGroupFields(merged, { expectedSignerKid: walletKid })
-      if (v.length) {
-        toast({ title: 'Validation failed', description: v[0], variant: 'destructive' })
-        return
-      }
-
-      if (!merged.id?.trim() || !merged.created?.trim()) {
-        toast({ title: 'Error', description: 'Document is missing id or created', variant: 'destructive' })
-        return
-      }
-
-      const unsigned: PlaylistGroup = merged
-
-      let wire: Record<string, unknown>
-      try {
-        wire = playlistGroupUnsignedPayloadForSigning(unsigned)
-      } catch (e) {
-        toast({
-          title: 'Error',
-          description: e instanceof Error ? e.message : 'Cannot build sign payload',
-          variant: 'destructive',
-        })
-        return
-      }
-
-      setIsPublishing(true)
-      try {
-        const signature = await signDocument(wire, walletClient, 'curator')
-        const body: Record<string, unknown> = {
-          title: merged.title,
-          slug: merged.slug,
-          playlists: merged.playlists,
-          signatures: [signature],
-        }
-        if (merged.curator) body.curator = merged.curator
-        if (merged.summary !== undefined) body.summary = merged.summary
-        if (merged.coverImage !== undefined) body.coverImage = merged.coverImage
-
-        const updated = await patchPlaylistGroup(editId, body)
-        recordPublishedPlaylistGroup(address, updated)
-        onPublished?.()
-        loadedRef.current = updated
-        toast({
-          title: 'Updated',
-          description: (
-            <FeedUrlToastDescription
-              url={feedPlaylistGroupResourceUrl(updated.slug?.trim() || updated.id || '')}
-            />
-          ),
-        })
-      } catch (error) {
-        console.error(error)
-        toast({
-          title: 'Update failed',
-          description: error instanceof Error ? error.message : 'Unknown error',
-          variant: 'destructive',
-        })
-      } finally {
-        setIsPublishing(false)
-      }
+    if (isEdit && (!editId || !loadedRef.current)) {
+      toast({
+        title: 'Error',
+        description: loadError || 'Document not loaded yet.',
+        variant: 'destructive',
+      })
       return
     }
 
-    let unsignedGroup: PlaylistGroup
-
+    // Step 1: resolve raw document — from form state or imported JSON.
+    let rawDocument: PlaylistGroup
     if (jsonMode === 'json') {
       const trimmed = jsonText.trim()
       if (!trimmed) {
@@ -558,91 +407,82 @@ export default function PlaylistGroupForm({
         toast({ title: 'Invalid JSON', description: parsed.error, variant: 'destructive' })
         return
       }
-      unsignedGroup = groupFromJsonImport(parsed.group, id)
-      if (!unsignedGroup.curator?.trim()) {
-        unsignedGroup.curator = walletKid
-      }
+      rawDocument = groupFromJsonImport(parsed.group, id)
     } else {
-      if (!title.trim()) {
-        toast({ title: 'Error', description: 'Title is required', variant: 'destructive' })
+      const formError = validateFormTab()
+      if (formError) {
+        toast({ title: 'Error', description: formError, variant: 'destructive' })
         return
       }
-      const pls = playlistsFromText()
-      if (pls.length === 0) {
-        toast({
-          title: 'Error',
-          description: 'At least one playlist URI is required.',
-          variant: 'destructive',
-        })
-        return
-      }
-      const cur = curatorDid.trim() || walletKid
-      unsignedGroup = {
-        id,
-        slug: displaySlug,
-        title: title.trim(),
-        created: newGroupCreatedRef.current,
-        playlists: pls,
-        curator: cur,
-        summary: summary.trim() || undefined,
-        coverImage: coverImage.trim() || undefined,
-      }
+      rawDocument = buildGroup()
     }
 
-    const vErr = validateGroupFields(unsignedGroup, { expectedSignerKid: walletKid })
-    if (vErr.length) {
-      toast({ title: 'Validation failed', description: vErr[0], variant: 'destructive' })
-      return
-    }
-
-    let wire: Record<string, unknown>
-    try {
-      wire = playlistGroupUnsignedPayloadForSigning(unsignedGroup)
-    } catch (e) {
+    // Step 2: route through the single publish pipeline.
+    const walletDID = ethereumAddressToDIDPKH(getAddress(address))
+    const prepared = preparePlaylistGroupForPublish({
+      rawDocument,
+      walletDID,
+      base: isEdit ? loadedRef.current ?? undefined : undefined,
+    })
+    if ('validationErrors' in prepared) {
       toast({
-        title: 'Error',
-        description: e instanceof Error ? e.message : 'Cannot build sign payload',
+        title: 'Validation failed',
+        description: prepared.validationErrors[0],
         variant: 'destructive',
       })
       return
     }
+    prepared.toasts.forEach((t) => toast(t))
 
+    // Step 3: sign and POST/PATCH.
     setIsPublishing(true)
     try {
-      const signature = await signDocument(wire, walletClient, 'curator')
-      const payload = {
-        ...wire,
-        signatures: [signature],
+      const signature = await signDocument(prepared.signedBytes, walletClient, 'curator')
+      const body = { ...prepared.wireBody, signatures: [signature] }
+
+      if (isEdit && editId) {
+        const updated = await patchPlaylistGroup(editId, body)
+        recordPublishedPlaylistGroup(address, updated)
+        onPublished?.()
+        loadedRef.current = updated
+        toast({
+          title: 'Updated',
+          description: (
+            <FeedUrlToastDescription
+              url={feedPlaylistGroupResourceUrl(updated.slug?.trim() || updated.id || '')}
+            />
+          ),
+        })
+      } else {
+        const published = await publishPlaylistGroup(body)
+        recordPublishedPlaylistGroup(address, published)
+        onPublished?.()
+
+        toast({
+          title: 'Published',
+          description: (
+            <FeedUrlToastDescription
+              url={feedPlaylistGroupResourceUrl(published.slug?.trim() || published.id || '')}
+            />
+          ),
+        })
+
+        setTitle('')
+        setSummary('')
+        setCoverImage('')
+        setPlaylistsText('')
+        setSlug('')
+        setIsAutoSlug(true)
+        setJsonText('')
+        newGroupCreatedRef.current = new Date().toISOString()
+        setUriStatuses([])
+        setCuratorDid(walletDID)
+        setId(uuidv4())
       }
-
-      const published = await publishPlaylistGroup(payload)
-      recordPublishedPlaylistGroup(address, published)
-      onPublished?.()
-
-      toast({
-        title: 'Published',
-        description: (
-          <FeedUrlToastDescription
-            url={feedPlaylistGroupResourceUrl(published.slug?.trim() || published.id || '')}
-          />
-        ),
-      })
-
-      setTitle('')
-      setSummary('')
-      setCoverImage('')
-      setPlaylistsText('')
-      setSlug('')
-      setIsAutoSlug(true)
-      setJsonText('')
-      newGroupCreatedRef.current = new Date().toISOString()
-      setUriStatuses([])
-      setCuratorDid(walletKid)
-      setId(uuidv4())
     } catch (error) {
       console.error(error)
       toast({
-        title: 'Publish failed',
+        title: isEdit ? 'Update failed' : 'Publish failed',
         description: error instanceof Error ? error.message : 'Unknown error',
         variant: 'destructive',
       })

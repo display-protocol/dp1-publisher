@@ -112,6 +112,18 @@ describe('preparePlaylistForPublish — create', () => {
     }
   })
 
+  it('defaults dpVersion on create when omitted (JSON import no longer injects it)', () => {
+    const { dpVersion: _d, ...raw } = basePlaylist
+    const r = preparePlaylistForPublish({
+      rawDocument: raw as Playlist,
+      walletDID: WALLET,
+      extensionsEnabled: true,
+    })
+    ok<Playlist>(r)
+    expect(r.signedPayload.dpVersion).toBe('1.1.0')
+    expect(r.signedBytes.dpVersion).toBe('1.1.0')
+  })
+
   // Round-9 regression guards: wireBody is now derived from signedBytes (the
   // canonical hashing target), so create-mode wireBody MUST equal signedBytes
   // exactly. The previous round-8 fix added id/created but didn't catch the
@@ -251,6 +263,20 @@ describe('preparePlaylistForPublish — edit', () => {
     expect(r.signedPayload.curators).toEqual([{ name: 'Sean', key: WALLET, url: '' }])
     expect(r.toasts).toHaveLength(0) // no injection happened
   })
+
+  it('preserves existing dpVersion when patch omits it (JSON-tab edit regression)', () => {
+    const existing: Playlist = { ...basePlaylist, dpVersion: '2.0.0' }
+    const { dpVersion: _d, ...patchFields } = basePlaylist
+    const r = preparePlaylistForPublish({
+      rawDocument: { ...patchFields, title: 'edited' } as Playlist,
+      walletDID: WALLET,
+      base: existing,
+      extensionsEnabled: true,
+    })
+    ok<Playlist>(r)
+    expect(r.signedPayload.dpVersion).toBe('2.0.0')
+    expect(r.signedBytes.dpVersion).toBe('2.0.0')
+  })
 })
 
 // ----------------------------------------------------------------------------
@@ -346,6 +372,19 @@ describe('prepareChannelForPublish — edit (round-6 regression guards)', () => 
     })
     ok<Channel>(r)
     expect(r.toasts).toHaveLength(0)
+  })
+
+  it('preserves existing version when patch omits it (JSON-tab edit regression)', () => {
+    const existing: Channel = { ...baseChannel, version: '2.0.0' }
+    const { version: _v, ...patchFields } = baseChannel
+    const r = prepareChannelForPublish({
+      rawDocument: { ...patchFields, title: 'edited' } as Channel,
+      walletDID: WALLET,
+      base: existing,
+    })
+    ok<Channel>(r)
+    expect(r.signedPayload.version).toBe('2.0.0')
+    expect(r.signedBytes.version).toBe('2.0.0')
   })
 
   // Round-9 regression guards: full canonical parity. wireBody must equal

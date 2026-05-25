@@ -103,7 +103,6 @@ function channelFromJsonImport(raw: Channel, fallbackId: string): Channel {
       : new Date().toISOString()
   return {
     ...rest,
-    version: rest.version || '1.0.0',
     id: rest.id || fallbackId,
     created,
   }
@@ -356,7 +355,13 @@ export default function ChannelForm({
         setIsAutoSlug(false)
         setSlug(ch.slug.trim())
       }
-      setVersion(ch.version || '1.0.0')
+      setVersion(
+        ch.version?.trim()
+          ? ch.version.trim()
+          : isEdit
+            ? (loadedRef.current?.version ?? version)
+            : '1.0.0'
+      )
       setSummary(ch.summary || '')
       setCoverImage(ch.coverImage || '')
       const pub = ch.publisher
@@ -380,7 +385,7 @@ export default function ChannelForm({
         })
       )
     },
-    [id, isEdit]
+    [id, isEdit, version]
   )
 
   const handleJsonTextChange = (value: string) => {

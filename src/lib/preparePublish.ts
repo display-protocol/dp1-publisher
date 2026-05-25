@@ -94,7 +94,20 @@ export function preparePlaylistForPublish(
   const toasts: ToastInput[] = []
 
   // Step 1: merge with base (edit) or use raw verbatim (create).
-  const merged: Playlist = base ? mergePlaylistForPatch(base, rawDocument) : rawDocument
+  let merged: Playlist = base ? mergePlaylistForPatch(base, rawDocument) : rawDocument
+
+  // Step 1b: create-only schema defaults. Must run after merge — injecting
+  // dpVersion before merge would make mergePlaylistForPatch treat the default
+  // as an intentional patch value and overwrite existing metadata on edit.
+  if (!base) {
+    merged = {
+      ...merged,
+      dpVersion:
+        typeof merged.dpVersion === 'string' && merged.dpVersion.trim() !== ''
+          ? merged.dpVersion.trim()
+          : '1.1.0',
+    }
+  }
 
   // Step 2: strip extension fields when extensions are off.
   let canonical: Playlist = extensionsEnabled
@@ -163,6 +176,17 @@ export function prepareChannelForPublish(
 
   // Step 1: merge or pass through.
   let merged: Channel = base ? mergeChannelForPatch(base, rawDocument) : rawDocument
+
+  // Step 1b: create-only schema defaults (same rationale as playlist dpVersion).
+  if (!base) {
+    merged = {
+      ...merged,
+      version:
+        typeof merged.version === 'string' && merged.version.trim() !== ''
+          ? merged.version.trim()
+          : '1.0.0',
+    }
+  }
 
   // Step 2: ensure publisher.key matches the connected wallet. Channel has a
   // single publisher (vs. playlist's curator array), so the right behavior is

@@ -142,7 +142,6 @@ function playlistFromJsonImport(raw: Playlist, fallbackId: string): Playlist {
       : new Date().toISOString()
   return {
     ...rest,
-    dpVersion: rest.dpVersion || '1.1.0',
     id: rest.id || fallbackId,
     created,
     items: rest.items.map((item) => ({

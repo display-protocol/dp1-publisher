@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { validateChannelFields } from '@/lib/channelValidation'
 import type { Channel } from '@/types/dp1'
 
@@ -13,6 +13,16 @@ const validChannel: Channel = {
 }
 
 describe('validateChannelFields', () => {
+  const originalEnv = { ...import.meta.env }
+
+  beforeEach(() => {
+    delete (import.meta.env as Record<string, unknown>).VITE_DEBUG_MODE
+  })
+
+  afterEach(() => {
+    ;(import.meta.env as Record<string, unknown>).VITE_DEBUG_MODE =
+      originalEnv.VITE_DEBUG_MODE
+  })
   it('returns no errors for a fully-valid channel', () => {
     expect(validateChannelFields(validChannel)).toEqual([])
   })
@@ -249,5 +259,13 @@ describe('validateChannelFields', () => {
       field: 'playlists[1]',
       message: 'playlists[1] must be a string URI',
     })
+  })
+
+  it('rejects http playlist URI in production mode', () => {
+    const errors = validateChannelFields({
+      ...validChannel,
+      playlists: ['http://example.com/playlist.json'],
+    })
+    expect(errors.some((e) => e.field === 'playlists[0]')).toBe(true)
   })
 })

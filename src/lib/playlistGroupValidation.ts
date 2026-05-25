@@ -4,6 +4,7 @@
  */
 
 import type { PlaylistGroup } from '@/types/dp1'
+import { validatePlaylistUriList } from '@/lib/playlistUriListValidation'
 
 export interface PlaylistGroupValidationError {
   field: string
@@ -37,9 +38,7 @@ export function validatePlaylistGroupFields(
     }
   }
 
-  if (!Array.isArray(group.playlists) || group.playlists.length === 0) {
-    errors.push({ field: 'playlists', message: 'At least one playlist URI is required' })
-  }
+  errors.push(...validatePlaylistUriList(group.playlists))
 
   const curator = typeof group.curator === 'string' ? group.curator.trim() : ''
   if (!curator) {

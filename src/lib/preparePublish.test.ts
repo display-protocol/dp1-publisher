@@ -483,6 +483,27 @@ describe('prepareChannelForPublish — edit (round-6 regression guards)', () => 
     expect(r.signedPayload.publisher?.key).toBe(WALLET)
     expect(r.wireBody.publisher).toEqual(r.signedBytes.publisher)
   })
+
+  it('returns validation errors for invalid playlist URI', () => {
+    const originalEnv = { ...import.meta.env }
+    delete (import.meta.env as Record<string, unknown>).VITE_DEBUG_MODE
+    try {
+      const r = prepareChannelForPublish({
+        rawDocument: {
+          ...baseChannel,
+          playlists: ['http://example.com/insecure.json'],
+        },
+        walletDID: WALLET,
+      })
+      expect('validationErrors' in r).toBe(true)
+      if ('validationErrors' in r) {
+        expect(r.validationErrors.some((e) => /playlists\[0\]/i.test(e))).toBe(true)
+      }
+    } finally {
+      ;(import.meta.env as Record<string, unknown>).VITE_DEBUG_MODE =
+        originalEnv.VITE_DEBUG_MODE
+    }
+  })
 })
 
 // ----------------------------------------------------------------------------
@@ -545,6 +566,27 @@ describe('preparePlaylistGroupForPublish — create', () => {
     expect('validationErrors' in r).toBe(true)
     if ('validationErrors' in r) {
       expect(r.validationErrors[0]).toMatch(/title/i)
+    }
+  })
+
+  it('returns validation errors for invalid playlist URI', () => {
+    const originalEnv = { ...import.meta.env }
+    delete (import.meta.env as Record<string, unknown>).VITE_DEBUG_MODE
+    try {
+      const r = preparePlaylistGroupForPublish({
+        rawDocument: {
+          ...baseGroup,
+          playlists: ['http://example.com/insecure.json'],
+        },
+        walletDID: WALLET,
+      })
+      expect('validationErrors' in r).toBe(true)
+      if ('validationErrors' in r) {
+        expect(r.validationErrors.some((e) => /playlists\[0\]/i.test(e))).toBe(true)
+      }
+    } finally {
+      ;(import.meta.env as Record<string, unknown>).VITE_DEBUG_MODE =
+        originalEnv.VITE_DEBUG_MODE
     }
   })
 })

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Check, Loader2, MinusCircle, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Check, Loader2, MinusCircle } from 'lucide-react'
 import { useAccount, useWalletClient } from 'wagmi'
 import { v4 as uuidv4 } from 'uuid'
 import { getAddress } from 'viem'
@@ -22,7 +22,6 @@ import {
   patchChannel,
   publishChannel,
   validatePlaylistURI,
-  checkPlaylistReachable,
   isDebugMode,
 } from '@/lib/api'
 import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription'
@@ -34,9 +33,7 @@ import CuratorList from './CuratorList'
 interface PlaylistURIStatus {
   uri: string
   valid: boolean
-  reachable?: boolean
   reason?: string
-  checking: boolean
 }
 
 function parseChannelJson(text: string): { channel: Channel } | { error: string } {
@@ -193,8 +190,6 @@ export default function ChannelForm({
               uri,
               valid: validation.valid,
               reason: validation.reason,
-              checking: false,
-              reachable: validation.valid ? true : undefined,
             }
           })
         )
@@ -223,46 +218,31 @@ export default function ChannelForm({
   const autoSlug = generateChannelSlug(title, id)
   const displaySlug = isAutoSlug ? autoSlug : slug
 
-  const handleValidateURIs = async () => {
+  const handleValidateURIs = () => {
     const uris = playlistsText
       .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
 
     if (uris.length === 0) {
-      toast({ title: 'Error', description: 'Please enter at least one playlist URI', variant: 'destructive' })
+      toast({
+        title: 'Error',
+        description: 'Please enter at least one playlist URI',
+        variant: 'destructive',
+      })
       return
     }
 
-    // Validate format first
-    const statuses: PlaylistURIStatus[] = uris.map(uri => {
+    const statuses: PlaylistURIStatus[] = uris.map((uri) => {
       const validation = validatePlaylistURI(uri)
-      const skipReachability = validation.valid && isDebugMode()
       return {
         uri,
         valid: validation.valid,
         reason: validation.reason,
-        checking: validation.valid && !skipReachability,
-        reachable: skipReachability ? true : undefined,
       }
     })
 
     setUriStatuses(statuses)
-
-    // Check reachability for valid URIs (skipped in dev debug mode: avoids CORS on local APIs)
-    const reachabilityPromises = statuses.map(async (status, index) => {
-      if (status.valid && !isDebugMode()) {
-        const reachable = await checkPlaylistReachable(status.uri)
-        setUriStatuses(prev => {
-          const updated = [...prev]
-          updated[index] = { ...updated[index], reachable, checking: false }
-          return updated
-        })
-      }
-    })
-
-    await Promise.all(reachabilityPromises)
-
     toast({ title: 'Validation Complete', description: `Checked ${uris.length} URIs` })
   }
 
@@ -396,8 +376,6 @@ export default function ChannelForm({
             uri,
             valid: validation.valid,
             reason: validation.reason,
-            checking: false,
-            reachable: validation.valid ? true : undefined,
           }
         })
       )
@@ -777,21 +755,14 @@ export default function ChannelForm({
                       <span className="mt-0.5 shrink-0 text-muted-foreground">
                         {!status.valid ? (
                           <MinusCircle className="size-4 text-destructive" aria-hidden />
-                        ) : status.checking ? (
-                          <Loader2 className="size-4 animate-spin" aria-hidden />
-                        ) : status.reachable ? (
-                          <Check className="size-4 text-foreground/70" aria-hidden />
                         ) : (
-                          <AlertCircle className="size-4 text-amber-600" aria-hidden />
+                          <Check className="size-4 text-foreground/70" aria-hidden />
                         )}
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-mono text-[13px] text-foreground">{status.uri}</p>
                         {!status.valid && status.reason && (
                           <p className="mt-1 text-xs text-destructive">{status.reason}</p>
-                        )}
-                        {status.valid && !status.checking && status.reachable === false && (
-                          <p className="mt-1 text-xs text-amber-700">Unreachable (may still work)</p>
                         )}
                       </div>
                     </div>

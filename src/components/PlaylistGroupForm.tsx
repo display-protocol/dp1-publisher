@@ -21,8 +21,6 @@ import {
   patchPlaylistGroup,
   publishPlaylistGroup,
   validatePlaylistURI,
-  checkPlaylistReachable,
-  isDebugMode,
 } from '@/lib/api'
 import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription'
 import JsonFileDropZone from './JsonFileDropZone'
@@ -32,9 +30,7 @@ import type { PlaylistGroup } from '@/types/dp1'
 interface PlaylistURIStatus {
   uri: string
   valid: boolean
-  reachable?: boolean
   reason?: string
-  checking: boolean
 }
 
 function parsePlaylistGroupJson(text: string): { group: PlaylistGroup } | { error: string } {
@@ -176,8 +172,6 @@ export default function PlaylistGroupForm({
               uri,
               valid: validation.valid,
               reason: validation.reason,
-              checking: false,
-              reachable: validation.valid ? true : undefined,
             }
           })
         )
@@ -306,7 +300,6 @@ export default function PlaylistGroupForm({
             uri,
             valid: validation.valid,
             reason: validation.reason,
-            checking: false,
           }
         })
       )
@@ -329,7 +322,7 @@ export default function PlaylistGroupForm({
     setJsonText(serializeJsonPreview())
   }, [jsonMode, isLoadingDoc, isEdit, serializeJsonPreview])
 
-  const handleValidateURIs = async () => {
+  const handleValidateURIs = () => {
     const uris = playlistsFromText()
     if (uris.length === 0) {
       toast({
@@ -340,28 +333,14 @@ export default function PlaylistGroupForm({
       return
     }
 
-    const statuses: PlaylistURIStatus[] = uris.map((uri) => {
-      const validation = validatePlaylistURI(uri)
-      const skipReachability = validation.valid && isDebugMode()
-      return {
-        uri,
-        valid: validation.valid,
-        reason: validation.reason,
-        checking: validation.valid && !skipReachability,
-        reachable: skipReachability ? true : undefined,
-      }
-    })
-    setUriStatuses(statuses)
-
-    await Promise.all(
-      statuses.map(async (status, index) => {
-        if (!status.valid || isDebugMode()) return
-        const reachable = await checkPlaylistReachable(status.uri)
-        setUriStatuses((prev) => {
-          const u = [...prev]
-          if (u[index]) u[index] = { ...u[index], reachable, checking: false }
-          return u
-        })
+    setUriStatuses(
+      uris.map((uri) => {
+        const validation = validatePlaylistURI(uri)
+        return {
+          uri,
+          valid: validation.valid,
+          reason: validation.reason,
+        }
       })
     )
 
@@ -372,6 +351,22 @@ export default function PlaylistGroupForm({
     if (!title.trim()) return 'Title is required'
     if (playlistsFromText().length === 0) {
       return 'At least one playlist URI is required.'
+    }
+    return null
+  }
+
+  /**
+   * Form-tab only: every playlist line must have been checked via "Check URLs"
+   * and passed before we go anywhere near signing. JSON-tab mode skips this —
+   * `parsePlaylistGroupJson` enforces URI shape on its own.
+   */
+  const validateFormTabUris = (): string | null => {
+    const playlists = playlistsFromText()
+    if (uriStatuses.length !== playlists.length) {
+      return 'Please validate URIs before publishing'
+    }
+    if (uriStatuses.some((status) => !status.valid)) {
+      return 'Please fix invalid URIs before publishing'
     }
     return null
   }
@@ -412,6 +407,11 @@ export default function PlaylistGroupForm({
       const formError = validateFormTab()
       if (formError) {
         toast({ title: 'Error', description: formError, variant: 'destructive' })
+        return
+      }
+      const uriError = validateFormTabUris()
+      if (uriError) {
+        toast({ title: 'Invalid URIs', description: uriError, variant: 'destructive' })
         return
       }
       rawDocument = buildGroup()
@@ -610,26 +610,13 @@ export default function PlaylistGroupForm({
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <h3 className="section-label">Playlist URIs *</h3>
                   <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={handleValidateURIs}>
-                    Validate URIs
+                    Check URLs
                   </Button>
                 </div>
                 <Textarea
                   rows={8}
                   value={playlistsText}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setPlaylistsText(v)
-                    const uris = v
-                      .split('\n')
-                      .map((l) => l.trim())
-                      .filter((l) => l.length > 0)
-                    setUriStatuses(
-                      uris.map((uri) => {
-                        const validation = validatePlaylistURI(uri)
-                        return { uri, valid: validation.valid, reason: validation.reason, checking: false }
-                      })
-                    )
-                  }}
+                  onChange={(e) => setPlaylistsText(e.target.value)}
                   placeholder="One playlist URL per line (https:// feed URLs or ipfs:// …)"
                   className="font-mono text-[13px]"
                 />
@@ -640,12 +627,6 @@ export default function PlaylistGroupForm({
                         <span className={s.valid ? 'text-foreground' : 'text-destructive'}>{s.uri}</span>
                         {!s.valid && s.reason ? (
                           <span className="ml-2 text-destructive">— {s.reason}</span>
-                        ) : null}
-                        {s.valid && s.checking ? (
-                          <span className="ml-2">Checking…</span>
-                        ) : null}
-                        {s.valid && s.reachable === false ? (
-                          <span className="ml-2 text-amber-600">HEAD not OK</span>
                         ) : null}
                       </li>
                     ))}

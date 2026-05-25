@@ -6,6 +6,7 @@
  */
 
 import type { Channel } from '@/types/dp1'
+import { validatePlaylistUriList } from '@/lib/playlistUriListValidation'
 
 export interface ChannelValidationError {
   field: string
@@ -74,27 +75,8 @@ export function validateChannelFields(
     }
   }
 
-  // Playlists. Feed's typed `[]string` reconstruction drops non-string
-  // entries during json.Marshal — so a non-string in the imported array
-  // would survive in the client's signed bytes but disappear feed-side,
-  // producing a signature mismatch. Validate the shape before signing.
-  if (!Array.isArray(channel.playlists) || channel.playlists.length === 0) {
-    errors.push({ field: 'playlists', message: 'At least one playlist URI is required' })
-  } else {
-    channel.playlists.forEach((p, i) => {
-      if (typeof p !== 'string') {
-        errors.push({
-          field: `playlists[${i}]`,
-          message: `playlists[${i}] must be a string URI`,
-        })
-      } else if (p.trim().length === 0) {
-        errors.push({
-          field: `playlists[${i}]`,
-          message: `playlists[${i}] must be a non-empty string`,
-        })
-      }
-    })
-  }
+  // Playlists — shared rules with playlist groups (see playlistUriListValidation.ts).
+  errors.push(...validatePlaylistUriList(channel.playlists))
 
   // Publisher
   if (channel.publisher !== undefined && channel.publisher !== null) {

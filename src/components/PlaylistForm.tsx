@@ -694,6 +694,10 @@ export default function PlaylistForm({
     }
 
     setIsPublishing(true)
+    // Tracks whether the operation we ultimately attempt is an update (PATCH).
+    // Both explicit edit-mode and auto-overwrite count; used so the catch
+    // surfaces the "different wallet" message instead of the create variant.
+    let attemptedUpdate = isEdit
     try {
       // Step 2: pre-flight overwrite detection. On create publishes, look up
       // the document's id on the feed; if it already exists, switch to PATCH
@@ -714,6 +718,7 @@ export default function PlaylistForm({
           }
         }
       }
+      if (overwriteBase && targetId) attemptedUpdate = true
 
       // Step 3: route through the single publish pipeline. signedPayload and
       // wireBody come out together so they can't drift.
@@ -786,6 +791,7 @@ export default function PlaylistForm({
         setDynamicItemsPath('')
         setDynamicItemSchema('dp1/1.1')
         setDynamicItemMap('')
+        setId(uuidv4())
       } else {
         const published = await publishPlaylist(body as Playlist)
         recordPublishedPlaylist(address, published)
@@ -820,15 +826,16 @@ export default function PlaylistForm({
         setDynamicItemsPath('')
         setDynamicItemSchema('dp1/1.1')
         setDynamicItemMap('')
+        setId(uuidv4())
       }
     } catch (error) {
-      console.error(isEdit ? 'Update failed:' : 'Publish failed:', error)
+      console.error(attemptedUpdate ? 'Update failed:' : 'Publish failed:', error)
       toast({
-        title: isEdit ? 'Update failed' : 'Publish failed',
+        title: attemptedUpdate ? 'Update failed' : 'Publish failed',
         description: friendlyPublishError(
           error,
           'playlist',
-          isEdit ? 'update' : 'create'
+          attemptedUpdate ? 'update' : 'create'
         ),
         variant: 'destructive',
       })

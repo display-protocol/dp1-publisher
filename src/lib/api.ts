@@ -115,13 +115,18 @@ export function friendlyPublishError(
     }
 
     // Duplicate primary/unique key from Postgres (safety net — the
-    // pre-flight check in the publish handler usually intercepts this).
+    // pre-flight check in the publish handler usually intercepts the id case).
+    // Auto-overwrite preflight is id-based only, so a slug-only collision
+    // can't be overwritten by re-uploading — guide the user to change the slug.
     if (
       lower.includes('duplicate key') ||
       lower.includes('unique constraint') ||
       lower.includes('sqlstate 23505')
     ) {
-      return `A ${noun} with this id or slug already exists on the feed. Upload again to overwrite it, or change the slug.`
+      if (lower.includes('slug')) {
+        return `A ${noun} with this slug already exists on the feed. Choose a different slug and try again.`
+      }
+      return `A ${noun} with this id already exists on the feed. Upload again to overwrite it (you must sign with the wallet that originally published it), or change the id.`
     }
 
     if (err.status === 404 && intent === 'update') {

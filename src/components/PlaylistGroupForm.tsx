@@ -430,6 +430,9 @@ export default function PlaylistGroupForm({
     }
 
     setIsPublishing(true)
+    // See PlaylistForm: tracks whether we actually attempted a PATCH so the
+    // catch can show the overwrite-specific message on wrong-wallet failures.
+    let attemptedUpdate = isEdit
     try {
       // Step 2: pre-flight overwrite detection (see PlaylistForm for rationale).
       const targetId = rawDocument.id
@@ -443,6 +446,7 @@ export default function PlaylistGroupForm({
           }
         }
       }
+      if (overwriteBase && targetId) attemptedUpdate = true
 
       // Step 3: route through the single publish pipeline.
       const walletDID = ethereumAddressToDIDPKH(getAddress(address))
@@ -538,11 +542,11 @@ export default function PlaylistGroupForm({
     } catch (error) {
       console.error(error)
       toast({
-        title: isEdit ? 'Update failed' : 'Publish failed',
+        title: attemptedUpdate ? 'Update failed' : 'Publish failed',
         description: friendlyPublishError(
           error,
           'playlist-group',
-          isEdit ? 'update' : 'create'
+          attemptedUpdate ? 'update' : 'create'
         ),
         variant: 'destructive',
       })

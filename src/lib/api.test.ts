@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { validatePlaylistURI } from './api'
+import { FeedAPIError, friendlyPublishError, validatePlaylistURI } from './api'
 
 describe('validatePlaylistURI', () => {
   const originalEnv = { ...import.meta.env }
@@ -381,6 +381,81 @@ describe('validatePlaylistURI', () => {
     it('handles uppercase domain (normalized to lowercase)', () => {
       const result = validatePlaylistURI('https://EXAMPLE.COM/playlist.json')
       expect(result.valid).toBe(true)
+    })
+  })
+})
+
+describe('friendlyPublishError', () => {
+  describe('wrong wallet', () => {
+    it('uses overwrite-specific copy on update intent (401)', () => {
+      const err = new FeedAPIError('signature rejected', 401, 'unauthorized')
+      const msg = friendlyPublishError(err, 'playlist', 'update')
+      expect(msg).toMatch(/different wallet/i)
+      expect(msg).toMatch(/connect that wallet/i)
+    })
+
+    it('uses create-specific copy on create intent (401)', () => {
+      const err = new FeedAPIError('signature rejected', 401, 'unauthorized')
+      const msg = friendlyPublishError(err, 'playlist', 'create')
+      expect(msg).toMatch(/signing failed/i)
+      expect(msg).not.toMatch(/different wallet/i)
+    })
+
+    it('treats "signature" in message body as auth failure regardless of status', () => {
+      const err = new FeedAPIError('invalid signature for payload', 400, 'bad_request')
+      expect(friendlyPublishError(err, 'channel', 'update')).toMatch(/different wallet/i)
+    })
+  })
+
+  describe('duplicate-key collisions', () => {
+    it('produces id-specific copy when slug is not mentioned', () => {
+      const err = new FeedAPIError(
+        'duplicate key value violates unique constraint "playlists_pkey"',
+        409,
+        'conflict'
+      )
+      const msg = friendlyPublishError(err, 'playlist', 'create')
+      expect(msg).toMatch(/with this id already exists/i)
+      expect(msg).toMatch(/upload again to overwrite/i)
+      expect(msg).not.toMatch(/choose a different slug/i)
+    })
+
+    it('produces slug-specific copy when the constraint name mentions slug', () => {
+      const err = new FeedAPIError(
+        'duplicate key value violates unique constraint "channels_slug_key"',
+        409,
+        'conflict'
+      )
+      const msg = friendlyPublishError(err, 'channel', 'create')
+      expect(msg).toMatch(/with this slug already exists/i)
+      expect(msg).toMatch(/choose a different slug/i)
+      expect(msg).not.toMatch(/upload again to overwrite/i)
+    })
+
+    it('catches Postgres SQLSTATE 23505 as duplicate-key', () => {
+      const err = new FeedAPIError(
+        'store: insert playlist: SQLSTATE 23505: duplicate value',
+        500,
+        'db_error'
+      )
+      const msg = friendlyPublishError(err, 'playlist-group', 'create')
+      expect(msg).toMatch(/with this id already exists/i)
+    })
+  })
+
+  describe('404 on update', () => {
+    it('explains the document is no longer on the feed', () => {
+      const err = new FeedAPIError('not found', 404, 'not_found')
+      expect(friendlyPublishError(err, 'playlist', 'update')).toMatch(/no longer on the feed/i)
+    })
+  })
+
+  describe('store-prefix stripping', () => {
+    it('strips the "store: insert …" Postgres prefix from generic errors', () => {
+      const err = new FeedAPIError('store: insert playlist: weird db hiccup', 500, 'db_error')
+      const msg = friendlyPublishError(err, 'playlist', 'create')
+      expect(msg).not.toMatch(/^store:/i)
+      expect(msg).toMatch(/weird db hiccup/i)
     })
   })
 })

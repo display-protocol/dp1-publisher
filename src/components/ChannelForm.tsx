@@ -584,6 +584,9 @@ export default function ChannelForm({
     }
 
     setIsPublishing(true)
+    // See PlaylistForm: tracks whether we actually attempted a PATCH so the
+    // catch can show the overwrite-specific message on wrong-wallet failures.
+    let attemptedUpdate = isEdit
     try {
       // Step 2: pre-flight overwrite detection. See PlaylistForm for the
       // rationale — same wallet re-publishing transparently PATCHes; different
@@ -599,6 +602,7 @@ export default function ChannelForm({
           }
         }
       }
+      if (overwriteBase && targetId) attemptedUpdate = true
 
       // Step 3: route through the single publish pipeline. signedPayload and
       // wireBody come out together so they can't drift.
@@ -662,6 +666,7 @@ export default function ChannelForm({
         setCurators([])
         setJsonText('')
         newChannelCreatedRef.current = new Date().toISOString()
+        setId(uuidv4())
       } else {
         const published = await publishChannel(body as Channel)
         recordPublishedChannel(address, published)
@@ -689,15 +694,16 @@ export default function ChannelForm({
         setCurators([])
         setJsonText('')
         newChannelCreatedRef.current = new Date().toISOString()
+        setId(uuidv4())
       }
     } catch (error) {
-      console.error(isEdit ? 'Update failed:' : 'Publish failed:', error)
+      console.error(attemptedUpdate ? 'Update failed:' : 'Publish failed:', error)
       toast({
-        title: isEdit ? 'Update failed' : 'Publish failed',
+        title: attemptedUpdate ? 'Update failed' : 'Publish failed',
         description: friendlyPublishError(
           error,
           'channel',
-          isEdit ? 'update' : 'create'
+          attemptedUpdate ? 'update' : 'create'
         ),
         variant: 'destructive',
       })

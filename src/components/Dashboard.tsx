@@ -66,6 +66,11 @@ export default function Dashboard() {
     setEditPlaylistGroupId(null)
     setEditChannelId(null)
     setPendingAppendPlaylistUrl(undefined)
+    // Clear the new-channel pre-fill too — otherwise navigating away from
+    // the channel form (to Published, or to another publish subtab) and
+    // back can remount it with a stale playlist URL silently pre-seeded,
+    // which the user could then publish without realizing.
+    setPendingChannelPlaylistsText(undefined)
   }
 
   const handleUseInNewChannel = (feedUrl: string) => {

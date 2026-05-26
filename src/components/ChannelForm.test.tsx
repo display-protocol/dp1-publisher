@@ -309,6 +309,70 @@ describe('ChannelForm — publish flow', () => {
     expect(body.playlists).toContain(expectedPickerUrl)
   })
 
+  it('edit-mode appendPlaylistUrl appends to the loaded channel and the PATCH body carries both URLs', async () => {
+    // Channel exists with playlists=[oldUrl]. ChannelForm in edit mode with
+    // appendPlaylistUrl=newUrl must wait for getChannel to resolve, merge
+    // the URLs, and PATCH with both. This is the "Add to existing channel"
+    // CTA flow wired by Dashboard.handleAddToExistingChannel.
+    const oldUrl = 'https://feed.example/api/v1/playlists/existing'
+    const newUrl = 'https://feed.example/api/v1/playlists/just-published'
+
+    mockedApi.getChannel.mockResolvedValue({
+      dpVersion: '1.1.0',
+      id: 'ch-edit-id',
+      slug: 'occupy',
+      title: 'OCCUPY',
+      version: '1.0.0',
+      created: '2025-01-01T00:00:00Z',
+      playlists: [oldUrl],
+      publisher: { name: 'Test Publisher', key: TEST_WALLET_DID },
+      signatures: [
+        {
+          alg: 'eip191',
+          kid: TEST_WALLET_DID,
+          ts: '2025-01-01T00:00:00Z',
+          payload_hash: 'sha256:prior',
+          role: 'publisher',
+          sig: 'prior-sig',
+        },
+      ],
+    })
+    mockedApi.patchChannel.mockImplementation(async (_id, body) => ({
+      ...(body as Record<string, unknown>),
+      id: 'ch-edit-id',
+      slug: 'occupy',
+    }))
+
+    render(
+      <ChannelForm
+        editId="ch-edit-id"
+        appendPlaylistUrl={newUrl}
+      />,
+    )
+
+    // Wait for the edit load to surface the appended URL in the playlists
+    // textarea so we know the merge has happened before clicking publish.
+    await waitFor(() => {
+      const textarea = screen.getByLabelText(
+        /Playlist URIs/i,
+      ) as HTMLTextAreaElement
+      expect(textarea.value).toContain(oldUrl)
+      expect(textarea.value).toContain(newUrl)
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Sign & update/i }))
+
+    await waitFor(() => {
+      expect(mockedApi.patchChannel).toHaveBeenCalledTimes(1)
+    })
+    const [editId, body] = mockedApi.patchChannel.mock.calls[0] as [
+      string,
+      { playlists: string[] },
+    ]
+    expect(editId).toBe('ch-edit-id')
+    expect(body.playlists).toEqual([oldUrl, newUrl])
+  })
+
   it('shows the overwrite-specific error when an auto-overwrite PATCH is rejected (wrong wallet)', async () => {
     // Existing channel was previously signed by THIS wallet as publisher (so
     // the ownership gate passes); server then rejects the PATCH with 401.

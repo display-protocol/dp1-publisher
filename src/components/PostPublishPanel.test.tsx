@@ -75,6 +75,40 @@ describe('PostPublishPanel', () => {
     expect(onAddToExistingChannel).toHaveBeenCalledWith('picks-id')
   })
 
+  it('only shows the channel-playlists[] paste hint for playlist publishes', () => {
+    const { rerender } = render(
+      <PostPublishPanel
+        kind="playlist"
+        feedUrl="https://feed.example/api/v1/playlists/x"
+        onPublishAnother={() => undefined}
+        onViewPublished={() => undefined}
+      />,
+    )
+    expect(
+      screen.getByText(/Paste this URL into a channel's/i),
+    ).toBeTruthy()
+
+    rerender(
+      <PostPublishPanel
+        kind="channel"
+        feedUrl="https://feed.example/api/v1/channels/x"
+        onPublishAnother={() => undefined}
+        onViewPublished={() => undefined}
+      />,
+    )
+    expect(screen.queryByText(/Paste this URL into a channel's/i)).toBeNull()
+
+    rerender(
+      <PostPublishPanel
+        kind="playlist-group"
+        feedUrl="https://feed.example/api/v1/playlist-groups/x"
+        onPublishAnother={() => undefined}
+        onViewPublished={() => undefined}
+      />,
+    )
+    expect(screen.queryByText(/Paste this URL into a channel's/i)).toBeNull()
+  })
+
   it('hides the channel-CTA section entirely for non-playlist kinds', () => {
     render(
       <PostPublishPanel

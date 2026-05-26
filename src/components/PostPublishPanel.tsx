@@ -150,9 +150,23 @@ export default function PostPublishPanel({
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Saved to your published list in this browser. Paste this URL into a
-            channel's <code className="font-mono">playlists</code> array to
-            reference it.
+            {kind === 'playlist' ? (
+              <>
+                Saved to your published list in this browser. Paste this URL
+                into a channel's <code className="font-mono">playlists</code>{' '}
+                array to reference it.
+              </>
+            ) : kind === 'playlist-group' ? (
+              <>
+                Saved to your published list in this browser. Share the URL or
+                fetch it from the feed to reference this group.
+              </>
+            ) : (
+              <>
+                Saved to your published list in this browser. Open the URL to
+                see the channel as the feed exposes it.
+              </>
+            )}
           </p>
         </div>
 

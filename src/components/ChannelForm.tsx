@@ -471,10 +471,16 @@ export default function ChannelForm({
       return
     }
 
-    // "Use in a channel" pre-fill is the user's explicit intent — if the
-    // dropped JSON's `playlists[]` doesn't already include it, append it
-    // (preserving any other playlist URLs the JSON references) and update
-    // the JSON editor so what's visible matches what will publish.
+    // "Use in a channel" pre-fill is the user's explicit intent. The dropped
+    // JSON is treated as a template, and the prefill resolves the template's
+    // playlist slot:
+    //   - Empty playlists[]               → set playlists[]=[prefill]
+    //   - Single-entry playlists[]        → replace that entry with prefill
+    //     (the typical "single-playlist template" the flow was designed for)
+    //   - Multi-entry, prefill missing    → leave playlists[] alone; the user
+    //     dropped a fuller template, so we ask them to edit it themselves
+    //     rather than smuggle in an extra URL alongside the existing entries
+    //   - Prefill already in playlists[]  → no-op
     // Consumed after the first swap so manual edits afterward stay manual.
     const preFill = useInChannelRef.current
     let next = channel
@@ -482,12 +488,26 @@ export default function ChannelForm({
       const existing = (channel.playlists ?? [])
         .map((p) => (typeof p === 'string' ? p.trim() : ''))
         .filter((p) => p.length > 0)
-      if (!existing.includes(preFill)) {
-        next = { ...channel, playlists: [...existing, preFill] }
+      if (existing.includes(preFill)) {
+        // already references the prefill — nothing to do
+      } else if (existing.length <= 1) {
+        // empty or single-entry template: replace the slot with the prefill
+        next = { ...channel, playlists: [preFill] }
         setJsonText(JSON.stringify(next, null, 2))
         toast({
-          title: 'Playlist URL added',
-          description: `Appended the playlist you just published (${preFill}) to this channel.`,
+          title: 'Playlist URL replaced',
+          description:
+            existing.length === 0
+              ? `Set the channel's playlist to the one you just published (${preFill}).`
+              : `Replaced the template playlist with the one you just published (${preFill}).`,
+        })
+      } else {
+        // multi-entry template — don't auto-smuggle the prefill in alongside
+        // unrelated playlists; the user has to add it explicitly.
+        toast({
+          title: 'Edit the JSON to use your playlist',
+          description: `This channel references ${existing.length} playlists. Add ${preFill} to its playlists[] (or remove this template) before signing.`,
+          variant: 'destructive',
         })
       }
       useInChannelRef.current = ''

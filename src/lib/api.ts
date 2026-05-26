@@ -97,6 +97,10 @@ export function friendlyPublishError(
         ? 'channel'
         : 'playlist group'
 
+  // Channels sign as publisher; playlists and playlist groups sign as curator.
+  // The wrong-wallet create-mode message must point users at the right field.
+  const signerField = kind === 'channel' ? 'publisher' : 'curator'
+
   if (err instanceof FeedAPIError) {
     const raw = err.message || ''
     const lower = raw.toLowerCase()
@@ -111,7 +115,7 @@ export function friendlyPublishError(
     ) {
       return intent === 'update'
         ? `This ${noun} was published by a different wallet. Connect that wallet to update it, or publish under a new id.`
-        : `Signing failed: the feed rejected your signature. Make sure the connected wallet matches the curator declared in the document.`
+        : `Signing failed: the feed rejected your signature. Make sure the connected wallet matches the ${signerField} declared in the document.`
     }
 
     // Duplicate primary/unique key from Postgres (safety net — the

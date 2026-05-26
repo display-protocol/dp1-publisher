@@ -156,31 +156,77 @@ describe('ChannelForm — publish flow', () => {
     expect(mockedApi.publishChannel).not.toHaveBeenCalled()
   })
 
-  it('JSON-import "Use in a channel" prefill appends to multi-playlist arrays instead of collapsing them', async () => {
-    const prefill = 'https://feed.example/api/v1/playlists/prefill'
-    const a = 'https://feed.example/api/v1/playlists/A'
-    const b = 'https://feed.example/api/v1/playlists/B'
-
-    render(<ChannelForm initialPlaylistsText={prefill} />)
-
-    // Switch to JSON tab. Radix Tabs activates on pointerdown/mousedown rather
-    // than click in some browser modes; happy-dom needs the mousedown too.
+  async function switchToJsonTabAndGetTextarea() {
     const jsonTab = screen.getByRole('tab', { name: /JSON/i })
     fireEvent.mouseDown(jsonTab)
     fireEvent.click(jsonTab)
-
     await waitFor(() => {
       const t = document.querySelector(
         'textarea[placeholder*="DP-1"]',
       ) as HTMLTextAreaElement | null
       expect(t).not.toBeNull()
     })
-    const jsonTextarea = document.querySelector(
+    return document.querySelector(
       'textarea[placeholder*="DP-1"]',
     ) as HTMLTextAreaElement
+  }
 
-    // Drop a JSON channel that already references playlists A and B but NOT
-    // the prefill. The fix must append prefill rather than collapse to it.
+  it('JSON-import "Use in a channel" prefill replaces a single-playlist template (no placeholder reaches the signed channel)', async () => {
+    const prefill = 'https://feed.example/api/v1/playlists/prefill'
+    const placeholder = 'https://feed.example/api/v1/playlists/PLACEHOLDER'
+
+    mockedApi.getChannel.mockRejectedValue(
+      new apiModule.FeedAPIError('not found', 404),
+    )
+    mockedApi.publishChannel.mockImplementation(async (c) => ({
+      ...(c as Record<string, unknown>),
+      slug: 'published-slug',
+    }))
+
+    render(<ChannelForm initialPlaylistsText={prefill} />)
+    const jsonTextarea = await switchToJsonTabAndGetTextarea()
+
+    // Single-playlist template: the placeholder URL should be auto-replaced
+    // by the prefill so the signed channel only references the real playlist.
+    const dropped = {
+      dpVersion: '1.1.0',
+      id: 'incoming-id',
+      title: 'Imported channel',
+      version: '1.0.0',
+      playlists: [placeholder],
+      publisher: { name: 'Bob', key: TEST_WALLET_DID },
+    }
+    fireEvent.change(jsonTextarea, {
+      target: { value: JSON.stringify(dropped, null, 2) },
+    })
+
+    // JSON editor reflects the replacement.
+    await waitFor(() => {
+      expect(jsonTextarea.value).toContain(prefill)
+      expect(jsonTextarea.value).not.toContain(placeholder)
+    })
+
+    // And when the user publishes, the signed/posted body uses the prefill
+    // exclusively — the placeholder never reaches the feed.
+    fireEvent.click(screen.getByRole('button', { name: /Sign & publish/i }))
+    await waitFor(() => {
+      expect(mockedApi.publishChannel).toHaveBeenCalledTimes(1)
+    })
+    const body = mockedApi.publishChannel.mock.calls[0][0] as {
+      playlists: string[]
+    }
+    expect(body.playlists).toEqual([prefill])
+    expect(body.playlists).not.toContain(placeholder)
+  })
+
+  it('JSON-import "Use in a channel" does NOT smuggle the prefill into a multi-playlist template', async () => {
+    const prefill = 'https://feed.example/api/v1/playlists/prefill'
+    const a = 'https://feed.example/api/v1/playlists/A'
+    const b = 'https://feed.example/api/v1/playlists/B'
+
+    render(<ChannelForm initialPlaylistsText={prefill} />)
+    const jsonTextarea = await switchToJsonTabAndGetTextarea()
+
     const dropped = {
       dpVersion: '1.1.0',
       id: 'incoming-id',
@@ -193,18 +239,21 @@ describe('ChannelForm — publish flow', () => {
       target: { value: JSON.stringify(dropped, null, 2) },
     })
 
+    // playlists[] should be preserved as-is — the prefill must NOT be added
+    // automatically, because dropping prefill alongside unrelated playlists
+    // would silently change what the user signs.
     await waitFor(() => {
-      const updated = jsonTextarea.value
-      expect(updated).toContain(a)
-      expect(updated).toContain(b)
-      expect(updated).toContain(prefill)
+      const editorValue = jsonTextarea.value
+      expect(editorValue).toContain(a)
+      expect(editorValue).toContain(b)
+      expect(editorValue).not.toContain(prefill)
     })
 
-    // And the toast must reflect the append-not-replace behavior.
-    const appendToast = toastMock.mock.calls.find(
-      ([arg]) => arg?.title === 'Playlist URL added',
+    // And a guidance toast tells the user to edit the JSON to add their playlist.
+    const guidance = toastMock.mock.calls.find(
+      ([arg]) => arg?.title === 'Edit the JSON to use your playlist',
     )
-    expect(appendToast).toBeTruthy()
+    expect(guidance).toBeTruthy()
   })
 
   it('shows the overwrite-specific error when an auto-overwrite PATCH is rejected (wrong wallet)', async () => {

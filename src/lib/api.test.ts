@@ -401,6 +401,27 @@ describe('friendlyPublishError', () => {
       expect(msg).not.toMatch(/different wallet/i)
     })
 
+    it('points at the curator field for playlists on create-mode failures', () => {
+      const err = new FeedAPIError('signature rejected', 401, 'unauthorized')
+      const msg = friendlyPublishError(err, 'playlist', 'create')
+      expect(msg).toMatch(/curator/i)
+      expect(msg).not.toMatch(/publisher/i)
+    })
+
+    it('points at the curator field for playlist groups on create-mode failures', () => {
+      const err = new FeedAPIError('signature rejected', 401, 'unauthorized')
+      const msg = friendlyPublishError(err, 'playlist-group', 'create')
+      expect(msg).toMatch(/curator/i)
+      expect(msg).not.toMatch(/publisher/i)
+    })
+
+    it('points at the publisher field for channels on create-mode failures', () => {
+      const err = new FeedAPIError('signature rejected', 401, 'unauthorized')
+      const msg = friendlyPublishError(err, 'channel', 'create')
+      expect(msg).toMatch(/publisher/i)
+      expect(msg).not.toMatch(/curator/i)
+    })
+
     it('treats "signature" in message body as auth failure regardless of status', () => {
       const err = new FeedAPIError('invalid signature for payload', 400, 'bad_request')
       expect(friendlyPublishError(err, 'channel', 'update')).toMatch(/different wallet/i)

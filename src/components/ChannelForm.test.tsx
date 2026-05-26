@@ -256,6 +256,59 @@ describe('ChannelForm — publish flow', () => {
     expect(guidance).toBeTruthy()
   })
 
+  it('playlist picker on the JSON tab appends to playlists[] in the JSON editor and the signed body', async () => {
+    const { recordPublishedPlaylist } = await import('@/lib/publishedStorage')
+    // Seed a published playlist so the picker has something to show.
+    recordPublishedPlaylist(TEST_WALLET, {
+      id: 'seeded-pl-id',
+      slug: 'seeded-slug',
+      title: 'Seeded Playlist',
+      created: '2026-05-01T00:00:00Z',
+    })
+    const expectedPickerUrl = apiModule.feedPlaylistResourceUrl('seeded-slug')
+
+    mockedApi.getChannel.mockRejectedValue(
+      new apiModule.FeedAPIError('not found', 404),
+    )
+    mockedApi.publishChannel.mockImplementation(async (c) => ({
+      ...(c as Record<string, unknown>),
+      slug: 'published',
+    }))
+
+    render(<ChannelForm />)
+    fireEvent.change(screen.getByLabelText(/Title \*/i), {
+      target: { value: 'Picker test channel' },
+    })
+    const publisherNameInput = document.querySelector(
+      '#publisher-name',
+    ) as HTMLInputElement
+    fireEvent.change(publisherNameInput, { target: { value: 'Test Publisher' } })
+
+    // Switch to JSON tab — the picker is supposed to update the JSON editor
+    // even when the user is over there, not only when on the Form tab.
+    const jsonTextarea = await switchToJsonTabAndGetTextarea()
+
+    // Click the picker button for the seeded playlist.
+    fireEvent.click(
+      screen.getByRole('button', { name: /Seeded Playlist/ }),
+    )
+
+    // JSON editor reflects the appended URL.
+    await waitFor(() => {
+      expect(jsonTextarea.value).toContain(expectedPickerUrl)
+    })
+
+    // And when the user publishes, the signed/posted body includes that URL.
+    fireEvent.click(screen.getByRole('button', { name: /Sign & publish/i }))
+    await waitFor(() => {
+      expect(mockedApi.publishChannel).toHaveBeenCalledTimes(1)
+    })
+    const body = mockedApi.publishChannel.mock.calls[0][0] as {
+      playlists: string[]
+    }
+    expect(body.playlists).toContain(expectedPickerUrl)
+  })
+
   it('shows the overwrite-specific error when an auto-overwrite PATCH is rejected (wrong wallet)', async () => {
     // Existing channel was previously signed by THIS wallet as publisher (so
     // the ownership gate passes); server then rejects the PATCH with 401.

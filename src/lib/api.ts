@@ -81,6 +81,73 @@ export class FeedAPIError extends Error {
 }
 
 /**
+ * Translate raw feed/HTTP errors into messages a non-developer can act on.
+ * Use for publish/update toasts so the surface never shows raw Postgres or
+ * protocol-level signature complaints.
+ */
+export function friendlyPublishError(
+  err: unknown,
+  kind: 'playlist' | 'playlist-group' | 'channel',
+  intent: 'create' | 'update'
+): string {
+  const noun =
+    kind === 'playlist'
+      ? 'playlist'
+      : kind === 'channel'
+        ? 'channel'
+        : 'playlist group'
+
+  // Channels sign as publisher; playlists and playlist groups sign as curator.
+  // The wrong-wallet create-mode message must point users at the right field.
+  const signerField = kind === 'channel' ? 'publisher' : 'curator'
+
+  if (err instanceof FeedAPIError) {
+    const raw = err.message || ''
+    const lower = raw.toLowerCase()
+
+    // Wrong wallet trying to overwrite someone else's document.
+    if (
+      err.status === 401 ||
+      err.status === 403 ||
+      lower.includes('signature') ||
+      lower.includes('unauthorized') ||
+      lower.includes('forbidden')
+    ) {
+      return intent === 'update'
+        ? `This ${noun} was published by a different wallet. Connect that wallet to update it, or publish under a new id.`
+        : `Signing failed: the feed rejected your signature. Make sure the connected wallet matches the ${signerField} declared in the document.`
+    }
+
+    // Duplicate primary/unique key from Postgres (safety net — the
+    // pre-flight check in the publish handler usually intercepts the id case).
+    // Auto-overwrite preflight is id-based only, so a slug-only collision
+    // can't be overwritten by re-uploading — guide the user to change the slug.
+    if (
+      lower.includes('duplicate key') ||
+      lower.includes('unique constraint') ||
+      lower.includes('sqlstate 23505')
+    ) {
+      if (lower.includes('slug')) {
+        return `A ${noun} with this slug already exists on the feed. Choose a different slug and try again.`
+      }
+      return `A ${noun} with this id already exists on the feed. Upload again to overwrite it (you must sign with the wallet that originally published it), or change the id.`
+    }
+
+    if (err.status === 404 && intent === 'update') {
+      return `The ${noun} you tried to update is no longer on the feed.`
+    }
+
+    // Generic feed message but stripped of leading "store: insert …" noise.
+    return raw.replace(/^store:\s*\w+\s*\w+:\s*/i, '').trim() || `Feed rejected the ${noun}.`
+  }
+
+  if (err instanceof Error) {
+    return err.message
+  }
+  return `Unknown error while ${intent === 'update' ? 'updating' : 'publishing'} the ${noun}.`
+}
+
+/**
  * POST /api/v1/playlists
  * Create a new playlist with signature-based authentication
  */

@@ -26,6 +26,7 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 | **DP-1 signing** | `src/lib/signing.ts`, `*SignPayload.ts` | Strip signatures, JCS canonicalize (RFC 8785), newline-terminated signing bytes, SHA-256 digest, EIP-191 personal sign via wagmi wallet client; build `kid` (`did:pkh:…`). `*UnsignedPayloadForSigning` whitelists typed top-level fields so unknown imported-JSON keys can't survive into hashed bytes (the feed reconstructs a typed struct that drops them). |
 | **Signer-identity helpers** | `src/lib/dp1WalletSigner.ts` | `ensurePlaylistWalletCurator` / `ensurePlaylistGroupWalletCurator` / `ensureChannelWalletPublisher`: declare the connected wallet as a signer on a document before signing, defensively normalizing malformed entities from the JSON boundary. |
 | **Field validation** | `src/lib/channelValidation.ts`, `src/lib/playlistGroupValidation.ts`, inline playlist gate in `preparePublish.ts` | Defensive checks that run before signing on both Form-tab and JSON-tab paths. |
+| **Overwrite authorization** | `src/lib/overwriteAuth.ts` | Client-side gate that decides whether the connected wallet may silently overwrite a previously-published document during the create-time auto-overwrite path (see Data flow). Authorizes by **prior role signature** on the fetched feed document, not by the document's authored `publisher.key` / `curators[]` (which can be authored arbitrarily and are mutated by the publish pipeline). |
 | **Merge helpers** | `src/lib/dp1Merge.ts`, `dp1EntityWire.ts` | Server-aligned partial document shapes before PATCH/sign. |
 | **Extension policy** | `src/context/Dp1ExtensionsContext.tsx`, `src/lib/dp1ExtensionPolicy.ts` | Effective `extensionsEnabled` from env override or `GET /api/v1`; gates Channel UI and playlist extension fields. |
 | **Types** | `src/types/dp1.ts` | Shared shapes aligned with DP-1 / feed JSON. |
@@ -35,15 +36,20 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 ## Data flow (publish)
 
 1. The form resolves a **raw document** from form state (Form tab) or parsed imported JSON (JSON tab).
-2. `preparePublish.ts` runs the pipeline:
-   - merge with base if editing (otherwise pass through),
+2. **Create-time overwrite detection** (create publishes only; skipped for explicit edits):
+   - `GET` the document's id against the feed.
+   - **404** → take the normal POST path.
+   - **Resolves** → the id is already on the feed. Run the **overwrite-authorization gate** (`overwriteAuth.ts`): the connected wallet's DID:PKH must appear as the `kid` of a prior **role signature** on the fetched document (`curator` for playlist / playlist group, `publisher` for channel). If the gate refuses, abort with the friendly "different wallet" error — no signing, no PATCH. If the gate passes, the publish is rerouted to **PATCH**, using the fetched feed document as `preparePublish`'s `base`.
+   - The gate authorizes by *prior signature only*, not by authored signer fields. Authored `publisher.key` / `curators[]` would be a weaker check because `preparePublish` rewrites those to match the connected wallet before signing — using them to authorize would let any wallet sign an identity-rewritten payload for any id.
+3. `preparePublish.ts` runs the pipeline:
+   - merge with base (edit, or auto-overwrite from step 2) or pass through,
    - strip extension fields when extensions are off (playlist),
    - ensure the connected wallet is declared as the signer (`curators[]` for playlist, `curator` for playlist group, `publisher.key` for channel),
    - validate field rules,
    - canonicalize **once** via `*UnsignedPayloadForSigning` — the single source of truth for the bytes the feed will hash. The canonicalizer whitelists typed top-level fields, so unknown imported-JSON keys are dropped at this boundary.
-3. The form receives `{ signedPayload, signedBytes, wireBody, toasts }`. It passes `signedBytes` directly to `signDocument` and POSTs/PATCHes `{ ...wireBody, signatures }`.
-4. The completed document is sent with `POST /api/v1/...` or `PATCH /api/v1/.../{id}` as implemented in `api.ts`.
-5. The feed validates, may add feed-operator signatures, persists, and returns the stored document.
+4. The form receives `{ signedPayload, signedBytes, wireBody, toasts }`. It passes `signedBytes` directly to `signDocument` and POSTs/PATCHes `{ ...wireBody, signatures }`. **A "create" publish may go out as PATCH** when step 2 detected an existing document — the form's catch classifies failures with `attemptedUpdate` so wrong-wallet errors during overwrite show the update-mode message.
+5. The completed document is sent with `POST /api/v1/...` or `PATCH /api/v1/.../{id}` as implemented in `api.ts`.
+6. The feed validates, may add feed-operator signatures, persists, and returns the stored document.
 
 **Invariant** (enforced by `preparePublish.ts`, tested in `preparePublish.test.ts`):
 - **CREATE**: `wireBody === signedBytes` — the POST body equals the bytes that were hashed, so the feed verifies the signature against exactly what we sent.
@@ -51,7 +57,7 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 
 `wireBody` is derived from `signedBytes` directly (not built in parallel) — drift between them is structurally impossible at this layer.
 
-**PATCH:** signatures must verify against the **merged** stored document overlaid with patch fields—the app refetches GET before merging for edit flows (see `publishedStorage.ts` comments).
+**PATCH:** signatures must verify against the **merged** stored document overlaid with patch fields — the app refetches GET before merging for edit flows (see `publishedStorage.ts` comments). The create-time auto-overwrite path uses the same merge-with-base mechanism, so the same invariant holds.
 
 ---
 

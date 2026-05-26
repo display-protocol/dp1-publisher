@@ -16,15 +16,22 @@ import { playlistGroupUnsignedPayloadForSigning } from '@/lib/playlistGroupSignP
 import { mergePlaylistGroupForPatch } from '@/lib/dp1Merge'
 import { recordPublishedPlaylistGroup } from '@/lib/publishedStorage'
 import {
+  FeedAPIError,
   feedPlaylistGroupResourceUrl,
+  friendlyPublishError,
   getPlaylistGroup,
   patchPlaylistGroup,
   publishPlaylistGroup,
   validatePlaylistURI,
 } from '@/lib/api'
 import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription'
+import {
+  isWalletAuthorizedToOverwrite,
+  wrongWalletForOverwriteMessage,
+} from '@/lib/overwriteAuth'
 import JsonFileDropZone from './JsonFileDropZone'
 import { preparePlaylistGroupForPublish } from '@/lib/preparePublish'
+import PostPublishPanel from './PostPublishPanel'
 import type { PlaylistGroup } from '@/types/dp1'
 
 interface PlaylistURIStatus {
@@ -94,10 +101,13 @@ export default function PlaylistGroupForm({
   editId,
   onCancelEdit,
   onPublished,
+  onViewPublished,
 }: {
   editId?: string
   onCancelEdit?: () => void
   onPublished?: () => void
+  /** Called when the user clicks "View all published" after a create publish. */
+  onViewPublished?: () => void
 } = {}) {
   const { address } = useAccount()
   const { data: walletClient } = useWalletClient()
@@ -125,6 +135,12 @@ export default function PlaylistGroupForm({
   const [jsonMode, setJsonMode] = useState<'form' | 'json'>('form')
   const [jsonText, setJsonText] = useState('')
   const [isPublishing, setIsPublishing] = useState(false)
+  const [publishedDoc, setPublishedDoc] = useState<{
+    feedUrl: string
+    title: string
+    mode: 'create' | 'update'
+    receipts: { title: string; description: string }[]
+  } | null>(null)
 
   const isEdit = Boolean(editId)
 
@@ -417,26 +433,55 @@ export default function PlaylistGroupForm({
       rawDocument = buildGroup()
     }
 
-    // Step 2: route through the single publish pipeline.
-    const walletDID = ethereumAddressToDIDPKH(getAddress(address))
-    const prepared = preparePlaylistGroupForPublish({
-      rawDocument,
-      walletDID,
-      base: isEdit ? loadedRef.current ?? undefined : undefined,
-    })
-    if ('validationErrors' in prepared) {
-      toast({
-        title: 'Validation failed',
-        description: prepared.validationErrors[0],
-        variant: 'destructive',
-      })
-      return
-    }
-    prepared.toasts.forEach((t) => toast(t))
-
-    // Step 3: sign and POST/PATCH.
     setIsPublishing(true)
+    // See PlaylistForm: tracks whether we actually attempted a PATCH so the
+    // catch can show the overwrite-specific message on wrong-wallet failures.
+    let attemptedUpdate = isEdit
     try {
+      // Step 2: pre-flight overwrite detection (see PlaylistForm for rationale).
+      const targetId = rawDocument.id
+      let overwriteBase: PlaylistGroup | undefined
+      if (!isEdit && targetId) {
+        try {
+          overwriteBase = await getPlaylistGroup(targetId)
+        } catch (e) {
+          if (!(e instanceof FeedAPIError) || e.status !== 404) {
+            // swallowed by design
+          }
+        }
+      }
+      const walletDID = ethereumAddressToDIDPKH(getAddress(address))
+
+      // Step 2b: pre-sign ownership gate. See PlaylistForm for rationale.
+      if (overwriteBase && targetId) {
+        if (!isWalletAuthorizedToOverwrite(overwriteBase, 'curator', walletDID)) {
+          toast({
+            title: 'Update failed',
+            description: wrongWalletForOverwriteMessage('playlist group'),
+            variant: 'destructive',
+          })
+          return
+        }
+        attemptedUpdate = true
+      }
+
+      // Step 3: route through the single publish pipeline.
+      const prepared = preparePlaylistGroupForPublish({
+        rawDocument,
+        walletDID,
+        base: isEdit ? loadedRef.current ?? undefined : overwriteBase,
+      })
+      if ('validationErrors' in prepared) {
+        toast({
+          title: 'Validation failed',
+          description: prepared.validationErrors[0],
+          variant: 'destructive',
+        })
+        return
+      }
+      prepared.toasts.forEach((t) => toast(t))
+
+      // Step 4: sign and POST/PATCH.
       const signature = await signDocument(prepared.signedBytes, walletClient, 'curator')
       const body = { ...prepared.wireBody, signatures: [signature] }
 
@@ -453,18 +498,49 @@ export default function PlaylistGroupForm({
             />
           ),
         })
+      } else if (overwriteBase && targetId) {
+        const updated = await patchPlaylistGroup(targetId, body)
+        recordPublishedPlaylistGroup(address, updated)
+        onPublished?.()
+        const feedUrl = feedPlaylistGroupResourceUrl(
+          updated.slug?.trim() || updated.id || ''
+        )
+        setPublishedDoc({
+          feedUrl,
+          title: updated.title?.trim() || 'Untitled playlist group',
+          mode: 'update',
+          receipts: prepared.toasts.map((t) => ({
+            title: t.title,
+            description: t.description,
+          })),
+        })
+
+        setTitle('')
+        setSummary('')
+        setCoverImage('')
+        setPlaylistsText('')
+        setSlug('')
+        setIsAutoSlug(true)
+        setJsonText('')
+        newGroupCreatedRef.current = new Date().toISOString()
+        setUriStatuses([])
+        setCuratorDid(walletDID)
+        setId(uuidv4())
       } else {
         const published = await publishPlaylistGroup(body)
         recordPublishedPlaylistGroup(address, published)
         onPublished?.()
-
-        toast({
-          title: 'Published',
-          description: (
-            <FeedUrlToastDescription
-              url={feedPlaylistGroupResourceUrl(published.slug?.trim() || published.id || '')}
-            />
-          ),
+        const feedUrl = feedPlaylistGroupResourceUrl(
+          published.slug?.trim() || published.id || ''
+        )
+        setPublishedDoc({
+          feedUrl,
+          title: published.title?.trim() || 'Untitled playlist group',
+          mode: 'create',
+          receipts: prepared.toasts.map((t) => ({
+            title: t.title,
+            description: t.description,
+          })),
         })
 
         setTitle('')
@@ -482,13 +558,37 @@ export default function PlaylistGroupForm({
     } catch (error) {
       console.error(error)
       toast({
-        title: isEdit ? 'Update failed' : 'Publish failed',
-        description: error instanceof Error ? error.message : 'Unknown error',
+        title: attemptedUpdate ? 'Update failed' : 'Publish failed',
+        description: friendlyPublishError(
+          error,
+          'playlist-group',
+          attemptedUpdate ? 'update' : 'create'
+        ),
         variant: 'destructive',
       })
     } finally {
       setIsPublishing(false)
     }
+  }
+
+  if (publishedDoc) {
+    return (
+      <PostPublishPanel
+        kind="playlist-group"
+        mode={publishedDoc.mode}
+        feedUrl={publishedDoc.feedUrl}
+        title={publishedDoc.title}
+        receipts={publishedDoc.receipts}
+        onPublishAnother={() => setPublishedDoc(null)}
+        onViewPublished={() => {
+          if (onViewPublished) {
+            onViewPublished()
+          } else {
+            setPublishedDoc(null)
+          }
+        }}
+      />
+    )
   }
 
   return (

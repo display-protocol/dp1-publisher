@@ -32,6 +32,10 @@ import {
   isDebugMode,
 } from '@/lib/api'
 import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription'
+import {
+  isWalletAuthorizedToOverwrite,
+  wrongWalletForOverwriteMessage,
+} from '@/lib/overwriteAuth'
 import JsonFileDropZone from './JsonFileDropZone'
 import { prepareChannelForPublish } from '@/lib/preparePublish'
 import PostPublishPanel from './PostPublishPanel'
@@ -468,8 +472,9 @@ export default function ChannelForm({
     }
 
     // "Use in a channel" pre-fill is the user's explicit intent — if the
-    // dropped JSON's `playlists[]` doesn't already include it, override it
-    // and update the JSON editor so what's visible matches what will publish.
+    // dropped JSON's `playlists[]` doesn't already include it, append it
+    // (preserving any other playlist URLs the JSON references) and update
+    // the JSON editor so what's visible matches what will publish.
     // Consumed after the first swap so manual edits afterward stay manual.
     const preFill = useInChannelRef.current
     let next = channel
@@ -478,11 +483,11 @@ export default function ChannelForm({
         .map((p) => (typeof p === 'string' ? p.trim() : ''))
         .filter((p) => p.length > 0)
       if (!existing.includes(preFill)) {
-        next = { ...channel, playlists: [preFill] }
+        next = { ...channel, playlists: [...existing, preFill] }
         setJsonText(JSON.stringify(next, null, 2))
         toast({
-          title: 'Playlist URL replaced',
-          description: `Using the playlist you just published (${preFill}). Edit the JSON to use a different URL.`,
+          title: 'Playlist URL added',
+          description: `Appended the playlist you just published (${preFill}) to this channel.`,
         })
       }
       useInChannelRef.current = ''
@@ -602,11 +607,23 @@ export default function ChannelForm({
           }
         }
       }
-      if (overwriteBase && targetId) attemptedUpdate = true
+      const walletDID = ethereumAddressToDIDPKH(getAddress(address))
+
+      // Step 2b: pre-sign ownership gate. See PlaylistForm for rationale.
+      if (overwriteBase && targetId) {
+        if (!isWalletAuthorizedToOverwrite(overwriteBase, 'publisher', walletDID)) {
+          toast({
+            title: 'Update failed',
+            description: wrongWalletForOverwriteMessage('channel'),
+            variant: 'destructive',
+          })
+          return
+        }
+        attemptedUpdate = true
+      }
 
       // Step 3: route through the single publish pipeline. signedPayload and
       // wireBody come out together so they can't drift.
-      const walletDID = ethereumAddressToDIDPKH(getAddress(address))
       const prepared = prepareChannelForPublish({
         rawDocument,
         walletDID,
@@ -657,6 +674,8 @@ export default function ChannelForm({
           })),
         })
         setTitle('')
+        setSlug('')
+        setIsAutoSlug(true)
         setSummary('')
         setCoverImage('')
         setPlaylistsText('')
@@ -685,6 +704,8 @@ export default function ChannelForm({
         })
         // Reset form (create only)
         setTitle('')
+        setSlug('')
+        setIsAutoSlug(true)
         setSummary('')
         setCoverImage('')
         setPlaylistsText('')

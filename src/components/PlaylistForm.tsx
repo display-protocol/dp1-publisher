@@ -25,6 +25,10 @@ import {
   validatePlaylistURI,
 } from '@/lib/api'
 import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription'
+import {
+  isWalletAuthorizedToOverwrite,
+  wrongWalletForOverwriteMessage,
+} from '@/lib/overwriteAuth'
 import { mergePlaylistForPatch } from '@/lib/dp1Merge'
 import { stripPlaylistExtensionFields, stripItemExtensionFields } from '@/lib/dp1ExtensionPolicy'
 import { recordPublishedPlaylist } from '@/lib/publishedStorage'
@@ -718,11 +722,26 @@ export default function PlaylistForm({
           }
         }
       }
-      if (overwriteBase && targetId) attemptedUpdate = true
+      const walletDID = ethereumAddressToDIDPKH(getAddress(address))
+
+      // Step 2b: pre-sign ownership gate. If preflight found an existing doc
+      // but the connected wallet did not sign it as curator, refuse to sign a
+      // wallet-rewritten payload — abort with the friendly wrong-wallet error
+      // before any identity mutation runs in preparePublish.
+      if (overwriteBase && targetId) {
+        if (!isWalletAuthorizedToOverwrite(overwriteBase, 'curator', walletDID)) {
+          toast({
+            title: 'Update failed',
+            description: wrongWalletForOverwriteMessage('playlist'),
+            variant: 'destructive',
+          })
+          return
+        }
+        attemptedUpdate = true
+      }
 
       // Step 3: route through the single publish pipeline. signedPayload and
       // wireBody come out together so they can't drift.
-      const walletDID = ethereumAddressToDIDPKH(getAddress(address))
       const prepared = preparePlaylistForPublish({
         rawDocument,
         walletDID,
@@ -775,6 +794,8 @@ export default function PlaylistForm({
         })
         // Reset form so "Publish another" returns to a clean state.
         setTitle('')
+        setSlug('')
+        setIsAutoSlug(true)
         setSummary('')
         setCoverImage('')
         setPlaylistNoteText('')
@@ -810,6 +831,8 @@ export default function PlaylistForm({
         })
         // Reset form (create only — edit leaves the form populated)
         setTitle('')
+        setSlug('')
+        setIsAutoSlug(true)
         setSummary('')
         setCoverImage('')
         setPlaylistNoteText('')

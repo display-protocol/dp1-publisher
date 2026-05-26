@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import PlaylistForm from './PlaylistForm'
 import * as apiModule from '@/lib/api'
+import { ethereumAddressToDIDPKH } from '@/lib/signing'
+
+const TEST_WALLET = '0x000000000000000000000000000000000000aBcD'
+const TEST_WALLET_DID = ethereumAddressToDIDPKH(TEST_WALLET)
 
 // wagmi: stable address + minimal wallet client (signing is mocked separately).
 vi.mock('wagmi', () => {
@@ -11,6 +15,11 @@ vi.mock('wagmi', () => {
     useWalletClient: () => ({ data: { account: { address } } }),
   }
 })
+
+// signDocument mock uses the live ethereumAddressToDIDPKH for kid so it
+// matches what the form computes; declared at module scope so the mock
+// factory can close over it.
+const signKid = ethereumAddressToDIDPKH('0x000000000000000000000000000000000000aBcD')
 
 // Toast: capture title/description so error-path assertions can read them.
 const toastMock = vi.fn()
@@ -27,7 +36,7 @@ vi.mock('@/lib/signing', async () => {
     ...actual,
     signDocument: vi.fn(async (_raw, _wc, role: 'curator' | 'publisher') => ({
       alg: 'eip191',
-      kid: 'did:pkh:eip155:1:0x000000000000000000000000000000000000aBcD',
+      kid: signKid,
       ts: new Date().toISOString(),
       payload_hash: 'sha256:test',
       role,
@@ -119,8 +128,9 @@ describe('PlaylistForm — publish flow', () => {
     expect(mockedApi.patchPlaylist).not.toHaveBeenCalled()
   })
 
-  it('shows the overwrite-specific error when an auto-overwrite PATCH is rejected (wrong wallet)', async () => {
-    // Preflight resolves: id already on the feed → form will route to PATCH.
+  it('refuses to sign or PATCH when preflight returns a doc signed by a different wallet', async () => {
+    // Existing doc was signed by ANOTHER wallet (not the connected one).
+    // The ownership gate must abort before signing or PATCHing.
     mockedApi.getPlaylist.mockResolvedValue({
       dpVersion: '1.1.0',
       id: 'preexisting-id',
@@ -128,6 +138,61 @@ describe('PlaylistForm — publish flow', () => {
       title: 'Preexisting',
       created: '2025-01-01T00:00:00Z',
       items: [],
+      signatures: [
+        {
+          alg: 'eip191',
+          kid: 'did:pkh:eip155:1:0xDeAd000000000000000000000000000000000001',
+          ts: '2025-01-01T00:00:00Z',
+          payload_hash: 'sha256:other',
+          role: 'curator',
+          sig: 'other-sig',
+        },
+      ],
+    })
+
+    const signingModule = await import('@/lib/signing')
+    const signSpy = signingModule.signDocument as unknown as ReturnType<typeof vi.fn>
+    signSpy.mockClear()
+
+    render(<PlaylistForm extensionsEnabled={false} />)
+    fillFormAndPublish('Whatever', 'https://example.com/a.mp4')
+
+    // Wait for the gate's update-failed toast.
+    await waitFor(() => {
+      const updateFailures = toastMock.mock.calls.filter(
+        ([arg]) => arg?.title === 'Update failed',
+      )
+      expect(updateFailures.length).toBeGreaterThan(0)
+    })
+
+    // Critically: neither signing nor the PATCH endpoint may have been called.
+    expect(signSpy).not.toHaveBeenCalled()
+    expect(mockedApi.patchPlaylist).not.toHaveBeenCalled()
+    expect(mockedApi.publishPlaylist).not.toHaveBeenCalled()
+  })
+
+  it('shows the overwrite-specific error when an auto-overwrite PATCH is rejected (wrong wallet)', async () => {
+    // Preflight resolves: id already on the feed → form will route to PATCH.
+    // Existing doc was previously signed by THIS wallet (so the client-side
+    // ownership gate passes and we reach the PATCH); the server then rejects
+    // the PATCH with 401 — the case we're testing.
+    mockedApi.getPlaylist.mockResolvedValue({
+      dpVersion: '1.1.0',
+      id: 'preexisting-id',
+      slug: 'preexisting',
+      title: 'Preexisting',
+      created: '2025-01-01T00:00:00Z',
+      items: [],
+      signatures: [
+        {
+          alg: 'eip191',
+          kid: TEST_WALLET_DID,
+          ts: '2025-01-01T00:00:00Z',
+          payload_hash: 'sha256:prior',
+          role: 'curator',
+          sig: 'prior-sig',
+        },
+      ],
     })
     // PATCH rejected as wrong wallet (401).
     mockedApi.patchPlaylist.mockRejectedValue(

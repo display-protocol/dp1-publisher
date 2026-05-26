@@ -25,6 +25,10 @@ import {
   validatePlaylistURI,
 } from '@/lib/api'
 import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription'
+import {
+  isWalletAuthorizedToOverwrite,
+  wrongWalletForOverwriteMessage,
+} from '@/lib/overwriteAuth'
 import JsonFileDropZone from './JsonFileDropZone'
 import { preparePlaylistGroupForPublish } from '@/lib/preparePublish'
 import PostPublishPanel from './PostPublishPanel'
@@ -446,10 +450,22 @@ export default function PlaylistGroupForm({
           }
         }
       }
-      if (overwriteBase && targetId) attemptedUpdate = true
+      const walletDID = ethereumAddressToDIDPKH(getAddress(address))
+
+      // Step 2b: pre-sign ownership gate. See PlaylistForm for rationale.
+      if (overwriteBase && targetId) {
+        if (!isWalletAuthorizedToOverwrite(overwriteBase, 'curator', walletDID)) {
+          toast({
+            title: 'Update failed',
+            description: wrongWalletForOverwriteMessage('playlist group'),
+            variant: 'destructive',
+          })
+          return
+        }
+        attemptedUpdate = true
+      }
 
       // Step 3: route through the single publish pipeline.
-      const walletDID = ethereumAddressToDIDPKH(getAddress(address))
       const prepared = preparePlaylistGroupForPublish({
         rawDocument,
         walletDID,

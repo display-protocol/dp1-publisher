@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import {
   indexerTokenToPlaylistItem,
   indexerTokensToPlaylistItems,
@@ -6,6 +6,7 @@ import {
   normalizeIndexerStandard,
   resolveTokenSourceUrl,
 } from '@/lib/indexerToPlaylistItem'
+import { validatePlaylistURI } from '@/lib/api'
 import type { IndexerToken } from '@/lib/indexerApi'
 
 function makeToken(overrides: Partial<IndexerToken> = {}): IndexerToken {
@@ -117,5 +118,49 @@ describe('indexerTokensToPlaylistItems', () => {
     ])
     expect(items).toHaveLength(1)
     expect(skippedCount).toBe(1)
+  })
+})
+
+// URI policy parity — series-derived sources must pass the same validatePlaylistURI
+// gate that JSON-tab import enforces, so indexer-expanded items cannot sign/publish
+// URLs that the JSON path would reject.
+// These tests force production-mode URI policy (DEV=false, no VITE_DEBUG_MODE)
+// matching the pattern used in api.test.ts, because the local .env sets VITE_DEBUG_MODE=true.
+describe('series-derived sources pass URI policy', () => {
+  const originalEnv = { ...import.meta.env }
+
+  beforeEach(() => {
+    ;(import.meta.env as { DEV: boolean }).DEV = false
+    delete (import.meta.env as Record<string, unknown>).VITE_DEBUG_MODE
+  })
+
+  afterEach(() => {
+    ;(import.meta.env as { DEV: boolean }).DEV = originalEnv.DEV
+    ;(import.meta.env as { VITE_DEBUG_MODE?: string }).VITE_DEBUG_MODE =
+      originalEnv.VITE_DEBUG_MODE
+  })
+
+  it('accepts https:// URLs from indexer display block', () => {
+    const item = indexerTokenToPlaylistItem(makeToken())
+    expect(item).not.toBeNull()
+    expect(validatePlaylistURI(item!.source)).toMatchObject({ valid: true })
+  })
+
+  it('URI policy rejects http:// sources that an indexer might return', () => {
+    const item = indexerTokenToPlaylistItem(
+      makeToken({ display: { animation_url: 'http://example.com/a.mp4', image_url: null } })
+    )
+    expect(item).not.toBeNull()
+    // The mapper itself accepts any non-empty URL; the publish gate (validateFormTab)
+    // must reject it. Confirm the policy function would catch it.
+    expect(validatePlaylistURI(item!.source)).toMatchObject({ valid: false })
+  })
+
+  it('URI policy rejects private-IP sources that an indexer might return', () => {
+    const item = indexerTokenToPlaylistItem(
+      makeToken({ display: { animation_url: 'https://192.168.1.1/a.mp4', image_url: null } })
+    )
+    expect(item).not.toBeNull()
+    expect(validatePlaylistURI(item!.source)).toMatchObject({ valid: false })
   })
 })

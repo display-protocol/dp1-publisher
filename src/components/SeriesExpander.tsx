@@ -36,6 +36,8 @@ interface LoadedRelease {
 }
 
 interface SeriesExpanderProps {
+  /** Current export-ready item count in the parent playlist (used to warn before replacing). */
+  currentItemCount: number
   onAdd: (items: PlaylistItem[], releaseName: string | null) => void
 }
 
@@ -55,7 +57,7 @@ function vendorReleaseIdFromForm(
   return buildArtBlocksVendorReleaseId(contract, projectId)
 }
 
-export default function SeriesExpander({ onAdd }: SeriesExpanderProps) {
+export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpanderProps) {
   const { toast } = useToast()
   const [collapsed, setCollapsed] = useState(false)
   const [vendor, setVendor] = useState<VendorChoice>(INDEXER_VENDOR_FERALFILE)
@@ -66,12 +68,14 @@ export default function SeriesExpander({ onAdd }: SeriesExpanderProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [loaded, setLoaded] = useState<LoadedRelease | null>(null)
   const [adding, setAdding] = useState(false)
+  const [confirmReplace, setConfirmReplace] = useState(false)
   const loadGenerationRef = useRef(0)
 
   const resetLoaded = useCallback(() => {
     setLoaded(null)
     setPhase('idle')
     setErrorMessage(null)
+    setConfirmReplace(false)
   }, [])
 
   const handleVendorChange = (value: VendorChoice) => {
@@ -133,7 +137,7 @@ export default function SeriesExpander({ onAdd }: SeriesExpanderProps) {
     resetLoaded()
   }
 
-  const handleAdd = () => {
+  const doAdd = () => {
     if (!loaded) return
     setAdding(true)
     try {
@@ -146,8 +150,8 @@ export default function SeriesExpander({ onAdd }: SeriesExpanderProps) {
 
       onAdd(items, loaded.release.name)
       toast({
-        title: 'Series added',
-        description: `Added ${items.length} item(s) to the playlist.${
+        title: 'Playlist replaced',
+        description: `${items.length} item${items.length === 1 ? '' : 's'} loaded from series.${
           skippedCount > 0 ? ` ${skippedCount} skipped (no URL).` : ''
         }`,
       })
@@ -155,6 +159,15 @@ export default function SeriesExpander({ onAdd }: SeriesExpanderProps) {
     } finally {
       setAdding(false)
     }
+  }
+
+  const handleAdd = () => {
+    // Warn before overwriting an already-populated playlist.
+    if (currentItemCount > 0 && !confirmReplace) {
+      setConfirmReplace(true)
+      return
+    }
+    doAdd()
   }
 
   const totalMints = loaded?.release.total_mints ?? null
@@ -310,18 +323,38 @@ export default function SeriesExpander({ onAdd }: SeriesExpanderProps) {
                 </p>
               )}
 
+              {confirmReplace && (
+                <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  This will replace the {currentItemCount} existing item{currentItemCount === 1 ? '' : 's'} in
+                  the playlist. Confirm to continue.
+                </p>
+              )}
+
               <div className="flex flex-wrap justify-end gap-2">
-                <Button type="button" variant="outline" onClick={handleCancel} disabled={adding}>
-                  Cancel
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    if (confirmReplace) {
+                      setConfirmReplace(false)
+                    } else {
+                      handleCancel()
+                    }
+                  }}
+                  disabled={adding}
+                >
+                  {confirmReplace ? 'Go back' : 'Cancel'}
                 </Button>
                 <Button type="button" onClick={handleAdd} disabled={adding || addableCount === 0}>
                   {adding ? (
                     <>
                       <Loader2 className="mr-2 size-4 animate-spin" />
-                      Adding…
+                      Replacing…
                     </>
+                  ) : confirmReplace ? (
+                    `Yes, replace with ${addableCount} item${addableCount === 1 ? '' : 's'}`
                   ) : (
-                    `Add ${addableCount} item${addableCount === 1 ? '' : 's'} to playlist`
+                    `Load ${addableCount} item${addableCount === 1 ? '' : 's'} into playlist`
                   )}
                 </Button>
               </div>

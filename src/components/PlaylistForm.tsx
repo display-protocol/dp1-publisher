@@ -654,6 +654,17 @@ export default function PlaylistForm({
         ? 'At least one item with source URI is required, or enable Dynamic Query'
         : 'At least one item with source URI is required'
     }
+    // Validate every source URI through the same policy applied to JSON-tab imports.
+    // This catches disallowed schemes and private/local hosts regardless of whether
+    // items were entered manually or expanded from an indexer series.
+    for (let i = 0; i < exportItems.length; i++) {
+      const src = exportItems[i].source?.trim()
+      if (!src) continue
+      const validation = validatePlaylistURI(src)
+      if (!validation.valid) {
+        return `Item ${i + 1} source: ${validation.reason || 'Invalid URI'}`
+      }
+    }
     if (extensionsEnabled && enableDynamicQuery) {
       if (!dynamicEndpoint.trim()) return 'Dynamic Query: Endpoint is required'
       if (!dynamicItemsPath.trim()) return 'Dynamic Query: Items Path is required'
@@ -1162,7 +1173,7 @@ export default function PlaylistForm({
             {/* Playlist items — series load first, then manual entry */}
             <div className="space-y-5">
               <span className="section-label">Playlist items · {playlistItemExportCount(items)}</span>
-              <SeriesExpander onAdd={handleSeriesAdd} />
+              <SeriesExpander currentItemCount={playlistItemExportCount(items)} onAdd={handleSeriesAdd} />
               <ManualItemsSection
                 items={items}
                 showIntermissionNote={extensionsEnabled}

@@ -38,10 +38,12 @@ import { mergePlaylistForPatch } from '@/lib/dp1Merge'
 import { stripPlaylistExtensionFields, stripItemExtensionFields } from '@/lib/dp1ExtensionPolicy'
 import { recordPublishedPlaylist } from '@/lib/publishedStorage'
 import type { DynamicQuery, Entity, Playlist, PlaylistItem } from '@/types/dp1'
-import PlaylistItemForm from './PlaylistItemForm'
+import SeriesExpander from './SeriesExpander'
+import ManualItemsSection from './ManualItemsSection'
 import CuratorList from './CuratorList'
 import JsonFileDropZone from './JsonFileDropZone'
 import { preparePlaylistForPublish } from '@/lib/preparePublish'
+import { itemsForPlaylistExport, playlistItemExportCount } from '@/lib/playlistItems'
 import PostPublishPanel from './PostPublishPanel'
 
 function parsePlaylistJson(
@@ -360,6 +362,17 @@ export default function PlaylistForm({
     setItems(newItems)
   }
 
+  const handleSeriesAdd = useCallback(
+    (newItems: PlaylistItem[], releaseName: string | null) => {
+      // Each series add replaces the whole items list — manual rows from prior edits are cleared.
+      setItems(newItems)
+      if (!title.trim() && releaseName?.trim()) {
+        setTitle(releaseName.trim())
+      }
+    },
+    [title]
+  )
+
   const buildDynamicQuery = useCallback((): DynamicQuery | undefined => {
     if (!enableDynamicQuery) return undefined
     if (!dynamicEndpoint.trim() || !dynamicItemsPath.trim()) return undefined
@@ -410,7 +423,7 @@ export default function PlaylistForm({
           }
         : undefined
 
-    const mappedItems = items.map((item) => {
+    const mappedItems = itemsForPlaylistExport(items).map((item) => {
       const base = extensionsEnabled ? item : stripItemExtensionFields(item)
       return {
         ...base,
@@ -477,7 +490,7 @@ export default function PlaylistForm({
             }
           : undefined
 
-      const mappedItems = items.map((item) => {
+      const mappedItems = itemsForPlaylistExport(items).map((item) => {
         const it = extensionsEnabled ? item : stripItemExtensionFields(item)
         return { ...it, id: item.id || uuidv4() }
       })
@@ -635,7 +648,8 @@ export default function PlaylistForm({
   const validateFormTab = (): string | null => {
     if (!title.trim()) return 'Title is required'
     const allowEmptyViaDynamic = extensionsEnabled && enableDynamicQuery
-    if (!allowEmptyViaDynamic && (items.length === 0 || items.some((item) => !item.source))) {
+    const exportItems = itemsForPlaylistExport(items)
+    if (!allowEmptyViaDynamic && (exportItems.length === 0 || exportItems.some((item) => !item.source))) {
       return extensionsEnabled
         ? 'At least one item with source URI is required, or enable Dynamic Query'
         : 'At least one item with source URI is required'
@@ -1145,34 +1159,17 @@ export default function PlaylistForm({
               </div>
             </div>
 
-            {/* Items */}
+            {/* Playlist items — series load first, then manual entry */}
             <div className="space-y-5">
-              <div className="flex items-center justify-between gap-4">
-                <span className="section-label">
-                  Items · {items.length}
-                </span>
-                <Button
-                  onClick={handleAddItem}
-                  variant="outline"
-                  size="sm"
-                  className="rounded-full"
-                >
-                  Add item
-                </Button>
-              </div>
-              <div className="space-y-3">
-                {items.map((item, index) => (
-                  <PlaylistItemForm
-                    key={index}
-                    item={item}
-                    index={index}
-                    showIntermissionNote={extensionsEnabled}
-                    onUpdate={(item: PlaylistItem) => handleUpdateItem(index, item)}
-                    onRemove={() => handleRemoveItem(index)}
-                    canRemove={items.length > 1}
-                  />
-                ))}
-              </div>
+              <span className="section-label">Playlist items · {playlistItemExportCount(items)}</span>
+              <SeriesExpander onAdd={handleSeriesAdd} />
+              <ManualItemsSection
+                items={items}
+                showIntermissionNote={extensionsEnabled}
+                onAddItem={handleAddItem}
+                onUpdateItem={handleUpdateItem}
+                onRemoveItem={handleRemoveItem}
+              />
             </div>
 
             {extensionsEnabled ? (

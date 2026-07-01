@@ -5,6 +5,39 @@ import { cn } from "@/lib/utils"
 
 const Tabs = TabsPrimitive.Root
 
+/** Muted pill track shared by section-level tab rows. */
+export const sectionTabsTrackClass = "rounded-full bg-muted/60 p-1.5"
+
+/** Inline track (Publish/Published). */
+export const sectionTabsInlineListClass =
+  `inline-flex h-12 items-center gap-1 ${sectionTabsTrackClass} sm:h-11`
+
+/** Grid track for three entity tabs. */
+export const sectionTabsGrid3ListClass =
+  `grid h-12 w-full max-w-xl grid-cols-3 gap-1 ${sectionTabsTrackClass} sm:h-11`
+
+/** Grid track for two entity tabs. */
+export const sectionTabsGrid2ListClass =
+  `grid h-12 w-full max-w-md grid-cols-2 gap-1 ${sectionTabsTrackClass} sm:h-11`
+
+/** Trigger sizing for three-column entity tabs (matches TabsTrigger base + overrides). */
+export const sectionTabsTriggerCompactClass =
+  "h-full gap-1 rounded-full px-2 py-2 text-[11px] font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:gap-2 sm:px-4 sm:text-[13px]"
+
+/** Trigger sizing for two-column entity tabs. */
+export const sectionTabsTriggerWideClass =
+  "h-full gap-2 rounded-full px-4 py-2 text-[13px] font-medium data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+
+/** Plain-button twin of sectionTabsTriggerCompactClass for Publish/Published nav. */
+export const sectionTabButtonClass =
+  "inline-flex h-full items-center justify-center whitespace-nowrap rounded-full py-2 font-medium transition-all gap-1 px-2 text-[11px] sm:gap-2 sm:px-4 sm:text-[13px]"
+
+export const sectionTabButtonActiveClass =
+  "bg-background text-foreground shadow-sm"
+
+export const sectionTabButtonInactiveClass =
+  "text-muted-foreground hover:text-foreground"
+
 const TabsList = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.List>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>

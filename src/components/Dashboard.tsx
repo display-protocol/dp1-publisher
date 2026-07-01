@@ -1,7 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAccount } from 'wagmi'
 import { History, Layers, ListMusic, Radio, Upload } from 'lucide-react'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  sectionTabButtonActiveClass,
+  sectionTabButtonClass,
+  sectionTabButtonInactiveClass,
+  sectionTabsGrid2ListClass,
+  sectionTabsGrid3ListClass,
+  sectionTabsInlineListClass,
+  sectionTabsTriggerCompactClass,
+  sectionTabsTriggerWideClass,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Toaster } from '@/components/ui/toaster'
 import { cn } from '@/lib/utils'
@@ -133,7 +146,7 @@ export default function Dashboard() {
             <div
               role="tablist"
               aria-label="Publisher section"
-              className="inline-flex h-11 items-center gap-1 rounded-full border border-border/60 bg-card/90 p-1.5 shadow-sm backdrop-blur-sm"
+              className={sectionTabsInlineListClass}
             >
               <button
                 type="button"
@@ -144,13 +157,13 @@ export default function Dashboard() {
                   setView('publish')
                 }}
                 className={cn(
-                  'flex items-center gap-2 rounded-full px-4 text-[13px] font-medium transition-colors',
+                  sectionTabButtonClass,
                   view === 'publish'
-                    ? 'bg-foreground text-background shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground',
+                    ? sectionTabButtonActiveClass
+                    : sectionTabButtonInactiveClass,
                 )}
               >
-                <Upload className="size-3.5" aria-hidden />
+                <Upload className="size-3.5 opacity-70 sm:size-4" aria-hidden />
                 Publish
               </button>
               <button
@@ -159,13 +172,13 @@ export default function Dashboard() {
                 aria-selected={view === 'published'}
                 onClick={handleViewPublished}
                 className={cn(
-                  'flex items-center gap-2 rounded-full px-4 text-[13px] font-medium transition-colors',
+                  sectionTabButtonClass,
                   view === 'published'
-                    ? 'bg-foreground text-background shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground',
+                    ? sectionTabButtonActiveClass
+                    : sectionTabButtonInactiveClass,
                 )}
               >
-                <History className="size-3.5" aria-hidden />
+                <History className="size-3.5 opacity-70 sm:size-4" aria-hidden />
                 Published
               </button>
             </div>
@@ -197,25 +210,16 @@ export default function Dashboard() {
             }}
             className="w-full"
           >
-            <TabsList className="grid h-12 w-full max-w-xl grid-cols-3 gap-1 rounded-full bg-muted/60 p-1.5 sm:h-11">
-              <TabsTrigger
-                value="playlist"
-                className="gap-1 rounded-full px-2 text-[11px] font-medium data-[state=active]:shadow-sm sm:gap-2 sm:px-4 sm:text-[13px]"
-              >
+            <TabsList className={sectionTabsGrid3ListClass}>
+              <TabsTrigger value="playlist" className={sectionTabsTriggerCompactClass}>
                 <ListMusic className="size-3.5 opacity-70 sm:size-4" aria-hidden />
                 Playlist
               </TabsTrigger>
-              <TabsTrigger
-                value="group"
-                className="gap-1 rounded-full px-2 text-[11px] font-medium data-[state=active]:shadow-sm sm:gap-2 sm:px-4 sm:text-[13px]"
-              >
+              <TabsTrigger value="group" className={sectionTabsTriggerCompactClass}>
                 <Layers className="size-3.5 opacity-70 sm:size-4" aria-hidden />
                 Group
               </TabsTrigger>
-              <TabsTrigger
-                value="channel"
-                className="gap-1 rounded-full px-2 text-[11px] font-medium data-[state=active]:shadow-sm sm:gap-2 sm:px-4 sm:text-[13px]"
-              >
+              <TabsTrigger value="channel" className={sectionTabsTriggerCompactClass}>
                 <Radio className="size-3.5 opacity-70 sm:size-4" aria-hidden />
                 Channel
               </TabsTrigger>
@@ -254,18 +258,12 @@ export default function Dashboard() {
             onValueChange={(v) => setPublishTab(v as PublishTab)}
             className="w-full"
           >
-            <TabsList className="grid h-12 w-full max-w-md grid-cols-2 gap-1 rounded-full bg-muted/60 p-1.5 sm:h-11">
-              <TabsTrigger
-                value="playlist"
-                className="gap-2 rounded-full px-4 text-[13px] font-medium data-[state=active]:shadow-sm"
-              >
+            <TabsList className={sectionTabsGrid2ListClass}>
+              <TabsTrigger value="playlist" className={sectionTabsTriggerWideClass}>
                 <ListMusic className="size-4 opacity-70" aria-hidden />
                 Playlist
               </TabsTrigger>
-              <TabsTrigger
-                value="group"
-                className="gap-2 rounded-full px-4 text-[13px] font-medium data-[state=active]:shadow-sm"
-              >
+              <TabsTrigger value="group" className={sectionTabsTriggerWideClass}>
                 <Layers className="size-4 opacity-70" aria-hidden />
                 Group
               </TabsTrigger>

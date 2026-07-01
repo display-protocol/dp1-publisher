@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAccount } from 'wagmi'
 import { Layers, ListMusic, Radio } from 'lucide-react'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  sectionTabsGrid2ListClass,
+  sectionTabsGrid3ListClass,
+  sectionTabsTriggerCompactClass,
+  sectionTabsTriggerWideClass,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   feedChannelResourceUrl,
@@ -77,25 +86,16 @@ export default function PublishedView({
       <CardContent className="pb-8">
         {extensionsEnabled ? (
           <Tabs defaultValue="playlist" className="w-full">
-            <TabsList className="grid h-12 w-full max-w-xl grid-cols-3 gap-1 rounded-full bg-muted/60 p-1.5 sm:h-11">
-              <TabsTrigger
-                value="playlist"
-                className="gap-1 rounded-full px-2 text-[11px] font-medium data-[state=active]:shadow-sm sm:gap-2 sm:px-4 sm:text-[13px]"
-              >
+            <TabsList className={sectionTabsGrid3ListClass}>
+              <TabsTrigger value="playlist" className={sectionTabsTriggerCompactClass}>
                 <ListMusic className="size-3.5 opacity-70 sm:size-4" aria-hidden />
                 Playlists
               </TabsTrigger>
-              <TabsTrigger
-                value="group"
-                className="gap-1 rounded-full px-2 text-[11px] font-medium data-[state=active]:shadow-sm sm:gap-2 sm:px-4 sm:text-[13px]"
-              >
+              <TabsTrigger value="group" className={sectionTabsTriggerCompactClass}>
                 <Layers className="size-3.5 opacity-70 sm:size-4" aria-hidden />
                 Groups
               </TabsTrigger>
-              <TabsTrigger
-                value="channel"
-                className="gap-1 rounded-full px-2 text-[11px] font-medium data-[state=active]:shadow-sm sm:gap-2 sm:px-4 sm:text-[13px]"
-              >
+              <TabsTrigger value="channel" className={sectionTabsTriggerCompactClass}>
                 <Radio className="size-3.5 opacity-70 sm:size-4" aria-hidden />
                 Channels
               </TabsTrigger>
@@ -136,18 +136,12 @@ export default function PublishedView({
           </Tabs>
         ) : (
           <Tabs defaultValue="playlist" className="w-full">
-            <TabsList className="grid h-12 w-full max-w-md grid-cols-2 gap-1 rounded-full bg-muted/60 p-1.5 sm:h-11">
-              <TabsTrigger
-                value="playlist"
-                className="gap-2 rounded-full px-4 text-[13px] font-medium data-[state=active]:shadow-sm"
-              >
+            <TabsList className={sectionTabsGrid2ListClass}>
+              <TabsTrigger value="playlist" className={sectionTabsTriggerWideClass}>
                 <ListMusic className="size-4 opacity-70" aria-hidden />
                 Playlists
               </TabsTrigger>
-              <TabsTrigger
-                value="group"
-                className="gap-2 rounded-full px-4 text-[13px] font-medium data-[state=active]:shadow-sm"
-              >
+              <TabsTrigger value="group" className={sectionTabsTriggerWideClass}>
                 <Layers className="size-4 opacity-70" aria-hidden />
                 Groups
               </TabsTrigger>

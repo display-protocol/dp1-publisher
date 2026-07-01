@@ -4,7 +4,11 @@ import { useAccount, useWalletClient } from 'wagmi'
 import { v4 as uuidv4 } from 'uuid'
 import { getAddress } from 'viem'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  channelFormCreateDescription,
+  publishFormEditDescription,
+} from '@/lib/publishFormDescriptions'
+import { Tabs, TabsContent, TabsList, TabsTrigger, editorModeListClass, editorModeTriggerClass } from '@/components/ui/tabs'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -857,9 +861,7 @@ export default function ChannelForm({
               {isEdit ? 'Edit channel' : 'New channel'}
             </CardTitle>
             <CardDescription className="text-[15px]">
-              {isEdit
-                ? 'Edit in the form or JSON tab, then sign to PATCH the feed document.'
-                : 'Point to playlists that already exist on the feed, then sign as publisher.'}
+              {isEdit ? publishFormEditDescription : channelFormCreateDescription}
             </CardDescription>
           </div>
           {isEdit && onCancelEdit ? (
@@ -916,11 +918,11 @@ export default function ChannelForm({
           </div>
         ) : null}
         <Tabs value={jsonMode} onValueChange={(v) => setJsonMode(v as 'form' | 'json')}>
-          <TabsList className="mb-2 h-11 w-full max-w-xs rounded-full">
-            <TabsTrigger value="form" className="flex-1 rounded-full text-[13px]">
+          <TabsList className={editorModeListClass}>
+            <TabsTrigger value="form" className={editorModeTriggerClass}>
               Form
             </TabsTrigger>
-            <TabsTrigger value="json" className="flex-1 rounded-full text-[13px]">
+            <TabsTrigger value="json" className={editorModeTriggerClass}>
               JSON
             </TabsTrigger>
           </TabsList>

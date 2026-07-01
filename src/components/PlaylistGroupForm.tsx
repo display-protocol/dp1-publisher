@@ -4,7 +4,11 @@ import { useAccount, useWalletClient } from 'wagmi'
 import { v4 as uuidv4 } from 'uuid'
 import { getAddress } from 'viem'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  playlistGroupFormCreateDescription,
+  publishFormEditDescription,
+} from '@/lib/publishFormDescriptions'
+import { Tabs, TabsContent, TabsList, TabsTrigger, editorModeListClass, editorModeTriggerClass } from '@/components/ui/tabs'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -601,9 +605,7 @@ export default function PlaylistGroupForm({
               {isEdit ? 'Edit playlist group' : 'New playlist group'}
             </CardTitle>
             <CardDescription className="text-[15px]">
-              Core DP-1 exhibition: ordered playlist URIs. The feed resolves each URI to a stored playlist
-              (same rules as channels). Curator DID must match your signing key (
-              <code className="text-xs">kid</code>).
+              {isEdit ? publishFormEditDescription : playlistGroupFormCreateDescription}
             </CardDescription>
           </div>
           {isEdit && onCancelEdit ? (
@@ -631,11 +633,11 @@ export default function PlaylistGroupForm({
           </p>
         ) : (
           <Tabs value={jsonMode} onValueChange={(v) => setJsonMode(v as 'form' | 'json')}>
-            <TabsList className="mb-2 h-11 w-full max-w-xs rounded-full">
-              <TabsTrigger value="form" className="flex-1 rounded-full text-[13px]">
+            <TabsList className={editorModeListClass}>
+              <TabsTrigger value="form" className={editorModeTriggerClass}>
                 Form
               </TabsTrigger>
-              <TabsTrigger value="json" className="flex-1 rounded-full text-[13px]">
+              <TabsTrigger value="json" className={editorModeTriggerClass}>
                 JSON
               </TabsTrigger>
             </TabsList>
@@ -649,7 +651,7 @@ export default function PlaylistGroupForm({
                     id="pg-title"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    placeholder="Exhibition title"
+                    placeholder="Playlist group title"
                   />
                 </div>
                 <div>

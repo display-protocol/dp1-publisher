@@ -8,9 +8,9 @@ const Tabs = TabsPrimitive.Root
 /** Muted pill track shared by section-level tab rows. */
 export const sectionTabsTrackClass = "rounded-full bg-muted/60 p-1.5"
 
-/** Inline track (Publish/Published). */
+/** Inline track (Publish/Published) — level-1 primary nav. */
 export const sectionTabsInlineListClass =
-  `inline-flex h-12 items-center gap-1 ${sectionTabsTrackClass} sm:h-11`
+  "inline-flex h-12 items-center gap-1 rounded-full border border-border/50 bg-muted/60 p-1.5 shadow-sm sm:h-11"
 
 /** Grid track for three entity tabs. */
 export const sectionTabsGrid3ListClass =
@@ -37,6 +37,27 @@ export const sectionTabButtonActiveClass =
 
 export const sectionTabButtonInactiveClass =
   "text-muted-foreground hover:text-foreground"
+
+/** Level-2 entity nav — underline tabs (subordinate to primary pills). */
+export const entityNavListClass =
+  "flex h-auto w-full max-w-xl items-end justify-start gap-0 rounded-none border-b border-border/50 bg-transparent p-0"
+
+export const entityNavList2Class =
+  "flex h-auto w-full max-w-md items-end justify-start gap-0 rounded-none border-b border-border/50 bg-transparent p-0"
+
+export const entityNavTriggerCompactClass =
+  "h-auto flex-1 gap-1.5 rounded-none border-b-2 border-transparent bg-transparent px-2 pb-3 pt-1 text-[11px] font-medium text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none sm:gap-2 sm:px-4 sm:text-[13px]"
+
+export const entityNavTriggerWideClass =
+  "h-auto flex-1 gap-2 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-3 pt-1 text-[13px] font-medium text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+
+/** Level-3 editor mode — in-form pill toggle (Form / JSON).
+ *  Uses rounded-full (nav control), not rounded-xl (inputs/buttons). */
+export const editorModeListClass =
+  "mb-2 inline-flex h-11 w-full max-w-xs gap-1 rounded-full bg-muted/60 p-1.5"
+
+export const editorModeTriggerClass =
+  "h-full flex-1 rounded-full px-4 text-[13px] font-medium text-muted-foreground shadow-none data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
 
 const TabsList = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.List>,

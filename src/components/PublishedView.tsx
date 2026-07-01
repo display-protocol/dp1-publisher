@@ -2,10 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { useAccount } from 'wagmi'
 import { Layers, ListMusic, Radio } from 'lucide-react'
 import {
-  sectionTabsGrid2ListClass,
-  sectionTabsGrid3ListClass,
-  sectionTabsTriggerCompactClass,
-  sectionTabsTriggerWideClass,
+  entityNavList2Class,
+  entityNavListClass,
+  entityNavTriggerCompactClass,
+  entityNavTriggerWideClass,
   Tabs,
   TabsContent,
   TabsList,
@@ -86,16 +86,16 @@ export default function PublishedView({
       <CardContent className="pb-8">
         {extensionsEnabled ? (
           <Tabs defaultValue="playlist" className="w-full">
-            <TabsList className={sectionTabsGrid3ListClass}>
-              <TabsTrigger value="playlist" className={sectionTabsTriggerCompactClass}>
+            <TabsList className={entityNavListClass}>
+              <TabsTrigger value="playlist" className={entityNavTriggerCompactClass}>
                 <ListMusic className="size-3.5 opacity-70 sm:size-4" aria-hidden />
                 Playlists
               </TabsTrigger>
-              <TabsTrigger value="group" className={sectionTabsTriggerCompactClass}>
+              <TabsTrigger value="group" className={entityNavTriggerCompactClass}>
                 <Layers className="size-3.5 opacity-70 sm:size-4" aria-hidden />
                 Groups
               </TabsTrigger>
-              <TabsTrigger value="channel" className={sectionTabsTriggerCompactClass}>
+              <TabsTrigger value="channel" className={entityNavTriggerCompactClass}>
                 <Radio className="size-3.5 opacity-70 sm:size-4" aria-hidden />
                 Channels
               </TabsTrigger>
@@ -136,12 +136,12 @@ export default function PublishedView({
           </Tabs>
         ) : (
           <Tabs defaultValue="playlist" className="w-full">
-            <TabsList className={sectionTabsGrid2ListClass}>
-              <TabsTrigger value="playlist" className={sectionTabsTriggerWideClass}>
+            <TabsList className={entityNavList2Class}>
+              <TabsTrigger value="playlist" className={entityNavTriggerWideClass}>
                 <ListMusic className="size-4 opacity-70" aria-hidden />
                 Playlists
               </TabsTrigger>
-              <TabsTrigger value="group" className={sectionTabsTriggerWideClass}>
+              <TabsTrigger value="group" className={entityNavTriggerWideClass}>
                 <Layers className="size-4 opacity-70" aria-hidden />
                 Groups
               </TabsTrigger>

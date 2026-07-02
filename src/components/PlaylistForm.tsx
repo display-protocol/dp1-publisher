@@ -43,7 +43,7 @@ import ManualItemsSection from './ManualItemsSection'
 import CuratorList from './CuratorList'
 import JsonFileDropZone from './JsonFileDropZone'
 import { preparePlaylistForPublish } from '@/lib/preparePublish'
-import { itemsForPlaylistExport, playlistItemExportCount } from '@/lib/playlistItems'
+import { itemsForPlaylistExport, playlistItemExportCount, substantiveItemCount } from '@/lib/playlistItems'
 import PostPublishPanel from './PostPublishPanel'
 
 function parsePlaylistJson(
@@ -1173,7 +1173,7 @@ export default function PlaylistForm({
             {/* Playlist items — series load first, then manual entry */}
             <div className="space-y-5">
               <span className="section-label">Playlist items · {playlistItemExportCount(items)}</span>
-              <SeriesExpander currentItemCount={playlistItemExportCount(items)} onAdd={handleSeriesAdd} />
+              <SeriesExpander currentItemCount={substantiveItemCount(items)} onAdd={handleSeriesAdd} />
               <ManualItemsSection
                 items={items}
                 showIntermissionNote={extensionsEnabled}

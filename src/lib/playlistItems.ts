@@ -28,3 +28,12 @@ export function itemsForPlaylistExport(items: PlaylistItem[]): PlaylistItem[] {
 export function playlistItemExportCount(items: PlaylistItem[]): number {
   return itemsForPlaylistExport(items).length
 }
+
+/**
+ * Count items that carry real curator-entered content (not the default empty
+ * manual placeholder). Used for the series-replace confirmation gate so that
+ * a fresh blank playlist does not trigger a "replace 1 item" warning.
+ */
+export function substantiveItemCount(items: PlaylistItem[]): number {
+  return items.filter((item) => !isEmptyManualPlaceholder(item)).length
+}

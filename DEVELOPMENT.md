@@ -24,6 +24,7 @@ Edit `.env`:
 | Variable | Purpose |
 | -------- | ------- |
 | `VITE_FEED_BASE_URL` | Feed API origin (`https://…`), no trailing slash |
+| `VITE_INDEXER_BASE_URL` | ff-indexer-v2 origin for series expand — see [Series expand](#series-expand-vite_indexer_base_url) below |
 | `VITE_DP1_EXTENSIONS_ENABLED` | Optional `true` / `false`; when unset, use `GET /api/v1` |
 | `VITE_WALLETCONNECT_PROJECT_ID` | Optional; omit to use injected wallet only |
 | `VITE_DEBUG_MODE` | Dev server only (`true`): relax playlist URI schemes for Channel validation |
@@ -54,6 +55,22 @@ URI rules and dev-only relaxations: [`validatePlaylistURI` / `isDebugMode`](src/
 - `src/types/dp1.ts` — DP-1-aligned TS types
 
 Conceptual layering and flows: **[docs/architecture.md](docs/architecture.md)**
+
+---
+
+## Series expand (`VITE_INDEXER_BASE_URL`)
+
+The **Load from series** feature in the playlist form calls `VITE_INDEXER_BASE_URL/graphql` to resolve FF series / AB projects and fetch mint-ordered tokens. It requires **ff-indexer-v2** with the series-expand API:
+
+- `Query.releases(vendor, vendor_release_id, limit)` — resolve a release by vendor key
+- `Query.tokens(release_id, sort_by: mint_number, sort_order: asc, limit)` — fetch mint-ordered members
+
+This API surface was added in [ff-indexer-v2 #93](https://github.com/feral-file/ff-indexer-v2/issues/93). If your configured endpoint predates that change, the **Load** button will return a GraphQL error and the form will display it inline. To develop against a compatible indexer locally:
+
+```bash
+# in .env, point to a local ff-indexer-v2 with the series-expand API
+VITE_INDEXER_BASE_URL=http://localhost:8081
+```
 
 ---
 

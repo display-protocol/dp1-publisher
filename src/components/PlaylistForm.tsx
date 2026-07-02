@@ -369,8 +369,20 @@ export default function PlaylistForm({
       if (!title.trim() && releaseName?.trim()) {
         setTitle(releaseName.trim())
       }
+      // When Dynamic Query is active the signed playlist will contain both the loaded
+      // static items and the dynamicQuery block. Display players that support Dynamic
+      // Query will use it at play time and may ignore the static items; players that
+      // don't will fall back to the loaded series. Surface this explicitly so curators
+      // understand what they are signing.
+      if (extensionsEnabled && enableDynamicQuery) {
+        toast({
+          title: 'Dynamic Query is still active',
+          description:
+            'The loaded series items are included as static fallbacks. Display players that support Dynamic Query may override them at play time. Disable Dynamic Query if you want only the series items.',
+        })
+      }
     },
-    [title]
+    [title, extensionsEnabled, enableDynamicQuery, toast]
   )
 
   const buildDynamicQuery = useCallback((): DynamicQuery | undefined => {

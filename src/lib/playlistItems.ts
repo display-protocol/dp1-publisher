@@ -1,11 +1,21 @@
 import type { PlaylistItem } from '@/types/dp1'
 
-/** Default manual row with no curator-entered content yet. */
+/**
+ * Returns true only when the item has no curator-entered content — i.e., it is
+ * the auto-generated blank row the form opens with. Every user-editable field on
+ * PlaylistItem must be checked here; missing a field means a partially-filled
+ * manual row could be silently dropped from the signed/exported playlist when a
+ * series is also loaded.
+ */
 export function isEmptyManualPlaceholder(item: PlaylistItem): boolean {
   if (item.source?.trim()) return false
   if (item.title?.trim()) return false
   if (item.ref?.trim()) return false
   if (item.slug?.trim()) return false
+  if (item.duration != null) return false
+  if (item.license != null) return false
+  if (item.override != null) return false
+  if (item.repro != null) return false
   if (item.provenance) return false
   if (item.note?.text?.trim()) return false
   if (item.display && Object.keys(item.display).length > 0) return false

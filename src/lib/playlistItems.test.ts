@@ -31,6 +31,29 @@ describe('isEmptyManualPlaceholder', () => {
     expect(isEmptyManualPlaceholder({ ...emptyPlaceholder, source: 'https://x' })).toBe(false)
     expect(isEmptyManualPlaceholder(seriesItem)).toBe(false)
   })
+
+  // Every user-editable PlaylistItem field must be checked so that a partial manual
+  // row is never silently dropped alongside a series-loaded item.
+  it('returns false when duration is set', () => {
+    expect(isEmptyManualPlaceholder({ ...emptyPlaceholder, duration: 30 })).toBe(false)
+  })
+
+  it('returns false when license is set', () => {
+    expect(isEmptyManualPlaceholder({ ...emptyPlaceholder, license: 'token' })).toBe(false)
+  })
+
+  it('returns false when override is set', () => {
+    expect(isEmptyManualPlaceholder({ ...emptyPlaceholder, override: { foo: 'bar' } })).toBe(false)
+  })
+
+  it('returns false when repro is set', () => {
+    expect(
+      isEmptyManualPlaceholder({
+        ...emptyPlaceholder,
+        repro: { seed: 'abc123' },
+      })
+    ).toBe(false)
+  })
 })
 
 describe('itemsForPlaylistExport', () => {
@@ -51,5 +74,22 @@ describe('itemsForPlaylistExport', () => {
 describe('playlistItemExportCount', () => {
   it('reflects export filtering', () => {
     expect(playlistItemExportCount([emptyPlaceholder, seriesItem, seriesItem])).toBe(2)
+  })
+})
+
+// Regression: series-loaded items must survive itemsForPlaylistExport regardless of
+// whether Dynamic Query is concurrently active in the form. The Dynamic Query block
+// is a separate top-level field on the signed playlist; coexistence is intentional and
+// curators are notified by PlaylistForm when both are active (see handleSeriesAdd).
+describe('series items are preserved for export alongside dynamic query state', () => {
+  it('does not drop series items — dynamic query is a separate concern', () => {
+    const result = itemsForPlaylistExport([seriesItem])
+    expect(result).toEqual([seriesItem])
+  })
+
+  it('drops only the empty placeholder, keeps all series items', () => {
+    const second = { ...seriesItem, id: 'def', source: 'https://example.com/b.mp4' }
+    const result = itemsForPlaylistExport([emptyPlaceholder, seriesItem, second])
+    expect(result).toEqual([seriesItem, second])
   })
 })

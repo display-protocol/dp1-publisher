@@ -73,7 +73,7 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 
 - **Base URL:** `VITE_INDEXER_BASE_URL` at build/dev time (see `.env.example`). Default fallback is `https://indexer.feralfile.com`; GraphQL endpoint is `<base>/graphql`.
 - **Usage:** Compose-time only — resolve releases by vendor key (`feralfile` series UUID or `artblocks` `1-{contract}-{projectId}`) and fetch up to 255 mint-ordered tokens. Expanded items are signed into the playlist; no live indexer resolution at play time.
-- **Contract:** GraphQL schema in **[ff-indexer-v2](https://github.com/display-protocol/ff-indexer-v2)** `api/graphql/schema.graphql`.
+- **Contract:** GraphQL schema in **[ff-indexer-v2](https://github.com/feral-file/ff-indexer-v2)** `api/graphql/schema.graphql`.
 
 ---
 

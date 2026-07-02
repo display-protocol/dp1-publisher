@@ -61,9 +61,14 @@ describe('normalizeIndexerChain', () => {
     expect(normalizeIndexerChain('bitmark')).toBe('bitmark')
   })
 
-  it('maps other chains to evm', () => {
+  it('maps known EVM chains to evm', () => {
     expect(normalizeIndexerChain('ethereum')).toBe('evm')
-    expect(normalizeIndexerChain('polygon')).toBe('evm')
+  })
+
+  it('maps unknown/non-EVM chains to other rather than silently labeling them evm', () => {
+    expect(normalizeIndexerChain('polygon')).toBe('other')
+    expect(normalizeIndexerChain('solana')).toBe('other')
+    expect(normalizeIndexerChain('unknown-chain')).toBe('other')
   })
 })
 

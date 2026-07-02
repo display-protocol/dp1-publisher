@@ -1,13 +1,18 @@
 import type { PlaylistItem } from '@/types/dp1'
 
 /**
- * Returns true only when the item has no curator-entered content — i.e., it is
- * the auto-generated blank row the form opens with. Every user-editable field on
- * PlaylistItem must be checked here; missing a field means a partially-filled
- * manual row could be silently dropped from the signed/exported playlist when a
- * series is also loaded.
+ * Returns true only when the item is the auto-generated blank row the form opens
+ * with — no id and no curator-entered content. Every user-editable field on
+ * PlaylistItem must be checked here; missing a field means a partially-filled or
+ * previously-persisted row could be silently dropped from the signed/exported
+ * playlist when a series is also loaded.
+ *
+ * Critically, items loaded from the feed in edit mode carry an id, so they must
+ * never be treated as disposable placeholders even if the curator clears their
+ * source field mid-edit.
  */
 export function isEmptyManualPlaceholder(item: PlaylistItem): boolean {
+  if (item.id?.trim()) return false
   if (item.source?.trim()) return false
   if (item.title?.trim()) return false
   if (item.ref?.trim()) return false

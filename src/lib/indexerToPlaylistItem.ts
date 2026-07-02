@@ -12,12 +12,18 @@ type ProvenanceStandard = NonNullable<ProvenanceBlock['contract']>['standard']
 
 const KNOWN_STANDARDS: ProvenanceStandard[] = ['erc721', 'erc1155', 'fa2']
 
+// Indexer blockchain strings that map to DP-1 "evm". Only chains the indexer
+// domain explicitly indexes as Ethereum-compatible are listed here; anything
+// unrecognized falls back to "other" so provenance is never silently mislabeled.
+const KNOWN_EVM_CHAINS = new Set(['ethereum'])
+
 /** Normalize indexer chain strings to DP-1 provenance contract.chain. */
 export function normalizeIndexerChain(chain: string): ProvenanceChain {
   const lower = chain.trim().toLowerCase()
   if (lower === 'tezos') return 'tezos'
   if (lower === 'bitmark') return 'bitmark'
-  return 'evm'
+  if (KNOWN_EVM_CHAINS.has(lower)) return 'evm'
+  return 'other'
 }
 
 /** Normalize indexer standard to DP-1 provenance contract.standard. */

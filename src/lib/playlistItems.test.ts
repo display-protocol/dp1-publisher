@@ -54,6 +54,13 @@ describe('isEmptyManualPlaceholder', () => {
       })
     ).toBe(false)
   })
+
+  // Regression: edit-mode items loaded from the feed carry an id. Even if the
+  // curator clears the source field, the item must not be dropped as a placeholder —
+  // the missing-source validation gate should fire instead.
+  it('returns false when id is set (edit-mode persisted item)', () => {
+    expect(isEmptyManualPlaceholder({ ...emptyPlaceholder, id: 'some-uuid' })).toBe(false)
+  })
 })
 
 describe('itemsForPlaylistExport', () => {
@@ -68,6 +75,14 @@ describe('itemsForPlaylistExport', () => {
   it('keeps a filled first manual item alongside series items', () => {
     const manual = { ...emptyPlaceholder, source: 'https://manual.example' }
     expect(itemsForPlaylistExport([manual, seriesItem])).toEqual([manual, seriesItem])
+  })
+
+  it('does not drop a persisted edit-mode item that has an id but blank source', () => {
+    // In edit mode the first item may have an id (assigned by the feed) but a
+    // curator-cleared source. It must survive export so validation surfaces the
+    // missing-source error rather than silently omitting the item.
+    const editModeItem = { ...emptyPlaceholder, id: 'feed-uuid' }
+    expect(itemsForPlaylistExport([editModeItem, seriesItem])).toEqual([editModeItem, seriesItem])
   })
 })
 

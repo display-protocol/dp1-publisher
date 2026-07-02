@@ -23,6 +23,8 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 | **Publish preparation** | `src/lib/preparePublish.ts` | **Single chokepoint** for the `raw document → signed bytes + wire body` pipeline. Merges with base (edit), strips extensions when off (playlist), ensures the connected wallet is declared as signer (`curators[]` for playlist, `curator` for playlist group, `publisher.key` for channel), validates, then canonicalizes once via `*UnsignedPayloadForSigning` and derives the wire body from that canonical form. **Invariant:** CREATE wire body equals signed bytes; PATCH wire body equals signed bytes minus `id` and `created` (the only documented PATCH omissions). |
 | **Published registry (local)** | `src/components/PublishedView.tsx`, `src/lib/publishedStorage.ts` | Per-wallet list metadata in `localStorage`; edits always refetch via GET—never PATCH from stale cache alone. |
 | **Feed HTTP client** | `src/lib/api.ts` | Base URL helpers, GET metadata, POST create, PATCH update, GET list/detail, playlist URI helpers. Throws `FeedAPIError` with status + stable `error` code when present. |
+| **Indexer GraphQL client** | `src/lib/indexerApi.ts`, `src/lib/indexerToPlaylistItem.ts` | Read-only ff-indexer-v2 GraphQL (`VITE_INDEXER_BASE_URL` + `/graphql`) to resolve FF series / AB projects and expand mint-ordered tokens into playlist items at compose time. Separate from feed HTTP and signing. |
+| **Series expand UI** | `src/components/SeriesExpander.tsx` | Curator panel in `PlaylistForm` to load a release from the indexer and replace the current item list with mint-ordered flat `PlaylistItem` leaves. |
 | **DP-1 signing** | `src/lib/signing.ts`, `*SignPayload.ts` | Strip signatures, JCS canonicalize (RFC 8785), newline-terminated signing bytes, SHA-256 digest, EIP-191 personal sign via wagmi wallet client; build `kid` (`did:pkh:…`). `*UnsignedPayloadForSigning` whitelists typed top-level fields so unknown imported-JSON keys can't survive into hashed bytes (the feed reconstructs a typed struct that drops them). |
 | **Signer-identity helpers** | `src/lib/dp1WalletSigner.ts` | `ensurePlaylistWalletCurator` / `ensurePlaylistGroupWalletCurator` / `ensureChannelWalletPublisher`: declare the connected wallet as a signer on a document before signing, defensively normalizing malformed entities from the JSON boundary. |
 | **Field validation** | `src/lib/channelValidation.ts`, `src/lib/playlistGroupValidation.ts`, inline playlist gate in `preparePublish.ts` | Defensive checks that run before signing on both Form-tab and JSON-tab paths. |
@@ -66,6 +68,12 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 - **Base URL:** `VITE_FEED_BASE_URL` at build/dev time (see `.env.example`). Default fallback in code is production Feral File feed unless overridden.
 - **Extensions:** Channel routes and playlist extension-dependent UI align with **`GET /api/v1`** (`extensionsEnabled`) unless **`VITE_DP1_EXTENSIONS_ENABLED`** forces on/off locally.
 - **Contract:** HTTP paths, payloads, errors, ETag semantics, and pagination are defined by **[dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2)** ([OpenAPI](https://github.com/display-protocol/dp1-feed-v2/blob/main/api/openapi.yaml), [API design](https://github.com/display-protocol/dp1-feed-v2/blob/main/docs/api_design.md)). This app implements a **subset** of calls needed for dashboard workflows; treat that repository as normative.
+
+## Dependencies on ff-indexer-v2 (series expand)
+
+- **Base URL:** `VITE_INDEXER_BASE_URL` at build/dev time (see `.env.example`). Default fallback is `https://indexer.feralfile.com`; GraphQL endpoint is `<base>/graphql`.
+- **Usage:** Compose-time only — resolve releases by vendor key (`feralfile` series UUID or `artblocks` `1-{contract}-{projectId}`) and fetch up to 255 mint-ordered tokens. Expanded items are signed into the playlist; no live indexer resolution at play time.
+- **Contract:** GraphQL schema in **[ff-indexer-v2](https://github.com/feral-file/ff-indexer-v2)** `api/graphql/schema.graphql`.
 
 ---
 

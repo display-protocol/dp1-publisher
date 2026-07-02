@@ -38,10 +38,12 @@ import { mergePlaylistForPatch } from '@/lib/dp1Merge'
 import { stripPlaylistExtensionFields, stripItemExtensionFields } from '@/lib/dp1ExtensionPolicy'
 import { recordPublishedPlaylist } from '@/lib/publishedStorage'
 import type { DynamicQuery, Entity, Playlist, PlaylistItem } from '@/types/dp1'
-import PlaylistItemForm from './PlaylistItemForm'
+import SeriesExpander from './SeriesExpander'
+import ManualItemsSection from './ManualItemsSection'
 import CuratorList from './CuratorList'
 import JsonFileDropZone from './JsonFileDropZone'
 import { preparePlaylistForPublish } from '@/lib/preparePublish'
+import { itemsForPlaylistExport, playlistItemExportCount, substantiveItemCount } from '@/lib/playlistItems'
 import PostPublishPanel from './PostPublishPanel'
 
 function parsePlaylistJson(
@@ -360,6 +362,29 @@ export default function PlaylistForm({
     setItems(newItems)
   }
 
+  const handleSeriesAdd = useCallback(
+    (newItems: PlaylistItem[], releaseName: string | null) => {
+      // Each series add replaces the whole items list — manual rows from prior edits are cleared.
+      setItems(newItems)
+      if (!title.trim() && releaseName?.trim()) {
+        setTitle(releaseName.trim())
+      }
+      // When Dynamic Query is active the signed playlist will contain both the loaded
+      // static items and the dynamicQuery block. Display players that support Dynamic
+      // Query will use it at play time and may ignore the static items; players that
+      // don't will fall back to the loaded series. Surface this explicitly so curators
+      // understand what they are signing.
+      if (extensionsEnabled && enableDynamicQuery) {
+        toast({
+          title: 'Dynamic Query is still active',
+          description:
+            'The loaded series items are included as static fallbacks. Display players that support Dynamic Query may override them at play time. Disable Dynamic Query if you want only the series items.',
+        })
+      }
+    },
+    [title, extensionsEnabled, enableDynamicQuery, toast]
+  )
+
   const buildDynamicQuery = useCallback((): DynamicQuery | undefined => {
     if (!enableDynamicQuery) return undefined
     if (!dynamicEndpoint.trim() || !dynamicItemsPath.trim()) return undefined
@@ -410,7 +435,7 @@ export default function PlaylistForm({
           }
         : undefined
 
-    const mappedItems = items.map((item) => {
+    const mappedItems = itemsForPlaylistExport(items).map((item) => {
       const base = extensionsEnabled ? item : stripItemExtensionFields(item)
       return {
         ...base,
@@ -477,7 +502,7 @@ export default function PlaylistForm({
             }
           : undefined
 
-      const mappedItems = items.map((item) => {
+      const mappedItems = itemsForPlaylistExport(items).map((item) => {
         const it = extensionsEnabled ? item : stripItemExtensionFields(item)
         return { ...it, id: item.id || uuidv4() }
       })
@@ -635,10 +660,22 @@ export default function PlaylistForm({
   const validateFormTab = (): string | null => {
     if (!title.trim()) return 'Title is required'
     const allowEmptyViaDynamic = extensionsEnabled && enableDynamicQuery
-    if (!allowEmptyViaDynamic && (items.length === 0 || items.some((item) => !item.source))) {
+    const exportItems = itemsForPlaylistExport(items)
+    if (!allowEmptyViaDynamic && (exportItems.length === 0 || exportItems.some((item) => !item.source))) {
       return extensionsEnabled
         ? 'At least one item with source URI is required, or enable Dynamic Query'
         : 'At least one item with source URI is required'
+    }
+    // Validate every source URI through the same policy applied to JSON-tab imports.
+    // This catches disallowed schemes and private/local hosts regardless of whether
+    // items were entered manually or expanded from an indexer series.
+    for (let i = 0; i < exportItems.length; i++) {
+      const src = exportItems[i].source?.trim()
+      if (!src) continue
+      const validation = validatePlaylistURI(src)
+      if (!validation.valid) {
+        return `Item ${i + 1} source: ${validation.reason || 'Invalid URI'}`
+      }
     }
     if (extensionsEnabled && enableDynamicQuery) {
       if (!dynamicEndpoint.trim()) return 'Dynamic Query: Endpoint is required'
@@ -1145,34 +1182,17 @@ export default function PlaylistForm({
               </div>
             </div>
 
-            {/* Items */}
+            {/* Playlist items — series load first, then manual entry */}
             <div className="space-y-5">
-              <div className="flex items-center justify-between gap-4">
-                <span className="section-label">
-                  Items · {items.length}
-                </span>
-                <Button
-                  onClick={handleAddItem}
-                  variant="outline"
-                  size="sm"
-                  className="rounded-full"
-                >
-                  Add item
-                </Button>
-              </div>
-              <div className="space-y-3">
-                {items.map((item, index) => (
-                  <PlaylistItemForm
-                    key={index}
-                    item={item}
-                    index={index}
-                    showIntermissionNote={extensionsEnabled}
-                    onUpdate={(item: PlaylistItem) => handleUpdateItem(index, item)}
-                    onRemove={() => handleRemoveItem(index)}
-                    canRemove={items.length > 1}
-                  />
-                ))}
-              </div>
+              <span className="section-label">Playlist items · {playlistItemExportCount(items)}</span>
+              <SeriesExpander currentItemCount={substantiveItemCount(items)} onAdd={handleSeriesAdd} />
+              <ManualItemsSection
+                items={items}
+                showIntermissionNote={extensionsEnabled}
+                onAddItem={handleAddItem}
+                onUpdateItem={handleUpdateItem}
+                onRemoveItem={handleRemoveItem}
+              />
             </div>
 
             {extensionsEnabled ? (

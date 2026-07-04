@@ -200,6 +200,18 @@ describe('resolveReleaseBySlug', () => {
     expect(result).toEqual(release)
   })
 
+  it('sends vendor and vendor_release_slug in the request body', async () => {
+    const fetchMock = mockFetch({ data: { releases: { items: [] } } })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await resolveReleaseBySlug('artblocks', 'fidenza-by-tyler-hobbs')
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+    expect(body.variables).toMatchObject({ vendor: 'artblocks', slug: 'fidenza-by-tyler-hobbs' })
+    // Guard: must not fall back to the legacy vendor_release_id field name.
+    expect(body.variables).not.toHaveProperty('vendorReleaseId')
+  })
+
   it('returns null when no releases match the slug', async () => {
     vi.stubGlobal('fetch', mockFetch({ data: { releases: { items: [] } } }))
 
@@ -344,6 +356,30 @@ describe('fetchTokensByVendorSlug — with mint spec (batched)', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it('sends release_vendor_slug and mint_numbers in the request body', async () => {
+    const spec = [5, 10, 15]
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ data: { tokens: { items: [], offset: null } } }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await fetchTokensByVendorSlug('artblocks', 'fidenza-by-tyler-hobbs', spec)
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+    // Guard: slug field names must match the indexer GraphQL schema exactly.
+    expect(body.variables).toMatchObject({
+      vendor: 'artblocks',
+      slug: 'fidenza-by-tyler-hobbs',
+      mintNumbers: [5, 10, 15],
+    })
+    // Guard: must not use old release_id or mint_from/mint_to fields.
+    expect(body.variables).not.toHaveProperty('releaseId')
+    expect(body.variables).not.toHaveProperty('mintFrom')
+    expect(body.variables).not.toHaveProperty('mintTo')
+  })
+
   it('issues two batches when mintSpec exceeds MINT_NUMBERS_BATCH_SIZE', async () => {
     // Build a spec of BATCH_SIZE + 1 entries.
     const spec = Array.from({ length: MINT_NUMBERS_BATCH_SIZE + 1 }, (_, i) => i + 1)
@@ -432,6 +468,23 @@ describe('triggerReleaseIndexing', () => {
 
     const result = await triggerReleaseIndexing('artblocks', 'fidenza', [1, 2, 3])
     expect(result).toEqual({ job_id: 42 })
+  })
+
+  it('sends vendor_release_slug and mint_numbers in the mutation body', async () => {
+    const fetchMock = mockFetch({ data: { triggerReleaseIndexing: { job_id: 99 } } })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await triggerReleaseIndexing('fxhash', 'geometry-runners', [3, 7, 11])
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+    expect(body.variables).toMatchObject({
+      vendor: 'fxhash',
+      slug: 'geometry-runners',
+      mintNumbers: [3, 7, 11],
+    })
+    // Guard: must not use the old mint_from/mint_to API.
+    expect(body.variables).not.toHaveProperty('mintFrom')
+    expect(body.variables).not.toHaveProperty('mintTo')
   })
 
   it('throws IndexerAPIError on HTTP failure', async () => {
@@ -524,6 +577,17 @@ describe('fetchJobStatus', () => {
 
     const result = await fetchJobStatus(99)
     expect(result).toEqual(status)
+  })
+
+  it('sends job_id as a variable in the query body', async () => {
+    const fetchMock = mockFetch({ data: { jobStatus: null } })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await fetchJobStatus(42)
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+    // Guard: variable name must be jobId (Int!) matching the schema argument job_id.
+    expect(body.variables).toMatchObject({ jobId: 42 })
   })
 
   it('returns null when jobStatus is null (job not found)', async () => {

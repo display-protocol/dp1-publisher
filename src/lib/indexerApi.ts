@@ -1,18 +1,40 @@
 /**
  * ff-indexer-v2 GraphQL client (browser).
  * Base URL mirrors feed client pattern: VITE_INDEXER_BASE_URL + /graphql.
+ *
+ * Vendor support: feralfile, artblocks, fxhash, objkt.
+ * All token and indexing queries use slug-based identification (vendor_release_slug).
+ * The tokens query and triggerReleaseIndexing mutation accept sparse mint_numbers lists
+ * (max 50 per request) rather than mint_from/mint_to ranges — callers batch accordingly.
  */
 
 export const INDEXER_VENDOR_FERALFILE = 'feralfile'
 export const INDEXER_VENDOR_ARTBLOCKS = 'artblocks'
+export const INDEXER_VENDOR_FXHASH = 'fxhash'
+export const INDEXER_VENDOR_OBJKT = 'objkt'
 
-/** GraphQL Uint8 max for tokens(release_id) list requests. */
+/** GraphQL Uint8 max for paginated token list requests. */
 export const MAX_RELEASE_TOKENS = 255
 
+/**
+ * Max mint numbers per tokens query or triggerReleaseIndexing mutation call.
+ * The indexer enforces this server-side; callers must batch larger lists.
+ */
+export const MINT_NUMBERS_BATCH_SIZE = 50
+
+/**
+ * Max total mints that parseMintSpec will expand from a range input (e.g. "1..1000").
+ * Guards against accidental runaway expansion.
+ */
+export const MINT_SPEC_MAX_SIZE = 1000
+
+/** Release metadata returned by the releases query. */
 export interface IndexerReleaseSummary {
   id: number
   vendor: string
   vendor_release_id: string
+  /** URL slug from the vendor's website. Null when not yet enriched. For objkt equals vendor_release_id. */
+  vendor_release_slug: string | null
   name: string | null
   total_mints: number | null
 }
@@ -32,6 +54,107 @@ export interface IndexerToken {
   mint_number: number | null
   display: IndexerTokenDisplay | null
   metadata: { name: string | null } | null
+}
+
+/** Result returned by triggerReleaseIndexing. */
+export interface IndexerTriggerResult {
+  job_id: number
+}
+
+/**
+ * Job status shape from jobStatus(job_id).
+ * status values: "pending" | "running" | "succeeded" | "failed" | "canceled"
+ */
+export interface IndexerJobStatus {
+  job_id: number
+  status: string
+  last_error: string | null
+  execution_time_ms: number | null
+}
+
+/**
+ * Explicit sorted array of 1-based mint numbers derived from user input.
+ * Used as the wire value for tokens(mint_numbers) and triggerReleaseIndexing(mint_numbers).
+ */
+export type MintSpec = number[]
+
+/** Thrown by parseMintSpec when the input cannot be interpreted as valid mint numbers. */
+export class MintSpecParseError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'MintSpecParseError'
+  }
+}
+
+/**
+ * Parse a curator-supplied mint input string into a sorted, deduplicated array of
+ * 1-based mint numbers, or null when the input is empty (meaning "no filter, fetch all").
+ *
+ * Accepted formats:
+ *   ""         → null
+ *   "50"       → [50]
+ *   "1..100"   → [1, 2, 3, ..., 100]  (inclusive range, expands inline)
+ *   "1,3,5"    → [1, 3, 5]            (explicit sparse list)
+ *
+ * Throws MintSpecParseError for:
+ *   - non-integer values
+ *   - mint numbers < 1
+ *   - reversed ranges (e.g. "5..1")
+ *   - expanded range > MINT_SPEC_MAX_SIZE entries
+ */
+export function parseMintSpec(input: string): MintSpec | null {
+  const trimmed = input.trim()
+  if (!trimmed) return null
+
+  // Range notation: "N..M"
+  if (trimmed.includes('..')) {
+    const parts = trimmed.split('..')
+    if (parts.length !== 2) {
+      throw new MintSpecParseError(`Invalid range format: "${trimmed}". Use "1..100".`)
+    }
+    const from = parseInt(parts[0], 10)
+    const to = parseInt(parts[1], 10)
+    if (!Number.isInteger(from) || isNaN(from) || String(from) !== parts[0].trim()) {
+      throw new MintSpecParseError(`Invalid range start: "${parts[0]}".`)
+    }
+    if (!Number.isInteger(to) || isNaN(to) || String(to) !== parts[1].trim()) {
+      throw new MintSpecParseError(`Invalid range end: "${parts[1]}".`)
+    }
+    if (from < 1) {
+      throw new MintSpecParseError(`Mint numbers must be ≥ 1 (got ${from}).`)
+    }
+    if (to < from) {
+      throw new MintSpecParseError(`Range end must be ≥ start (got ${from}..${to}).`)
+    }
+    const count = to - from + 1
+    if (count > MINT_SPEC_MAX_SIZE) {
+      throw new MintSpecParseError(
+        `Range "${trimmed}" expands to ${count} mints; max is ${MINT_SPEC_MAX_SIZE}.`
+      )
+    }
+    return Array.from({ length: count }, (_, i) => from + i)
+  }
+
+  // Comma-separated list (or single number)
+  const rawParts = trimmed.split(',')
+  const seen = new Set<number>()
+  const result: number[] = []
+  for (const part of rawParts) {
+    const val = parseInt(part.trim(), 10)
+    if (isNaN(val) || String(val) !== part.trim()) {
+      throw new MintSpecParseError(`"${part.trim()}" is not a valid mint number.`)
+    }
+    if (val < 1) {
+      throw new MintSpecParseError(`Mint numbers must be ≥ 1 (got ${val}).`)
+    }
+    if (seen.has(val)) {
+      throw new MintSpecParseError(`Duplicate mint number: ${val}.`)
+    }
+    seen.add(val)
+    result.push(val)
+  }
+  result.sort((a, b) => a - b)
+  return result
 }
 
 /** Base indexer origin, no trailing slash (matches `VITE_INDEXER_BASE_URL` when set). */
@@ -56,7 +179,7 @@ export class IndexerAPIError extends Error {
   }
 }
 
-/** Art Blocks vendor_release_id: chain 1 (mainnet) + lowercased contract + project ID (matches indexer storage). */
+/** @deprecated Use resolveReleaseBySlug instead. */
 export function buildArtBlocksVendorReleaseId(contract: string, projectId: string): string {
   return `1-${contract.trim().toLowerCase()}-${projectId.trim()}`
 }
@@ -93,6 +216,256 @@ async function graphqlRequest<T>(
   return body.data
 }
 
+// ---------------------------------------------------------------------------
+// Release resolution
+// ---------------------------------------------------------------------------
+
+const RESOLVE_RELEASE_BY_SLUG_QUERY = `
+  query ResolveReleaseBySlug($vendor: String!, $slug: String!) {
+    releases(vendor: $vendor, vendor_release_slug: $slug, limit: 1) {
+      items {
+        id
+        vendor
+        vendor_release_id
+        vendor_release_slug
+        name
+        total_mints
+      }
+    }
+  }
+`
+
+/** Resolve a release by vendor slug. Returns null when not found. */
+export async function resolveReleaseBySlug(
+  vendor: string,
+  slug: string
+): Promise<IndexerReleaseSummary | null> {
+  const data = await graphqlRequest<{
+    releases: { items: IndexerReleaseSummary[] }
+  }>(RESOLVE_RELEASE_BY_SLUG_QUERY, { vendor, slug: slug.trim() })
+
+  return data.releases.items[0] ?? null
+}
+
+// ---------------------------------------------------------------------------
+// Token fetching
+// ---------------------------------------------------------------------------
+
+/**
+ * Paginated token fetch without a mint filter. Iterates offset pages until
+ * TokenList.offset is null (no more pages).
+ */
+const TOKENS_BY_VENDOR_SLUG_QUERY = `
+  query TokensByVendorSlug(
+    $vendor: String!, $slug: String!, $limit: Uint8!, $offset: Uint64
+  ) {
+    tokens(
+      release_vendor: $vendor
+      release_vendor_slug: $slug
+      sort_by: mint_number
+      sort_order: asc
+      include_unviewable: true
+      limit: $limit
+      offset: $offset
+    ) {
+      items {
+        id
+        chain
+        standard
+        contract_address
+        token_number
+        release_id
+        mint_number
+        display { animation_url image_url }
+        metadata { name }
+      }
+      offset
+    }
+  }
+`
+
+/**
+ * Batched token fetch for a specific set of mint numbers.
+ * One request per batch of MINT_NUMBERS_BATCH_SIZE; results are merged.
+ */
+const TOKENS_BY_MINT_NUMBERS_QUERY = `
+  query TokensByMintNumbers(
+    $vendor: String!, $slug: String!, $mintNumbers: [Int!]!, $limit: Uint8!
+  ) {
+    tokens(
+      release_vendor: $vendor
+      release_vendor_slug: $slug
+      mint_numbers: $mintNumbers
+      sort_by: mint_number
+      sort_order: asc
+      include_unviewable: true
+      limit: $limit
+    ) {
+      items {
+        id
+        chain
+        standard
+        contract_address
+        token_number
+        release_id
+        mint_number
+        display { animation_url image_url }
+        metadata { name }
+      }
+      offset
+    }
+  }
+`
+
+async function fetchTokensBatchByMintNumbers(
+  vendor: string,
+  slug: string,
+  mintNumbers: number[]
+): Promise<IndexerToken[]> {
+  const data = await graphqlRequest<{ tokens: { items: IndexerToken[] } }>(
+    TOKENS_BY_MINT_NUMBERS_QUERY,
+    { vendor, slug, mintNumbers, limit: MINT_NUMBERS_BATCH_SIZE }
+  )
+  return data.tokens.items
+}
+
+/**
+ * Fetch tokens for a vendor release by slug.
+ *
+ * - Without mintSpec: paginates through all tokens (offset-based, 255/page).
+ * - With mintSpec: issues one request per batch of ≤50 mint numbers in parallel,
+ *   merges results, and deduplicates by token id. Use this for gap polling after
+ *   triggerReleaseIndexing to check exactly which mints are now indexed.
+ *
+ * include_unviewable is always true so partially-indexed tokens are visible.
+ */
+export async function fetchTokensByVendorSlug(
+  vendor: string,
+  slug: string,
+  mintSpec?: MintSpec
+): Promise<IndexerToken[]> {
+  if (mintSpec) {
+    // Split into batches and issue parallel requests.
+    const batches: number[][] = []
+    for (let i = 0; i < mintSpec.length; i += MINT_NUMBERS_BATCH_SIZE) {
+      batches.push(mintSpec.slice(i, i + MINT_NUMBERS_BATCH_SIZE))
+    }
+    const batchResults = await Promise.all(
+      batches.map((batch) => fetchTokensBatchByMintNumbers(vendor, slug, batch))
+    )
+    // Flatten and deduplicate by token id (shouldn't overlap but guard anyway).
+    const seen = new Set<number>()
+    const merged: IndexerToken[] = []
+    for (const tokens of batchResults) {
+      for (const token of tokens) {
+        if (!seen.has(token.id)) {
+          seen.add(token.id)
+          merged.push(token)
+        }
+      }
+    }
+    // Re-sort by mint_number ascending after merge.
+    merged.sort((a, b) => (a.mint_number ?? 0) - (b.mint_number ?? 0))
+    return merged
+  }
+
+  // No mint filter — paginate through all tokens for the release.
+  type TokenPage = { tokens: { items: IndexerToken[]; offset: number | null } }
+  const allTokens: IndexerToken[] = []
+  let pageOffset: number | null = null
+  while (true) {
+    const page: TokenPage = await graphqlRequest<TokenPage>(
+      TOKENS_BY_VENDOR_SLUG_QUERY,
+      { vendor, slug, limit: MAX_RELEASE_TOKENS, offset: pageOffset }
+    )
+    allTokens.push(...page.tokens.items)
+    if (page.tokens.offset == null || page.tokens.items.length === 0) break
+    pageOffset = page.tokens.offset
+  }
+  return allTokens
+}
+
+// ---------------------------------------------------------------------------
+// Release indexing mutation
+// ---------------------------------------------------------------------------
+
+const TRIGGER_RELEASE_INDEXING_MUTATION = `
+  mutation TriggerRelease($vendor: String!, $slug: String!, $mintNumbers: [Int!]!) {
+    triggerReleaseIndexing(
+      vendor: $vendor
+      vendor_release_slug: $slug
+      mint_numbers: $mintNumbers
+    ) {
+      job_id
+    }
+  }
+`
+
+/**
+ * Trigger indexing for a single batch of mint numbers (max MINT_NUMBERS_BATCH_SIZE).
+ * Phase 1 (CID derivation + fan-out) runs asynchronously; poll job status with the
+ * returned job_id. After Phase 1 succeeds, poll tokens(mint_numbers) to track completion.
+ */
+export async function triggerReleaseIndexing(
+  vendor: string,
+  slug: string,
+  mintNumbers: number[]
+): Promise<IndexerTriggerResult> {
+  const data = await graphqlRequest<{ triggerReleaseIndexing: IndexerTriggerResult }>(
+    TRIGGER_RELEASE_INDEXING_MUTATION,
+    { vendor, slug, mintNumbers }
+  )
+  return data.triggerReleaseIndexing
+}
+
+/**
+ * Trigger indexing for an arbitrary number of gap mint numbers.
+ * Splits into batches of ≤MINT_NUMBERS_BATCH_SIZE and fires one mutation per batch
+ * sequentially (to avoid overwhelming the indexer). Returns one job_id per batch
+ * in submission order.
+ */
+export async function triggerReleaseIndexingBatched(
+  vendor: string,
+  slug: string,
+  mintNumbers: number[]
+): Promise<number[]> {
+  const jobIds: number[] = []
+  for (let i = 0; i < mintNumbers.length; i += MINT_NUMBERS_BATCH_SIZE) {
+    const batch = mintNumbers.slice(i, i + MINT_NUMBERS_BATCH_SIZE)
+    const result = await triggerReleaseIndexing(vendor, slug, batch)
+    jobIds.push(result.job_id)
+  }
+  return jobIds
+}
+
+// ---------------------------------------------------------------------------
+// Job status polling
+// ---------------------------------------------------------------------------
+
+const JOB_STATUS_QUERY = `
+  query JobStatus($jobId: Int!) {
+    jobStatus(job_id: $jobId) {
+      job_id
+      status
+      last_error
+      execution_time_ms
+    }
+  }
+`
+
+/** Fetch the current status of an indexing job. Returns null if the job is not found. */
+export async function fetchJobStatus(jobId: number): Promise<IndexerJobStatus | null> {
+  const data = await graphqlRequest<{ jobStatus: IndexerJobStatus | null }>(
+    JOB_STATUS_QUERY,
+    { jobId }
+  )
+  return data.jobStatus
+}
+
+// ---------------------------------------------------------------------------
+// Legacy functions (deprecated — kept for backward compatibility with existing tests)
+// ---------------------------------------------------------------------------
+
 const RESOLVE_RELEASE_QUERY = `
   query ResolveRelease($vendor: String!, $vendorReleaseId: String!) {
     releases(vendor: $vendor, vendor_release_id: $vendorReleaseId, limit: 1) {
@@ -100,6 +473,7 @@ const RESOLVE_RELEASE_QUERY = `
         id
         vendor
         vendor_release_id
+        vendor_release_slug
         name
         total_mints
       }
@@ -135,7 +509,10 @@ const RELEASE_TOKENS_QUERY = `
   }
 `
 
-/** Resolve a release by vendor key (FF series UUID or AB project id). */
+/**
+ * @deprecated Use resolveReleaseBySlug instead.
+ * Resolve a release by vendor_release_id (FF series UUID or AB vendor_release_id).
+ */
 export async function resolveRelease(
   vendor: string,
   vendorReleaseId: string
@@ -150,7 +527,10 @@ export async function resolveRelease(
   return data.releases.items[0] ?? null
 }
 
-/** Mint-ordered tokens for a release (single request, capped at MAX_RELEASE_TOKENS). */
+/**
+ * @deprecated Use fetchTokensByVendorSlug instead.
+ * Mint-ordered tokens for a release (single request, capped at MAX_RELEASE_TOKENS).
+ */
 export async function fetchReleaseTokens(releaseId: number): Promise<IndexerToken[]> {
   const data = await graphqlRequest<{
     tokens: { items: IndexerToken[] }

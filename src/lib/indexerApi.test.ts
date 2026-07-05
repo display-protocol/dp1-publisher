@@ -4,6 +4,7 @@ import {
   fetchTokensByVendorSlug,
   IndexerAPIError,
   MINT_NUMBERS_BATCH_SIZE,
+  MINT_SPEC_MAX_SIZE,
   MintSpecParseError,
   parseMintSpec,
   resolveReleaseBySlug,
@@ -183,7 +184,7 @@ describe('fetchTokensByVendorSlug — no mint spec (paginated)', () => {
   beforeEach(() => { vi.stubGlobal('fetch', undefined) })
   afterEach(() => { vi.unstubAllGlobals() })
 
-  it('returns all tokens from a single page when offset is null', async () => {
+  it('returns all tokens from a single page when offset is null, wasCapped false', async () => {
     const tokens = [makeToken(1, 1), makeToken(2, 2)]
     vi.stubGlobal(
       'fetch',
@@ -191,7 +192,8 @@ describe('fetchTokensByVendorSlug — no mint spec (paginated)', () => {
     )
 
     const result = await fetchTokensByVendorSlug('feralfile', 'my-series')
-    expect(result).toEqual(tokens)
+    expect(result.tokens).toEqual(tokens)
+    expect(result.wasCapped).toBe(false)
   })
 
   it('paginates when the first response returns a next offset', async () => {
@@ -213,7 +215,8 @@ describe('fetchTokensByVendorSlug — no mint spec (paginated)', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await fetchTokensByVendorSlug('feralfile', 'my-series')
-    expect(result).toEqual([...page1, ...page2])
+    expect(result.tokens).toEqual([...page1, ...page2])
+    expect(result.wasCapped).toBe(false)
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
@@ -224,7 +227,25 @@ describe('fetchTokensByVendorSlug — no mint spec (paginated)', () => {
     )
 
     const result = await fetchTokensByVendorSlug('feralfile', 'my-series')
-    expect(result).toHaveLength(0)
+    expect(result.tokens).toHaveLength(0)
+    expect(result.wasCapped).toBe(false)
+  })
+
+  it('returns wasCapped true when pagination is stopped by MINT_SPEC_MAX_SIZE', async () => {
+    // First page fills MINT_SPEC_MAX_SIZE with a non-null next offset (more pages exist).
+    const capTokens = Array.from({ length: MINT_SPEC_MAX_SIZE }, (_, i) => makeToken(i + 1, i + 1))
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ data: { tokens: { items: capTokens, offset: 9999 } } }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await fetchTokensByVendorSlug('feralfile', 'large-release')
+    expect(result.tokens).toHaveLength(MINT_SPEC_MAX_SIZE)
+    expect(result.wasCapped).toBe(true)
+    // Only one fetch — the loop exited at the cap, not because pages were exhausted.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('throws IndexerAPIError on HTTP failure', async () => {
@@ -249,7 +270,8 @@ describe('fetchTokensByVendorSlug — with mint spec (batched)', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await fetchTokensByVendorSlug('feralfile', 'my-series', spec)
-    expect(result).toEqual(tokens)
+    expect(result.tokens).toEqual(tokens)
+    expect(result.wasCapped).toBe(false)
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
@@ -299,7 +321,8 @@ describe('fetchTokensByVendorSlug — with mint spec (batched)', () => {
 
     const result = await fetchTokensByVendorSlug('feralfile', 'my-series', spec)
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(result).toHaveLength(MINT_NUMBERS_BATCH_SIZE + 1)
+    expect(result.tokens).toHaveLength(MINT_NUMBERS_BATCH_SIZE + 1)
+    expect(result.wasCapped).toBe(false)
   })
 
   it('deduplicates tokens that appear in multiple cross-batch responses', async () => {
@@ -331,11 +354,12 @@ describe('fetchTokensByVendorSlug — with mint spec (batched)', () => {
     const result = await fetchTokensByVendorSlug('feralfile', 'my-series', spec)
     expect(fetchMock).toHaveBeenCalledTimes(2)
     // sharedToken appears in both batches but should only be in the result once.
-    const ids = result.map((t) => t.id)
+    const ids = result.tokens.map((t) => t.id)
     expect(new Set(ids).size).toBe(ids.length)
     expect(ids).toContain(sharedToken.id)
     expect(ids).toContain(uniqueToken.id)
-    expect(result).toHaveLength(2)
+    expect(result.tokens).toHaveLength(2)
+    expect(result.wasCapped).toBe(false)
   })
 
   it('returns empty array when none of the requested mints are indexed', async () => {
@@ -345,7 +369,8 @@ describe('fetchTokensByVendorSlug — with mint spec (batched)', () => {
     )
 
     const result = await fetchTokensByVendorSlug('feralfile', 'my-series', [5, 10])
-    expect(result).toHaveLength(0)
+    expect(result.tokens).toHaveLength(0)
+    expect(result.wasCapped).toBe(false)
   })
 })
 

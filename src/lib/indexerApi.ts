@@ -62,6 +62,19 @@ export interface IndexerTriggerResult {
 }
 
 /**
+ * Result shape returned by fetchTokensByVendorSlug.
+ *
+ * wasCapped is only ever true on the unfiltered-load (no-mintSpec) path and signals
+ * that the client deliberately stopped fetching at MINT_SPEC_MAX_SIZE even though
+ * the release may contain more indexed tokens. This is distinct from partial
+ * server-side indexing (where the indexer has not yet processed all mints).
+ */
+export interface TokenFetchResult {
+  tokens: IndexerToken[]
+  wasCapped: boolean
+}
+
+/**
  * Job status shape from jobStatus(job_id).
  * status values: "pending" | "running" | "succeeded" | "failed" | "canceled"
  */
@@ -334,10 +347,14 @@ async function fetchTokensBatchByMintNumbers(
 /**
  * Fetch tokens for a vendor release by slug.
  *
- * - Without mintSpec: paginates through all tokens (offset-based, 255/page).
+ * - Without mintSpec: paginates through all tokens (offset-based, 255/page), capped at
+ *   MINT_SPEC_MAX_SIZE. Returns wasCapped=true when the loop was stopped by the cap
+ *   rather than by natural exhaustion of the release. This is distinct from the
+ *   server-side partial-indexing case (where the indexer simply hasn't processed all
+ *   mints yet) and must be surfaced differently in the UI.
  * - With mintSpec: issues one request per batch of ≤50 mint numbers in parallel,
- *   merges results, and deduplicates by token id. Use this for gap polling after
- *   triggerReleaseIndexing to check exactly which mints are now indexed.
+ *   merges results, and deduplicates by token id. wasCapped is always false here.
+ *   Use this for gap polling after triggerReleaseIndexing.
  *
  * include_unviewable is always true so partially-indexed tokens are visible.
  */
@@ -345,7 +362,7 @@ export async function fetchTokensByVendorSlug(
   vendor: string,
   slug: string,
   mintSpec?: MintSpec
-): Promise<IndexerToken[]> {
+): Promise<TokenFetchResult> {
   if (mintSpec) {
     // Split into batches and issue parallel requests.
     const batches: number[][] = []
@@ -368,15 +385,18 @@ export async function fetchTokensByVendorSlug(
     }
     // Re-sort by mint_number ascending after merge.
     merged.sort((a, b) => (a.mint_number ?? 0) - (b.mint_number ?? 0))
-    return merged
+    return { tokens: merged, wasCapped: false }
   }
 
   // No mint filter — paginate through all tokens for the release, capped at
   // MINT_SPEC_MAX_SIZE total. Without this cap, a large fxhash/objkt collection
   // could trigger dozens of requests and accumulate thousands of objects in browser
-  // memory with no user-visible indication. When the cap is hit, the caller's
-  // partialMintSet warning (fetchedCount < total_mints) surfaces automatically.
-  // Curators needing tokens beyond the cap should provide an explicit mint spec.
+  // memory with no user-visible indication.
+  //
+  // We track whether the loop exited because we hit MINT_SPEC_MAX_SIZE (wasCapped=true)
+  // vs. because the server returned no more pages (wasCapped=false). The caller must
+  // surface these differently: cap = "client stopped early, use a mint range for full
+  // coverage"; partial server indexing = "indexer hasn't processed all mints yet".
   type TokenPage = { tokens: { items: IndexerToken[]; offset: number | null } }
   const allTokens: IndexerToken[] = []
   let pageOffset: number | null = null
@@ -389,7 +409,10 @@ export async function fetchTokensByVendorSlug(
     if (page.tokens.offset == null || page.tokens.items.length === 0) break
     pageOffset = page.tokens.offset
   }
-  return allTokens.slice(0, MINT_SPEC_MAX_SIZE)
+  const tokens = allTokens.slice(0, MINT_SPEC_MAX_SIZE)
+  // Natural exhaustion: loop broke because offset was null, not because we reached the cap.
+  const wasCapped = allTokens.length >= MINT_SPEC_MAX_SIZE
+  return { tokens, wasCapped }
 }
 
 // ---------------------------------------------------------------------------

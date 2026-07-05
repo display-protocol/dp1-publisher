@@ -70,6 +70,12 @@ interface LoadedRelease {
   mintSpec: MintSpec | null
   /** Mints from mintSpec that were absent in the indexed response. */
   gapMints: number[]
+  /**
+   * True when the no-mint-spec load path stopped at MINT_SPEC_MAX_SIZE rather than
+   * naturally exhausting the release. Distinct from partial server-side indexing (where
+   * the indexer hasn't processed all mints yet). The UI must surface these differently.
+   */
+  wasCapped: boolean
 }
 
 interface IndexingState {
@@ -205,19 +211,20 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
 
     try {
       // Fetch release metadata and tokens concurrently.
-      const [release, tokens] = await Promise.all([
+      const [release, tokenResult] = await Promise.all([
         resolveReleaseBySlug(vendor, trimmedSlug),
         fetchTokensByVendorSlug(vendor, trimmedSlug, mintSpec ?? undefined),
       ])
       if (loadGenerationRef.current !== generation) return
 
+      const { tokens, wasCapped } = tokenResult
       // Intentional: proceed even when resolveReleaseBySlug returns null (release unknown
       // to the indexer). Curators need to be able to trigger indexing for a brand-new
       // release before any tokens are indexed. The indexer validates the slug server-side
       // when triggerReleaseIndexing is called — an invalid slug will produce an API error
       // surfaced to the UI at that point, not at load time.
       const gapMints = computeGapMints(mintSpec, tokens)
-      setLoaded({ release, tokens, mintSpec, gapMints })
+      setLoaded({ release, tokens, mintSpec, gapMints, wasCapped: wasCapped && !mintSpec })
       setPhase('loaded')
     } catch (e) {
       if (loadGenerationRef.current !== generation) return
@@ -385,7 +392,7 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
 
       let freshTokens: IndexerToken[]
       try {
-        freshTokens = await fetchTokensByVendorSlug(vendor, slug.trim(), gapMints)
+        ;({ tokens: freshTokens } = await fetchTokensByVendorSlug(vendor, slug.trim(), gapMints))
       } catch (e) {
         if (loadGenerationRef.current !== generation) return
         const msg = e instanceof Error ? e.message : 'Failed to poll for indexed tokens.'
@@ -414,17 +421,21 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
     // regardless of whether Phase 2 succeeded or stalled/timed out.
     setIndexing((prev) => ({ ...prev, phase: 'done' }))
     try {
-      const refreshedTokens = await fetchTokensByVendorSlug(
-        vendor,
-        slug.trim(),
-        loaded.mintSpec ?? undefined
-      )
+      const { tokens: refreshedTokens, wasCapped: refreshWasCapped } =
+        await fetchTokensByVendorSlug(vendor, slug.trim(), loaded.mintSpec ?? undefined)
       if (loadGenerationRef.current !== generation) return
 
       const newGapMints = computeGapMints(loaded.mintSpec, refreshedTokens)
       const newCount = refreshedTokens.length - loaded.tokens.length
       setLoaded((prev) =>
-        prev ? { ...prev, tokens: refreshedTokens, gapMints: newGapMints } : prev
+        prev
+          ? {
+              ...prev,
+              tokens: refreshedTokens,
+              gapMints: newGapMints,
+              wasCapped: refreshWasCapped && !loaded.mintSpec,
+            }
+          : prev
       )
 
       if (!phase2Completed && newGapMints.length > 0) {
@@ -464,9 +475,12 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
   const gapMints = loaded?.gapMints ?? []
   const gapCount = gapMints.length
   const mintSpec = loaded?.mintSpec ?? null
+  // True when the no-mint-spec load hit the client cap (distinct from server-side partial indexing).
+  const wasCapped = loaded?.wasCapped ?? false
 
-  // Without a spec we fall back to comparing fetchedCount vs total_mints (no explicit gaps).
-  const partialMintSet = !mintSpec && totalMints != null && fetchedCount < totalMints
+  // Without a spec: partial indexing warning when total_mints is known and we fetched fewer,
+  // but only when the shortfall is due to the server, not the client cap.
+  const partialMintSet = !mintSpec && !wasCapped && totalMints != null && fetchedCount < totalMints
 
   const loadDisabled = phase === 'loading'
   const indexingActive =
@@ -622,7 +636,16 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
                 </div>
               )}
 
-              {/* Partial mint set warning (no spec, but total_mints shows a shortfall) */}
+              {/* Client-side cap warning — distinct from server-side partial indexing */}
+              {wasCapped && (
+                <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
+                  Showing the first {fetchedCount.toLocaleString()} tokens (client limit
+                  {totalMints != null ? ` — ${totalMints.toLocaleString()} total mints in this release` : ''}
+                  ). To work with a specific subset, enter a mint range above and reload.
+                </p>
+              )}
+
+              {/* Partial mint set warning (no spec, indexer has more than it returned) */}
               {partialMintSet && (
                 <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
                   Fetched {fetchedCount} of {totalMints} total mints. Some tokens may not be indexed
@@ -713,6 +736,8 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
                     </>
                   ) : confirmReplace ? (
                     `Yes, replace with ${addableCount} item${addableCount === 1 ? '' : 's'}`
+                  ) : wasCapped ? (
+                    `Load first ${addableCount} item${addableCount === 1 ? '' : 's'} into playlist`
                   ) : (
                     `Load ${addableCount} item${addableCount === 1 ? '' : 's'} into playlist`
                   )}

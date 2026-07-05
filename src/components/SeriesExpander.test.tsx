@@ -42,6 +42,8 @@ function makeToken(id: number, mintNumber: number): indexerApi.IndexerToken {
     token_number: String(mintNumber),
     release_id: 1,
     mint_number: mintNumber,
+    viewable: true,
+    burned: false,
     display: null,
     metadata: null,
   }

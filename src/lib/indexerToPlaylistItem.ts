@@ -48,9 +48,19 @@ export function resolveTokenSourceUrl(token: IndexerToken): string | null {
 
 /**
  * Build one playlist leaf from an indexer token.
- * Returns null when no renderable display URL is available.
+ *
+ * Returns null when:
+ * - the token is burned (permanently removed from circulation), or
+ * - the token is not yet viewable (still being indexed / suppressed by the
+ *   indexer's viewability rules), or
+ * - no renderable display URL is available.
+ *
+ * Burned and non-viewable tokens are fetched with include_unviewable: true
+ * so they count as "indexed" for gap detection and Phase 2 polling, but they
+ * must not appear in the curator's playlist.
  */
 export function indexerTokenToPlaylistItem(token: IndexerToken): PlaylistItem | null {
+  if (token.burned || !token.viewable) return null
   const source = resolveTokenSourceUrl(token)
   if (!source) return null
 

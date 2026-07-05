@@ -177,6 +177,8 @@ const makeToken = (id: number, mintNumber: number) => ({
   token_number: String(mintNumber),
   release_id: 1,
   mint_number: mintNumber,
+  viewable: true,
+  burned: false,
   display: { animation_url: `https://example.com/${mintNumber}.mp4`, image_url: null },
   metadata: { name: `Token ${mintNumber}` },
 })

@@ -52,6 +52,13 @@ export interface IndexerToken {
   token_number: string
   release_id: number | null
   mint_number: number | null
+  // viewable and burned come from the indexer schema (Boolean!) and are used
+  // to prevent non-viewable or burned tokens from entering playlist construction.
+  // include_unviewable: true is still requested so these tokens are visible for
+  // gap detection and Phase 2 polling — we need to know they are indexed even
+  // when they are not yet viewable or have been burned.
+  viewable: boolean
+  burned: boolean
   display: IndexerTokenDisplay | null
   metadata: { name: string | null } | null
 }
@@ -291,6 +298,8 @@ const TOKENS_BY_VENDOR_SLUG_QUERY = `
         token_number
         release_id
         mint_number
+        viewable
+        burned
         display { animation_url image_url }
         metadata { name }
       }
@@ -324,6 +333,8 @@ const TOKENS_BY_MINT_NUMBERS_QUERY = `
         token_number
         release_id
         mint_number
+        viewable
+        burned
         display { animation_url image_url }
         metadata { name }
       }

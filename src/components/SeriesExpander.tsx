@@ -61,7 +61,10 @@ type VendorChoice =
 
 type PanelPhase = 'idle' | 'loading' | 'loaded' | 'error'
 
-type IndexingPhase = null | 'triggering' | 'phase1' | 'phase2' | 'done' | 'failed'
+// 'refreshing' is the final-refresh phase after Phase 2 completes or times out.
+// It is included in indexingActive so the add/cancel controls stay disabled until
+// loaded.tokens and gapMints have been updated with the post-indexing result.
+type IndexingPhase = null | 'triggering' | 'phase1' | 'phase2' | 'refreshing' | 'done' | 'failed'
 
 interface LoadedRelease {
   release: IndexerReleaseSummary | null
@@ -433,7 +436,12 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
 
     // Re-fetch the full token set (original mintSpec) to rebuild loaded state,
     // regardless of whether Phase 2 succeeded or stalled/timed out.
-    setIndexing((prev) => ({ ...prev, phase: 'done' }))
+    //
+    // Use 'refreshing' (not 'done') so indexingActive remains true and the
+    // add/cancel controls stay disabled until loaded.tokens and gapMints have
+    // been updated. Setting 'done' here would enable the playlist import button
+    // while the preview still reflects the pre-indexing token set.
+    setIndexing((prev) => ({ ...prev, phase: 'refreshing' }))
     try {
       const { tokens: refreshedTokens, wasCapped: refreshWasCapped } =
         await fetchTokensByVendorSlug(vendor, slug.trim(), loaded.mintSpec ?? undefined)
@@ -477,10 +485,7 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
       // gapMints are now stale (they reflect the pre-indexing state). Surface an
       // explicit error so the curator knows to reload rather than silently seeing
       // an unchanged gap count and re-submitting the same indexing job.
-      //
-      // Note: a focused test for this path requires fake timers to drive Phase 1 + Phase 2
-      // polling to completion first, which is deferred alongside other async state-machine
-      // coverage. The behavior is verified manually and the fix is straightforward.
+      if (loadGenerationRef.current !== generation) return
       setIndexing({
         ...initialIndexingState,
         phase: 'failed',
@@ -512,7 +517,10 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
 
   const loadDisabled = phase === 'loading'
   const indexingActive =
-    indexing.phase === 'triggering' || indexing.phase === 'phase1' || indexing.phase === 'phase2'
+    indexing.phase === 'triggering' ||
+    indexing.phase === 'phase1' ||
+    indexing.phase === 'phase2' ||
+    indexing.phase === 'refreshing'
 
   const gapExampleText =
     gapMints.length > 0
@@ -708,6 +716,13 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
                   <Loader2 className="size-4 animate-spin" />
                   Waiting for tokens to be indexed… ({indexing.indexedSoFar} /{' '}
                   {indexing.submittedMints.length || gapCount} indexed)
+                </div>
+              )}
+
+              {indexing.phase === 'refreshing' && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" />
+                  Refreshing token list…
                 </div>
               )}
 

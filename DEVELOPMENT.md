@@ -67,7 +67,7 @@ The **Load from series** feature in the playlist form calls `VITE_INDEXER_BASE_U
 - `Mutation.triggerReleaseIndexing(vendor, vendor_release_slug, mint_numbers)` — enqueue indexing for missing mints
 - `Query.jobStatus(job_id)` — poll Phase 1 job completion
 
-If your configured endpoint is missing any of these fields, the **Load** button will surface the GraphQL error inline. To develop against a compatible indexer locally:
+These fields were introduced in ff-indexer-v2 at commit **`d601e24`** (`feat(api): replace mint_from/mint_to with explicit mint_numbers list`). If your configured endpoint predates that commit, the **Load** button will surface the GraphQL error inline. To develop against a compatible indexer locally:
 
 ```bash
 # in .env, point to a local ff-indexer-v2 with the slug + sparse-mint API

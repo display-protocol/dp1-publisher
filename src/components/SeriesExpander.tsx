@@ -352,6 +352,9 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
     let prevIndexedCount = 0
     let stallCount = 0
     pollAttempts = 0
+    // Tracks whether all gap mints appeared before the polling limit was reached.
+    // A false exit means stall or timeout — the indexer may still be running.
+    let phase2Completed = false
 
     while (pollAttempts < MAX_POLL_ATTEMPTS) {
       await sleep(PHASE2_POLL_MS)
@@ -374,7 +377,10 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
       ).length
       setIndexing((prev) => ({ ...prev, indexedSoFar }))
 
-      if (indexedSoFar >= gapMints.length) break
+      if (indexedSoFar >= gapMints.length) {
+        phase2Completed = true
+        break
+      }
 
       if (indexedSoFar === prevIndexedCount) {
         stallCount++
@@ -388,7 +394,8 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
 
     if (loadGenerationRef.current !== generation) return
 
-    // Re-fetch the full token set (original mintSpec) to rebuild loaded state.
+    // Re-fetch the full token set (original mintSpec) to rebuild loaded state,
+    // regardless of whether Phase 2 succeeded or stalled/timed out.
     setIndexing((prev) => ({ ...prev, phase: 'done' }))
     try {
       const refreshedTokens = await fetchTokensByVendorSlug(
@@ -403,12 +410,25 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
       setLoaded((prev) =>
         prev ? { ...prev, tokens: refreshedTokens, gapMints: newGapMints } : prev
       )
-      setIndexing(initialIndexingState)
-      if (newCount > 0) {
-        toast({
-          title: 'Tokens indexed',
-          description: `${newCount} new token${newCount === 1 ? '' : 's'} are now available.`,
+
+      if (!phase2Completed && newGapMints.length > 0) {
+        // Phase 2 stalled or timed out with tokens still missing. The indexing
+        // jobs may still be running on the server. Surface a partial-failure
+        // message so the curator is not left with a silent "nothing happened" state.
+        const remaining = newGapMints.length
+        setIndexing({
+          ...initialIndexingState,
+          phase: 'failed',
+          errorMessage: `Indexing started but ${remaining} token${remaining === 1 ? '' : 's'} ${remaining === 1 ? 'has' : 'have'} not appeared yet. Indexing may still be running — try again shortly.`,
         })
+      } else {
+        setIndexing(initialIndexingState)
+        if (newCount > 0) {
+          toast({
+            title: 'Tokens indexed',
+            description: `${newCount} new token${newCount === 1 ? '' : 's'} are now available.`,
+          })
+        }
       }
     } catch {
       // Non-fatal: the user can still proceed with whatever tokens are loaded.

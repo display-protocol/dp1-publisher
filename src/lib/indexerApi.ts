@@ -185,10 +185,6 @@ export class IndexerAPIError extends Error {
   }
 }
 
-/** @deprecated Use resolveReleaseBySlug instead. */
-export function buildArtBlocksVendorReleaseId(contract: string, projectId: string): string {
-  return `1-${contract.trim().toLowerCase()}-${projectId.trim()}`
-}
 
 interface GraphQLResponse<T> {
   data?: T
@@ -475,82 +471,3 @@ export async function fetchJobStatus(jobId: number): Promise<IndexerJobStatus | 
   return data.jobStatus
 }
 
-// ---------------------------------------------------------------------------
-// Legacy functions (deprecated — kept for backward compatibility with existing tests)
-// ---------------------------------------------------------------------------
-
-const RESOLVE_RELEASE_QUERY = `
-  query ResolveRelease($vendor: String!, $vendorReleaseId: String!) {
-    releases(vendor: $vendor, vendor_release_id: $vendorReleaseId, limit: 1) {
-      items {
-        id
-        vendor
-        vendor_release_id
-        vendor_release_slug
-        name
-        total_mints
-      }
-    }
-  }
-`
-
-const RELEASE_TOKENS_QUERY = `
-  query ReleaseTokens($releaseId: Uint64!, $limit: Uint8!) {
-    tokens(
-      release_id: $releaseId
-      sort_by: mint_number
-      sort_order: asc
-      limit: $limit
-    ) {
-      items {
-        id
-        chain
-        standard
-        contract_address
-        token_number
-        release_id
-        mint_number
-        display {
-          animation_url
-          image_url
-        }
-        metadata {
-          name
-        }
-      }
-    }
-  }
-`
-
-/**
- * @deprecated Use resolveReleaseBySlug instead.
- * Resolve a release by vendor_release_id (FF series UUID or AB vendor_release_id).
- */
-export async function resolveRelease(
-  vendor: string,
-  vendorReleaseId: string
-): Promise<IndexerReleaseSummary | null> {
-  const data = await graphqlRequest<{
-    releases: { items: IndexerReleaseSummary[] }
-  }>(RESOLVE_RELEASE_QUERY, {
-    vendor,
-    vendorReleaseId: vendorReleaseId.trim(),
-  })
-
-  return data.releases.items[0] ?? null
-}
-
-/**
- * @deprecated Use fetchTokensByVendorSlug instead.
- * Mint-ordered tokens for a release (single request, capped at MAX_RELEASE_TOKENS).
- */
-export async function fetchReleaseTokens(releaseId: number): Promise<IndexerToken[]> {
-  const data = await graphqlRequest<{
-    tokens: { items: IndexerToken[] }
-  }>(RELEASE_TOKENS_QUERY, {
-    releaseId,
-    limit: MAX_RELEASE_TOKENS,
-  })
-
-  return data.tokens.items
-}

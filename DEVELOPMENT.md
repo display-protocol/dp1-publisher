@@ -60,15 +60,17 @@ Conceptual layering and flows: **[docs/architecture.md](docs/architecture.md)**
 
 ## Series expand (`VITE_INDEXER_BASE_URL`)
 
-The **Load from series** feature in the playlist form calls `VITE_INDEXER_BASE_URL/graphql` to resolve FF series / AB projects and fetch mint-ordered tokens. It requires **ff-indexer-v2** with the series-expand API:
+The **Load from series** feature in the playlist form calls `VITE_INDEXER_BASE_URL/graphql`. It supports four vendors — Feral File, Art Blocks, fxhash, and objkt — all identified by release slug. It requires **ff-indexer-v2** with the slug + sparse-mint API:
 
-- `Query.releases(vendor, vendor_release_id, limit)` — resolve a release by vendor key
-- `Query.tokens(release_id, sort_by: mint_number, sort_order: asc, limit)` — fetch mint-ordered members
+- `Query.releases(vendor, vendor_release_slug, limit)` — resolve a release by vendor slug
+- `Query.tokens(release_vendor, release_vendor_slug, mint_numbers, ...)` — fetch tokens by sparse mint list (max 50/request)
+- `Mutation.triggerReleaseIndexing(vendor, vendor_release_slug, mint_numbers)` — enqueue indexing for missing mints
+- `Query.jobStatus(job_id)` — poll Phase 1 job completion
 
-This API surface was added in [ff-indexer-v2 #93](https://github.com/feral-file/ff-indexer-v2/issues/93). If your configured endpoint predates that change, the **Load** button will return a GraphQL error and the form will display it inline. To develop against a compatible indexer locally:
+These fields were introduced in ff-indexer-v2 at commit **`d601e24`** (`feat(api): replace mint_from/mint_to with explicit mint_numbers list`). If your configured endpoint predates that commit, the **Load** button will surface the GraphQL error inline. To develop against a compatible indexer locally:
 
 ```bash
-# in .env, point to a local ff-indexer-v2 with the series-expand API
+# in .env, point to a local ff-indexer-v2 with the slug + sparse-mint API
 VITE_INDEXER_BASE_URL=http://localhost:8081
 ```
 

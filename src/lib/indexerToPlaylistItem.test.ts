@@ -18,6 +18,8 @@ function makeToken(overrides: Partial<IndexerToken> = {}): IndexerToken {
     token_number: '42',
     release_id: 99,
     mint_number: 1,
+    viewable: true,
+    burned: false,
     display: {
       animation_url: 'https://example.com/a.mp4',
       image_url: 'https://example.com/a.png',
@@ -113,6 +115,22 @@ describe('indexerTokenToPlaylistItem', () => {
       indexerTokenToPlaylistItem(makeToken({ display: null }))
     ).toBeNull()
   })
+
+  it('returns null for burned tokens even when they have a display URL', () => {
+    // Burned tokens are fetched with include_unviewable: true for gap detection
+    // but must never appear in the playlist.
+    expect(
+      indexerTokenToPlaylistItem(makeToken({ burned: true }))
+    ).toBeNull()
+  })
+
+  it('returns null for non-viewable tokens even when they have a display URL', () => {
+    // Non-viewable tokens (partially indexed, suppressed) count as indexed for
+    // gap detection but must not be addable to a curator playlist.
+    expect(
+      indexerTokenToPlaylistItem(makeToken({ viewable: false }))
+    ).toBeNull()
+  })
 })
 
 describe('indexerTokensToPlaylistItems', () => {
@@ -123,6 +141,18 @@ describe('indexerTokensToPlaylistItems', () => {
     ])
     expect(items).toHaveLength(1)
     expect(skippedCount).toBe(1)
+  })
+
+  it('excludes burned and non-viewable tokens even when they carry a display URL', () => {
+    // Verifies the invariant: include_unviewable:true tokens (fetched for gap
+    // detection) cannot slip through into a signed playlist item.
+    const { items, skippedCount } = indexerTokensToPlaylistItems([
+      makeToken({ id: 1 }),
+      makeToken({ id: 2, burned: true }),
+      makeToken({ id: 3, viewable: false }),
+    ])
+    expect(items).toHaveLength(1)
+    expect(skippedCount).toBe(2)
   })
 })
 

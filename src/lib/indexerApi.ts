@@ -153,6 +153,12 @@ export function parseMintSpec(input: string): MintSpec | null {
     seen.add(val)
     result.push(val)
   }
+  // Apply the same total-size cap as ranges to bound browser-side fan-out.
+  if (result.length > MINT_SPEC_MAX_SIZE) {
+    throw new MintSpecParseError(
+      `Explicit list contains ${result.length} mints; max is ${MINT_SPEC_MAX_SIZE}.`
+    )
+  }
   result.sort((a, b) => a - b)
   return result
 }
@@ -405,6 +411,13 @@ const TRIGGER_RELEASE_INDEXING_MUTATION = `
  * Trigger indexing for a single batch of mint numbers (max MINT_NUMBERS_BATCH_SIZE).
  * Phase 1 (CID derivation + fan-out) runs asynchronously; poll job status with the
  * returned job_id. After Phase 1 succeeds, poll tokens(mint_numbers) to track completion.
+ *
+ * Trust boundary: this is a browser-originated write issued at curator request with no
+ * client-side auth token. Abuse resistance (rate limiting, API-key enforcement, etc.) is
+ * assumed to be provided by the ff-indexer-v2 server on this mutation endpoint. If the
+ * indexer does not enforce a rate limit, a curator with access to the UI can submit
+ * arbitrarily many jobs. Confirm the server-side policy before exposing this to untrusted
+ * users. Also see the MINT_SPEC_MAX_SIZE cap in parseMintSpec which bounds the fan-out.
  */
 export async function triggerReleaseIndexing(
   vendor: string,

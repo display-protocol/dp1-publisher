@@ -95,6 +95,19 @@ describe('parseMintSpec', () => {
     expect(result![999]).toBe(1000)
   })
 
+  it('throws MintSpecParseError for an explicit list that exceeds MINT_SPEC_MAX_SIZE', () => {
+    // Explicit comma-separated lists must be capped identically to ranges so that
+    // large pastes cannot fan-out into hundreds of GraphQL calls/mutations.
+    const overLimit = Array.from({ length: 1001 }, (_, i) => i + 1).join(',')
+    expect(() => parseMintSpec(overLimit)).toThrow(MintSpecParseError)
+  })
+
+  it('accepts an explicit list exactly at MINT_SPEC_MAX_SIZE', () => {
+    const atLimit = Array.from({ length: 1000 }, (_, i) => i + 1).join(',')
+    const result = parseMintSpec(atLimit)
+    expect(result).toHaveLength(1000)
+  })
+
   it('throws MintSpecParseError for duplicate comma values', () => {
     expect(() => parseMintSpec('1,2,2')).toThrow(MintSpecParseError)
   })

@@ -158,12 +158,21 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
   const handleMintInputChange = (value: string) => {
     setMintInput(value)
     setMintParseError(null)
-    if (phase !== 'idle') resetLoaded()
+    if (phase !== 'idle') {
+      // Increment generation so any active indexing loop sees the invalidation and aborts.
+      loadGenerationRef.current += 1
+      resetLoaded()
+    }
   }
 
   const handleSlugChange = (value: string) => {
     setSlug(value)
-    if (phase !== 'idle') resetLoaded()
+    if (phase !== 'idle') {
+      // Same generation invalidation as handleMintInputChange — prevents stale poll/refetch
+      // from a prior indexing run from writing tokens back into the new (uncommitted) slug.
+      loadGenerationRef.current += 1
+      resetLoaded()
+    }
   }
 
   // ---------------------------------------------------------------------------

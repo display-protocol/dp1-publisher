@@ -82,7 +82,14 @@ interface IndexingState {
   phase: IndexingPhase
   jobIds: number[]
   jobStatuses: IndexerJobStatus[]
-  /** Count of gap mints confirmed indexed so far in Phase 2. */
+  /**
+   * Mints whose batches were successfully submitted. Phase 2 polls and completes
+   * against this subset only. Equals gapMints when all batches succeeded; a strict
+   * subset when partial batch failure occurred. Unsubmitted mints remain in the
+   * gap display and can be retried immediately after Phase 2 finishes.
+   */
+  submittedMints: number[]
+  /** Count of submittedMints confirmed indexed so far in Phase 2. */
   indexedSoFar: number
   errorMessage: string | null
 }
@@ -124,6 +131,7 @@ const initialIndexingState: IndexingState = {
   phase: null,
   jobIds: [],
   jobStatuses: [],
+  submittedMints: [],
   indexedSoFar: 0,
   errorMessage: null,
 }
@@ -298,7 +306,7 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
     }
     if (loadGenerationRef.current !== generation) return
 
-    const { jobIds, partialError } = batchResult
+    const { jobIds, submittedMints, partialError } = batchResult
     if (jobIds.length === 0) {
       // All batches failed — nothing to poll.
       setIndexing({
@@ -308,9 +316,9 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
       })
       return
     }
-    // Some batches may have failed; proceed with the job IDs we have.
-    // A partial submission note will be shown via toast so curators know to retry
-    // the remaining gaps after the successful batch finishes.
+    // Some batches may have failed; proceed with the job IDs and mints we have.
+    // A partial submission toast informs curators that unsubmitted mints remain
+    // in the gap display and can be retried after this Phase 1/2 cycle finishes.
     if (partialError) {
       toast({
         title: 'Partial submission',
@@ -319,7 +327,7 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
     }
 
     // Phase 1: poll jobStatus until all jobs succeed or any fail.
-    setIndexing({ ...initialIndexingState, phase: 'phase1', jobIds })
+    setIndexing({ ...initialIndexingState, phase: 'phase1', jobIds, submittedMints })
     let pollAttempts = 0
     while (pollAttempts < MAX_POLL_ATTEMPTS) {
       await sleep(PHASE1_POLL_MS)
@@ -376,13 +384,17 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
     }
     if (loadGenerationRef.current !== generation) return
 
-    // Phase 2: poll token appearance for the gap mints.
-    // Phase 2 runs to MAX_POLL_ATTEMPTS regardless of progress rate.
-    // Stall detection was removed: slow fan-out (large releases, cross-chain latency)
-    // can have long stretches with no new tokens without indicating a real failure.
+    // Phase 2: poll token appearance for submittedMints only (not the full gapMints).
+    // Mints whose batches failed were never submitted to the indexer and cannot
+    // appear, so polling the full gapMints set would cause a guaranteed timeout
+    // for any partial-submission scenario. submittedMints is the correct scope.
+    //
+    // Phase 2 runs to MAX_POLL_ATTEMPTS regardless of progress rate. Stall detection
+    // was removed: slow fan-out (large releases, cross-chain latency) can have long
+    // stretches with no new tokens without indicating a real failure.
     setIndexing((prev) => ({ ...prev, phase: 'phase2' }))
     pollAttempts = 0
-    // Tracks whether all gap mints appeared before the polling limit was reached.
+    // Tracks whether all submittedMints appeared before the polling limit was reached.
     // A false exit means stall or timeout — the indexer may still be running.
     let phase2Completed = false
 
@@ -392,7 +404,9 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
 
       let freshTokens: IndexerToken[]
       try {
-        ;({ tokens: freshTokens } = await fetchTokensByVendorSlug(vendor, slug.trim(), gapMints))
+        ;({ tokens: freshTokens } = await fetchTokensByVendorSlug(
+          vendor, slug.trim(), submittedMints
+        ))
       } catch (e) {
         if (loadGenerationRef.current !== generation) return
         const msg = e instanceof Error ? e.message : 'Failed to poll for indexed tokens.'
@@ -401,13 +415,13 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
       }
       if (loadGenerationRef.current !== generation) return
 
-      const gapSet = new Set(gapMints)
+      const submittedSet = new Set(submittedMints)
       const indexedSoFar = freshTokens.filter(
-        (t) => t.mint_number != null && gapSet.has(t.mint_number)
+        (t) => t.mint_number != null && submittedSet.has(t.mint_number)
       ).length
       setIndexing((prev) => ({ ...prev, indexedSoFar }))
 
-      if (indexedSoFar >= gapMints.length) {
+      if (indexedSoFar >= submittedMints.length) {
         phase2Completed = true
         break
       }
@@ -693,7 +707,7 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="size-4 animate-spin" />
                   Waiting for tokens to be indexed… ({indexing.indexedSoFar} /{' '}
-                  {gapCount} indexed)
+                  {indexing.submittedMints.length || gapCount} indexed)
                 </div>
               )}
 

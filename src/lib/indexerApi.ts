@@ -477,13 +477,16 @@ export async function triggerReleaseIndexing(
 /**
  * Result from triggerReleaseIndexingBatched.
  *
- * jobIds contains the job_id for every batch that succeeded (may be a subset of
- * all batches). partialError is set when at least one batch failed; in that case
- * the caller should poll the available jobIds and surface the partial-submission
- * note to the user rather than treating the whole operation as failed.
+ * jobIds: job_id for every batch that succeeded (may be a subset of all batches).
+ * submittedMints: the mint numbers whose batches succeeded — Phase 2 should poll
+ *   and complete against this set only. Mints in gapMints but absent here were
+ *   never submitted and can be retried immediately after Phase 2 finishes.
+ * partialError: set when at least one batch failed; the caller should poll the
+ *   available jobIds, surface the partial note, and leave unsubmitted gaps visible.
  */
 export interface BatchedTriggerResult {
   jobIds: number[]
+  submittedMints: number[]
   partialError: string | null
 }
 
@@ -492,9 +495,10 @@ export interface BatchedTriggerResult {
  * Splits into batches of ≤MINT_NUMBERS_BATCH_SIZE and fires one mutation per batch
  * sequentially (to avoid overwhelming the indexer).
  *
- * On partial failure (batch N succeeds, batch N+1 fails), returns the job IDs
- * that were obtained so the caller can still poll and refresh those batches rather
- * than silently dropping already-submitted work.
+ * On partial failure (batch N succeeds, batch N+1 fails), returns the job IDs and
+ * submittedMints for successful batches so the caller can poll only those mints in
+ * Phase 2. Without submittedMints, Phase 2 would poll the full gapMints set and
+ * time out waiting for mints that were never submitted to the indexer.
  */
 export async function triggerReleaseIndexingBatched(
   vendor: string,
@@ -502,18 +506,20 @@ export async function triggerReleaseIndexingBatched(
   mintNumbers: number[]
 ): Promise<BatchedTriggerResult> {
   const jobIds: number[] = []
+  const submittedMints: number[] = []
   let partialError: string | null = null
   for (let i = 0; i < mintNumbers.length; i += MINT_NUMBERS_BATCH_SIZE) {
     const batch = mintNumbers.slice(i, i + MINT_NUMBERS_BATCH_SIZE)
     try {
       const result = await triggerReleaseIndexing(vendor, slug, batch)
       jobIds.push(result.job_id)
+      submittedMints.push(...batch)
     } catch (e) {
       partialError = e instanceof Error ? e.message : 'Failed to submit indexing batch.'
       break
     }
   }
-  return { jobIds, partialError }
+  return { jobIds, submittedMints, partialError }
 }
 
 // ---------------------------------------------------------------------------

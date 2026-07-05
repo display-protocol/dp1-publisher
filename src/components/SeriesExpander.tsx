@@ -153,11 +153,19 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
   const [adding, setAdding] = useState(false)
   const [confirmReplace, setConfirmReplace] = useState(false)
   const loadGenerationRef = useRef(0)
-  // mountedRef is set to false in the cleanup of the component's mount effect.
-  // The polling loops in handleIndexMissing check it via isStale() to stop
-  // issuing requests and dispatching state updates after the panel unmounts.
-  const mountedRef = useRef(true)
+  // mountedRef gates the polling loops in handleIndexMissing so they stop
+  // issuing requests and dispatching state after the panel unmounts.
+  //
+  // Initialise to false and set to true inside the effect body so the pattern
+  // is correct under React StrictMode (dev). StrictMode double-invokes effects:
+  // it mounts, runs the cleanup (false), then re-mounts and runs the body
+  // again (true). Initialising to true and only having a cleanup would leave
+  // mountedRef.current === false for the entire dev-mode session after the
+  // simulated unmount, making isStale() always true and locking the UI in
+  // the 'triggering' phase after the first async await point.
+  const mountedRef = useRef(false)
   useEffect(() => {
+    mountedRef.current = true
     return () => {
       mountedRef.current = false
     }

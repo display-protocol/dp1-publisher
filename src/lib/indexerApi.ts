@@ -371,11 +371,16 @@ export async function fetchTokensByVendorSlug(
     return merged
   }
 
-  // No mint filter — paginate through all tokens for the release.
+  // No mint filter — paginate through all tokens for the release, capped at
+  // MINT_SPEC_MAX_SIZE total. Without this cap, a large fxhash/objkt collection
+  // could trigger dozens of requests and accumulate thousands of objects in browser
+  // memory with no user-visible indication. When the cap is hit, the caller's
+  // partialMintSet warning (fetchedCount < total_mints) surfaces automatically.
+  // Curators needing tokens beyond the cap should provide an explicit mint spec.
   type TokenPage = { tokens: { items: IndexerToken[]; offset: number | null } }
   const allTokens: IndexerToken[] = []
   let pageOffset: number | null = null
-  while (true) {
+  while (allTokens.length < MINT_SPEC_MAX_SIZE) {
     const page: TokenPage = await graphqlRequest<TokenPage>(
       TOKENS_BY_VENDOR_SLUG_QUERY,
       { vendor, slug, limit: MAX_RELEASE_TOKENS, offset: pageOffset }
@@ -384,7 +389,7 @@ export async function fetchTokensByVendorSlug(
     if (page.tokens.offset == null || page.tokens.items.length === 0) break
     pageOffset = page.tokens.offset
   }
-  return allTokens
+  return allTokens.slice(0, MINT_SPEC_MAX_SIZE)
 }
 
 // ---------------------------------------------------------------------------
@@ -428,23 +433,45 @@ export async function triggerReleaseIndexing(
 }
 
 /**
+ * Result from triggerReleaseIndexingBatched.
+ *
+ * jobIds contains the job_id for every batch that succeeded (may be a subset of
+ * all batches). partialError is set when at least one batch failed; in that case
+ * the caller should poll the available jobIds and surface the partial-submission
+ * note to the user rather than treating the whole operation as failed.
+ */
+export interface BatchedTriggerResult {
+  jobIds: number[]
+  partialError: string | null
+}
+
+/**
  * Trigger indexing for an arbitrary number of gap mint numbers.
  * Splits into batches of ≤MINT_NUMBERS_BATCH_SIZE and fires one mutation per batch
- * sequentially (to avoid overwhelming the indexer). Returns one job_id per batch
- * in submission order.
+ * sequentially (to avoid overwhelming the indexer).
+ *
+ * On partial failure (batch N succeeds, batch N+1 fails), returns the job IDs
+ * that were obtained so the caller can still poll and refresh those batches rather
+ * than silently dropping already-submitted work.
  */
 export async function triggerReleaseIndexingBatched(
   vendor: string,
   slug: string,
   mintNumbers: number[]
-): Promise<number[]> {
+): Promise<BatchedTriggerResult> {
   const jobIds: number[] = []
+  let partialError: string | null = null
   for (let i = 0; i < mintNumbers.length; i += MINT_NUMBERS_BATCH_SIZE) {
     const batch = mintNumbers.slice(i, i + MINT_NUMBERS_BATCH_SIZE)
-    const result = await triggerReleaseIndexing(vendor, slug, batch)
-    jobIds.push(result.job_id)
+    try {
+      const result = await triggerReleaseIndexing(vendor, slug, batch)
+      jobIds.push(result.job_id)
+    } catch (e) {
+      partialError = e instanceof Error ? e.message : 'Failed to submit indexing batch.'
+      break
+    }
   }
-  return jobIds
+  return { jobIds, partialError }
 }
 
 // ---------------------------------------------------------------------------

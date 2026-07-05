@@ -421,7 +421,7 @@ describe('triggerReleaseIndexingBatched', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await triggerReleaseIndexingBatched('feralfile', 'my-series', [1, 2, 3])
-    expect(result).toEqual([10])
+    expect(result).toEqual({ jobIds: [10], partialError: null })
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
@@ -442,16 +442,34 @@ describe('triggerReleaseIndexingBatched', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await triggerReleaseIndexingBatched('feralfile', 'my-series', mints)
-    expect(result).toEqual([100, 101])
+    expect(result).toEqual({ jobIds: [100, 101], partialError: null })
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
-  it('propagates IndexerAPIError from a failed batch', async () => {
+  it('returns partial job IDs with partialError when batch 2 of 2 fails', async () => {
+    // Previously this threw and dropped batch 1's job_id; now it returns what succeeded.
+    const mints = Array.from({ length: MINT_NUMBERS_BATCH_SIZE + 5 }, (_, i) => i + 1)
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ data: { triggerReleaseIndexing: { job_id: 77 } } }),
+      })
+      .mockResolvedValueOnce({ ok: false, status: 503, json: () => Promise.resolve({}) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await triggerReleaseIndexingBatched('feralfile', 'my-series', mints)
+    expect(result.jobIds).toEqual([77])
+    expect(result.partialError).toBeTruthy()
+  })
+
+  it('returns empty jobIds with partialError when all batches fail', async () => {
     vi.stubGlobal('fetch', mockFetch({}, false, 503))
 
-    await expect(
-      triggerReleaseIndexingBatched('fxhash', 'geometry-runners', [1, 2])
-    ).rejects.toBeInstanceOf(IndexerAPIError)
+    const result = await triggerReleaseIndexingBatched('fxhash', 'geometry-runners', [1, 2])
+    expect(result.jobIds).toHaveLength(0)
+    expect(result.partialError).toBeTruthy()
   })
 })
 

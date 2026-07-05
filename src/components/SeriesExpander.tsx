@@ -43,6 +43,7 @@ import {
   parseMintSpec,
   resolveReleaseBySlug,
   triggerReleaseIndexingBatched,
+  type BatchedTriggerResult,
   type IndexerJobStatus,
   type IndexerReleaseSummary,
   type IndexerToken,
@@ -279,9 +280,9 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
     // Phase: triggering
     setIndexing({ ...initialIndexingState, phase: 'triggering' })
 
-    let jobIds: number[]
+    let batchResult: BatchedTriggerResult
     try {
-      jobIds = await triggerReleaseIndexingBatched(vendor, slug.trim(), gapMints)
+      batchResult = await triggerReleaseIndexingBatched(vendor, slug.trim(), gapMints)
     } catch (e) {
       if (loadGenerationRef.current !== generation) return
       const msg = e instanceof Error ? e.message : 'Failed to submit indexing job.'
@@ -289,6 +290,26 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
       return
     }
     if (loadGenerationRef.current !== generation) return
+
+    const { jobIds, partialError } = batchResult
+    if (jobIds.length === 0) {
+      // All batches failed — nothing to poll.
+      setIndexing({
+        ...initialIndexingState,
+        phase: 'failed',
+        errorMessage: partialError ?? 'Failed to submit indexing jobs.',
+      })
+      return
+    }
+    // Some batches may have failed; proceed with the job IDs we have.
+    // A partial submission note will be shown via toast so curators know to retry
+    // the remaining gaps after the successful batch finishes.
+    if (partialError) {
+      toast({
+        title: 'Partial submission',
+        description: `Some indexing batches failed to submit: ${partialError}. Polling available jobs and the remaining gaps will be shown afterward.`,
+      })
+    }
 
     // Phase 1: poll jobStatus until all jobs succeed or any fail.
     setIndexing({ ...initialIndexingState, phase: 'phase1', jobIds })

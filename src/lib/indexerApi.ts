@@ -401,15 +401,22 @@ export async function fetchTokensByVendorSlug(
   const allTokens: IndexerToken[] = []
   let pageOffset: number | null = null
   // Track whether the loop exited because the server had no more pages (true)
-  // vs. because the client hit MINT_SPEC_MAX_SIZE (false). We cannot rely on
-  // allTokens.length >= MINT_SPEC_MAX_SIZE after the loop because a release
-  // with exactly MINT_SPEC_MAX_SIZE indexed tokens will also satisfy that
-  // condition even though we got all of them — that would be a false cap.
+  // vs. because the client hit MINT_SPEC_MAX_SIZE (false).
+  //
+  // We limit each page request to the remaining capacity (MINT_SPEC_MAX_SIZE - accumulated)
+  // rather than always requesting MAX_RELEASE_TOKENS. Without this, the final page could
+  // push allTokens past MINT_SPEC_MAX_SIZE while also returning offset:null (natural
+  // exhaustion), causing the subsequent slice to silently drop the overshoot while
+  // naturallyExhausted=true makes wasCapped appear false. Capping the limit prevents that
+  // overshoot entirely so naturallyExhausted correctly reflects whether all tokens were
+  // returned vs. the client stopped early.
   let naturallyExhausted = false
   while (allTokens.length < MINT_SPEC_MAX_SIZE) {
+    const remaining = MINT_SPEC_MAX_SIZE - allTokens.length
+    const limit = Math.min(MAX_RELEASE_TOKENS, remaining)
     const page: TokenPage = await graphqlRequest<TokenPage>(
       TOKENS_BY_VENDOR_SLUG_QUERY,
-      { vendor, slug, limit: MAX_RELEASE_TOKENS, offset: pageOffset }
+      { vendor, slug, limit, offset: pageOffset }
     )
     allTokens.push(...page.tokens.items)
     if (page.tokens.offset == null || page.tokens.items.length === 0) {
@@ -418,6 +425,8 @@ export async function fetchTokensByVendorSlug(
     }
     pageOffset = page.tokens.offset
   }
+  // Safety-net slice in case the server ignores the limit; with the remaining-capacity
+  // calculation above this should be a no-op for a well-behaved server.
   const tokens = allTokens.slice(0, MINT_SPEC_MAX_SIZE)
   // wasCapped is true only when the loop exited via the while condition (cap hit),
   // not when it broke because the server returned a null offset (natural exhaustion).

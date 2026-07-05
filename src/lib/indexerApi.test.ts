@@ -3,6 +3,7 @@ import {
   fetchJobStatus,
   fetchTokensByVendorSlug,
   IndexerAPIError,
+  MAX_RELEASE_TOKENS,
   MINT_NUMBERS_BATCH_SIZE,
   MINT_SPEC_MAX_SIZE,
   MintSpecParseError,
@@ -264,6 +265,65 @@ describe('fetchTokensByVendorSlug — no mint spec (paginated)', () => {
     expect(result.tokens).toHaveLength(MINT_SPEC_MAX_SIZE)
     expect(result.wasCapped).toBe(false)
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns wasCapped true across multiple MAX_RELEASE_TOKENS pages when the release is larger', async () => {
+    // Realistic multi-page scenario: release has ~1020 tokens (4 pages of ~255).
+    // Pages 1-3 are full (255 each, offset non-null). The 4th request uses
+    // limit = MINT_SPEC_MAX_SIZE - 765 = 235 (remaining capacity) and the server
+    // still has tokens left (offset non-null), so the while loop exits via the cap.
+    // Previously (always requesting MAX_RELEASE_TOKENS) the final page could overshoot
+    // the cap and then silently slice away tokens while naturallyExhausted was true,
+    // making wasCapped appear false. With the remaining-capacity limit, no overshoot.
+    const page1 = Array.from({ length: MAX_RELEASE_TOKENS }, (_, i) => makeToken(i + 1, i + 1))
+    const page2 = Array.from({ length: MAX_RELEASE_TOKENS }, (_, i) =>
+      makeToken(MAX_RELEASE_TOKENS + i + 1, MAX_RELEASE_TOKENS + i + 1)
+    )
+    const page3 = Array.from({ length: MAX_RELEASE_TOKENS }, (_, i) =>
+      makeToken(2 * MAX_RELEASE_TOKENS + i + 1, 2 * MAX_RELEASE_TOKENS + i + 1)
+    )
+    // 4th request: limit = MINT_SPEC_MAX_SIZE - 3*MAX_RELEASE_TOKENS = 235
+    const remaining4 = MINT_SPEC_MAX_SIZE - 3 * MAX_RELEASE_TOKENS
+    const page4 = Array.from({ length: remaining4 }, (_, i) =>
+      makeToken(3 * MAX_RELEASE_TOKENS + i + 1, 3 * MAX_RELEASE_TOKENS + i + 1)
+    )
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ data: { tokens: { items: page1, offset: MAX_RELEASE_TOKENS } } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({ data: { tokens: { items: page2, offset: 2 * MAX_RELEASE_TOKENS } } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({ data: { tokens: { items: page3, offset: 3 * MAX_RELEASE_TOKENS } } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        // Server still has tokens beyond the cap (offset non-null → wasCapped should be true).
+        json: () =>
+          Promise.resolve({ data: { tokens: { items: page4, offset: MINT_SPEC_MAX_SIZE } } }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await fetchTokensByVendorSlug('feralfile', 'large-paged-release')
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(result.tokens).toHaveLength(MINT_SPEC_MAX_SIZE)
+    expect(result.wasCapped).toBe(true)
+
+    // Verify the 4th request used limit = remaining capacity (235), not MAX_RELEASE_TOKENS (255).
+    const body4 = JSON.parse(fetchMock.mock.calls[3][1].body as string)
+    expect(body4.variables.limit).toBe(remaining4)
   })
 
   it('throws IndexerAPIError on HTTP failure', async () => {

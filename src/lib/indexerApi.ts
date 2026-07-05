@@ -400,18 +400,28 @@ export async function fetchTokensByVendorSlug(
   type TokenPage = { tokens: { items: IndexerToken[]; offset: number | null } }
   const allTokens: IndexerToken[] = []
   let pageOffset: number | null = null
+  // Track whether the loop exited because the server had no more pages (true)
+  // vs. because the client hit MINT_SPEC_MAX_SIZE (false). We cannot rely on
+  // allTokens.length >= MINT_SPEC_MAX_SIZE after the loop because a release
+  // with exactly MINT_SPEC_MAX_SIZE indexed tokens will also satisfy that
+  // condition even though we got all of them — that would be a false cap.
+  let naturallyExhausted = false
   while (allTokens.length < MINT_SPEC_MAX_SIZE) {
     const page: TokenPage = await graphqlRequest<TokenPage>(
       TOKENS_BY_VENDOR_SLUG_QUERY,
       { vendor, slug, limit: MAX_RELEASE_TOKENS, offset: pageOffset }
     )
     allTokens.push(...page.tokens.items)
-    if (page.tokens.offset == null || page.tokens.items.length === 0) break
+    if (page.tokens.offset == null || page.tokens.items.length === 0) {
+      naturallyExhausted = true
+      break
+    }
     pageOffset = page.tokens.offset
   }
   const tokens = allTokens.slice(0, MINT_SPEC_MAX_SIZE)
-  // Natural exhaustion: loop broke because offset was null, not because we reached the cap.
-  const wasCapped = allTokens.length >= MINT_SPEC_MAX_SIZE
+  // wasCapped is true only when the loop exited via the while condition (cap hit),
+  // not when it broke because the server returned a null offset (natural exhaustion).
+  const wasCapped = !naturallyExhausted
   return { tokens, wasCapped }
 }
 

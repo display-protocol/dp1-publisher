@@ -458,8 +458,22 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
         }
       }
     } catch {
-      // Non-fatal: the user can still proceed with whatever tokens are loaded.
-      setIndexing(initialIndexingState)
+      // The final refresh failed after indexing completed. The tokens that appeared
+      // during Phase 2 polling are already in the indexer, but loaded.tokens and
+      // gapMints are now stale (they reflect the pre-indexing state). Surface an
+      // explicit error so the curator knows to reload rather than silently seeing
+      // an unchanged gap count and re-submitting the same indexing job.
+      //
+      // Note: a focused test for this path requires fake timers to drive Phase 1 + Phase 2
+      // polling to completion first, which is deferred alongside other async state-machine
+      // coverage. The behavior is verified manually and the fix is straightforward.
+      setIndexing({
+        ...initialIndexingState,
+        phase: 'failed',
+        errorMessage:
+          'Indexing completed but the token list could not be refreshed. ' +
+          'Click "Load series" to reload the latest tokens.',
+      })
     }
   }
 

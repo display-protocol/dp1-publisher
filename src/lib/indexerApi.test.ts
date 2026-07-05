@@ -248,6 +248,24 @@ describe('fetchTokensByVendorSlug — no mint spec (paginated)', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it('returns wasCapped false for a release with exactly MINT_SPEC_MAX_SIZE tokens and offset null', async () => {
+    // Boundary: a release with exactly 1000 indexed tokens returns offset:null on the first
+    // (and only) page. Previously allTokens.length >= MINT_SPEC_MAX_SIZE would have
+    // incorrectly set wasCapped:true here. The naturallyExhausted sentinel fixes this.
+    const exactTokens = Array.from({ length: MINT_SPEC_MAX_SIZE }, (_, i) => makeToken(i + 1, i + 1))
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ data: { tokens: { items: exactTokens, offset: null } } }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await fetchTokensByVendorSlug('feralfile', 'exact-release')
+    expect(result.tokens).toHaveLength(MINT_SPEC_MAX_SIZE)
+    expect(result.wasCapped).toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('throws IndexerAPIError on HTTP failure', async () => {
     vi.stubGlobal('fetch', mockFetch({}, false, 500))
 

@@ -515,12 +515,17 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
   // but only when the shortfall is due to the server, not the client cap.
   const partialMintSet = !mintSpec && !wasCapped && totalMints != null && fetchedCount < totalMints
 
-  const loadDisabled = phase === 'loading'
+  // indexingActive must be derived before loadDisabled so the form/load controls
+  // can be disabled during active indexing phases. Leaving them enabled while
+  // indexing is running lets a curator inadvertently increment loadGenerationRef
+  // (which aborts polling) and then re-load the same gap — submitting duplicate
+  // triggerReleaseIndexing jobs for already-enqueued server-side work.
   const indexingActive =
     indexing.phase === 'triggering' ||
     indexing.phase === 'phase1' ||
     indexing.phase === 'phase2' ||
     indexing.phase === 'refreshing'
+  const loadDisabled = phase === 'loading' || indexingActive
 
   const gapExampleText =
     gapMints.length > 0

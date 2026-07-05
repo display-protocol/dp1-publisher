@@ -106,8 +106,6 @@ const PHASE1_POLL_MS = 3000
 const PHASE2_POLL_MS = 5000
 /** Max poll attempts before declaring a timeout (Phase 1 and Phase 2 share this limit). */
 const MAX_POLL_ATTEMPTS = 60
-/** Consecutive Phase 2 polls with no new tokens before declaring a stall. */
-const PHASE2_STALL_THRESHOLD = 6
 
 function computeGapMints(mintSpec: MintSpec | null, tokens: IndexerToken[]): number[] {
   if (!mintSpec) return []
@@ -212,8 +210,11 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
       ])
       if (loadGenerationRef.current !== generation) return
 
-      // Proceed even when nothing is indexed yet — the preview will offer to trigger
-      // indexing when a mint spec is provided, or prompt the curator to enter one.
+      // Intentional: proceed even when resolveReleaseBySlug returns null (release unknown
+      // to the indexer). Curators need to be able to trigger indexing for a brand-new
+      // release before any tokens are indexed. The indexer validates the slug server-side
+      // when triggerReleaseIndexing is called — an invalid slug will produce an API error
+      // surfaced to the UI at that point, not at load time.
       const gapMints = computeGapMints(mintSpec, tokens)
       setLoaded({ release, tokens, mintSpec, gapMints })
       setPhase('loaded')
@@ -348,9 +349,10 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
     if (loadGenerationRef.current !== generation) return
 
     // Phase 2: poll token appearance for the gap mints.
+    // Phase 2 runs to MAX_POLL_ATTEMPTS regardless of progress rate.
+    // Stall detection was removed: slow fan-out (large releases, cross-chain latency)
+    // can have long stretches with no new tokens without indicating a real failure.
     setIndexing((prev) => ({ ...prev, phase: 'phase2' }))
-    let prevIndexedCount = 0
-    let stallCount = 0
     pollAttempts = 0
     // Tracks whether all gap mints appeared before the polling limit was reached.
     // A false exit means stall or timeout — the indexer may still be running.
@@ -382,13 +384,6 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
         break
       }
 
-      if (indexedSoFar === prevIndexedCount) {
-        stallCount++
-        if (stallCount >= PHASE2_STALL_THRESHOLD) break
-      } else {
-        stallCount = 0
-      }
-      prevIndexedCount = indexedSoFar
       pollAttempts++
     }
 
@@ -581,7 +576,8 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
               {fetchedCount === 0 && !mintSpec && !indexingActive && (
                 <p className="rounded-lg border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-sm text-blue-900 dark:text-blue-100">
                   No tokens found for this release. Enter mint numbers above and click{' '}
-                  <strong>Load series</strong> again to trigger indexing of specific mints.
+                  <strong>Load series</strong> again to identify gaps, then use the{' '}
+                  <strong>Index missing tokens</strong> button to start indexing.
                 </p>
               )}
 

@@ -18,7 +18,7 @@
  * changes vendor/slug mid-flight.
  */
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -153,6 +153,15 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
   const [adding, setAdding] = useState(false)
   const [confirmReplace, setConfirmReplace] = useState(false)
   const loadGenerationRef = useRef(0)
+  // mountedRef is set to false in the cleanup of the component's mount effect.
+  // The polling loops in handleIndexMissing check it via isStale() to stop
+  // issuing requests and dispatching state updates after the panel unmounts.
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   const resetLoaded = useCallback(() => {
     setLoaded(null)
@@ -294,6 +303,9 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
 
     const { gapMints } = loaded
     const generation = loadGenerationRef.current
+    // Combines the unmount guard (mountedRef) with the stale-generation guard so
+    // both cases are caught with one check throughout the async flow below.
+    const isStale = () => !mountedRef.current || loadGenerationRef.current !== generation
 
     // Phase: triggering
     setIndexing({ ...initialIndexingState, phase: 'triggering' })
@@ -302,12 +314,12 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
     try {
       batchResult = await triggerReleaseIndexingBatched(vendor, slug.trim(), gapMints)
     } catch (e) {
-      if (loadGenerationRef.current !== generation) return
+      if (isStale()) return
       const msg = e instanceof Error ? e.message : 'Failed to submit indexing job.'
       setIndexing({ ...initialIndexingState, phase: 'failed', errorMessage: msg })
       return
     }
-    if (loadGenerationRef.current !== generation) return
+    if (isStale()) return
 
     const { jobIds, submittedMints, partialError } = batchResult
     if (jobIds.length === 0) {
@@ -334,18 +346,18 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
     let pollAttempts = 0
     while (pollAttempts < MAX_POLL_ATTEMPTS) {
       await sleep(PHASE1_POLL_MS)
-      if (loadGenerationRef.current !== generation) return
+      if (isStale()) return
 
       let statuses: (IndexerJobStatus | null)[]
       try {
         statuses = await Promise.all(jobIds.map((id) => fetchJobStatus(id)))
       } catch (e) {
-        if (loadGenerationRef.current !== generation) return
+        if (isStale()) return
         const msg = e instanceof Error ? e.message : 'Failed to check job status.'
         setIndexing((prev) => ({ ...prev, phase: 'failed', errorMessage: msg }))
         return
       }
-      if (loadGenerationRef.current !== generation) return
+      if (isStale()) return
 
       // A null status means the job was not found — treat as terminal failure.
       const nullIdx = statuses.findIndex((s) => s === null)
@@ -385,7 +397,7 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
       }))
       return
     }
-    if (loadGenerationRef.current !== generation) return
+    if (isStale()) return
 
     // Phase 2: poll token appearance for submittedMints only (not the full gapMints).
     // Mints whose batches failed were never submitted to the indexer and cannot
@@ -403,7 +415,7 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
 
     while (pollAttempts < MAX_POLL_ATTEMPTS) {
       await sleep(PHASE2_POLL_MS)
-      if (loadGenerationRef.current !== generation) return
+      if (isStale()) return
 
       let freshTokens: IndexerToken[]
       try {
@@ -411,12 +423,12 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
           vendor, slug.trim(), submittedMints
         ))
       } catch (e) {
-        if (loadGenerationRef.current !== generation) return
+        if (isStale()) return
         const msg = e instanceof Error ? e.message : 'Failed to poll for indexed tokens.'
         setIndexing((prev) => ({ ...prev, phase: 'failed', errorMessage: msg }))
         return
       }
-      if (loadGenerationRef.current !== generation) return
+      if (isStale()) return
 
       const submittedSet = new Set(submittedMints)
       const indexedSoFar = freshTokens.filter(
@@ -432,7 +444,7 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
       pollAttempts++
     }
 
-    if (loadGenerationRef.current !== generation) return
+    if (isStale()) return
 
     // Re-fetch the full token set (original mintSpec) to rebuild loaded state,
     // regardless of whether Phase 2 succeeded or stalled/timed out.
@@ -445,7 +457,7 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
     try {
       const { tokens: refreshedTokens, wasCapped: refreshWasCapped } =
         await fetchTokensByVendorSlug(vendor, slug.trim(), loaded.mintSpec ?? undefined)
-      if (loadGenerationRef.current !== generation) return
+      if (isStale()) return
 
       const newGapMints = computeGapMints(loaded.mintSpec, refreshedTokens)
       const newCount = refreshedTokens.length - loaded.tokens.length
@@ -485,7 +497,7 @@ export default function SeriesExpander({ currentItemCount, onAdd }: SeriesExpand
       // gapMints are now stale (they reflect the pre-indexing state). Surface an
       // explicit error so the curator knows to reload rather than silently seeing
       // an unchanged gap count and re-submitting the same indexing job.
-      if (loadGenerationRef.current !== generation) return
+      if (isStale()) return
       setIndexing({
         ...initialIndexingState,
         phase: 'failed',

@@ -13,6 +13,7 @@
 
 import { entityWire } from '@/lib/dp1EntityWire'
 import { stripSignatureFields } from '@/lib/signing'
+import { generateSlug } from '@/lib/utils'
 import type { Entity, Playlist } from '@/types/dp1'
 
 // ----------------------------------------------------------------------------
@@ -259,6 +260,19 @@ export function playlistUnsignedPayloadForSigning(p: Playlist): Record<string, u
       delete out[key]
     }
   }
+
+  // Step 5: default the slug, mirroring channelUnsignedPayloadForSigning and
+  // playlistGroupUnsignedPayloadForSigning. The composition form runs
+  // generateSlug itself, but the review-and-sign paste path does not — without
+  // this a pasted playlist would publish with whatever slug (or none) the
+  // author happened to include and hit the feed's global slug namespace
+  // uncontrolled. generateSlug is idempotent for a document that already
+  // carries a slug (it slugifies and returns it), so form-tab and edit-tab
+  // documents keep their existing URL.
+  const titleForSlug = typeof out.title === 'string' ? out.title : ''
+  const idForSlug = typeof out.id === 'string' ? out.id : ''
+  const existingSlug = typeof out.slug === 'string' ? out.slug : undefined
+  out.slug = generateSlug(titleForSlug, idForSlug, existingSlug)
 
   return out
 }

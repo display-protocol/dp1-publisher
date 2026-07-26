@@ -309,6 +309,36 @@ describe('playlistUnsignedPayloadForSigning', () => {
     expect(rm.itemsPath).toBe('data')
   })
 
+  // Slug defaulting — the review-and-sign paste path never runs the form's
+  // generateSlug, so the payload builder must default it the way the channel
+  // and playlist-group builders do (else pasted playlists publish slug-less).
+  it('generates a collision-resistant slug from title + id when none is provided', () => {
+    const playlist: Playlist = {
+      ...minimalPlaylist,
+      id: 'abcd1234-5678-90ab-cdef-1234567890ab',
+      title: 'Living Code',
+    }
+    delete (playlist as { slug?: string }).slug
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    expect(payload.slug).toBe('living-code-abcd1234')
+  })
+
+  it('preserves (and slugifies) an author-provided slug — idempotent, so edits keep their URL', () => {
+    const playlist: Playlist = {
+      ...minimalPlaylist,
+      id: 'abcd1234-5678-90ab-cdef-1234567890ab',
+      slug: 'living-code-abcd1234',
+    }
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    expect(payload.slug).toBe('living-code-abcd1234')
+  })
+
+  it('falls back to a title-only slug when there is no id yet (no trailing hyphen)', () => {
+    // minimalPlaylist has no id — the slug must not be "test-playlist-".
+    const payload = playlistUnsignedPayloadForSigning(minimalPlaylist)
+    expect(payload.slug).toBe('test-playlist')
+  })
+
   it('should strip signatures array', () => {
     const playlist: Playlist = {
       ...minimalPlaylist,

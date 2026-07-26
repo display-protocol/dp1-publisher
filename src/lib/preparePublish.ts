@@ -148,6 +148,22 @@ export function preparePlaylistForPublish(
   // is derived from it, so it can't drift from what was signed except in the
   // intentional PATCH omissions below.
   const signedBytes = playlistUnsignedPayloadForSigning(canonical)
+
+  // The signer defaults the slug (generateSlug) when the document lacks one —
+  // the review-and-sign paste path never runs the form's slug generation.
+  // Mirror the resolved slug back onto the typed document so the review
+  // summary shows the final feed URL, and tell the user when we filled it in.
+  const resolvedSlug = signedBytes.slug
+  if (typeof resolvedSlug === 'string') {
+    if (!canonical.slug?.trim()) {
+      toasts.push({
+        title: 'Slug set automatically',
+        description: `This playlist will publish as "${resolvedSlug}". Future updates keep the same URL.`,
+      })
+    }
+    canonical = { ...canonical, slug: resolvedSlug }
+  }
+
   const wireBody: Record<string, unknown> = { ...signedBytes }
   if (base !== undefined) {
     // PATCH: id is in the URL path, created is immutable.

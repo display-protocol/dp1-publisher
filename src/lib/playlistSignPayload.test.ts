@@ -80,6 +80,159 @@ describe('playlistUnsignedPayloadForSigning', () => {
     expect(display.scaling).toBe('fit')
   })
 
+  // Issue #4 regression guards: whitelisting must reach every typed nesting
+  // level, not stop at the first. These shapes were the remaining gaps after
+  // PR #2's top-level and first-level passes. Expected bytes mirror dp1-go's
+  // typed marshal exactly (value-typed `omitempty` fields drop "", false, and
+  // empty slices) — the feed re-marshals before verifying, so anything else
+  // is a guaranteed signature failure, not a style choice.
+  it('drops unknown fields inside items[i].display.interaction.mouse (issue #4)', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      items: [
+        {
+          source: 'https://example.com/v.m3u8',
+          display: {
+            interaction: {
+              keyboard: ['KeyW'],
+              mouse: { click: true, drag: false, extra: 'x' },
+            },
+          },
+        },
+      ],
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const display = (payload.items as Array<{ display: Record<string, unknown> }>)[0].display
+    const interaction = display.interaction as Record<string, unknown>
+    const mouse = interaction.mouse as Record<string, unknown>
+    expect(mouse).not.toHaveProperty('extra')
+    expect(mouse.click).toBe(true)
+    // MousePrefs bools are value-typed omitempty in dp1-go: `false` is absent
+    // from the feed's re-marshal and must be absent from the signed bytes.
+    expect(mouse).not.toHaveProperty('drag')
+    expect(interaction.keyboard).toEqual(['KeyW'])
+  })
+
+  it('re-marshals an all-false mouse as {} and drops an empty keyboard array (Go omitempty)', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      items: [
+        {
+          source: 'https://example.com/v.m3u8',
+          display: {
+            interaction: { keyboard: [], mouse: { click: false, hover: false } },
+          },
+        },
+      ],
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const display = (payload.items as Array<{ display: Record<string, unknown> }>)[0].display
+    const interaction = display.interaction as Record<string, unknown>
+    // `[]string omitempty` → empty keyboard is gone entirely.
+    expect(interaction).not.toHaveProperty('keyboard')
+    // Mouse pointer is non-nil on the feed side → `{}` survives, empty.
+    expect(interaction.mouse).toEqual({})
+  })
+
+  it('passes engineVersion through as an open dictionary and whitelists frameHash (issue #4)', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      items: [
+        {
+          source: 'https://example.com/v.m3u8',
+          repro: {
+            engineVersion: { chromium: '131.0', servo: '0.9' },
+            seed: '0xabc',
+            frameHash: { sha256: 'a'.repeat(64), tool: 'capture-bot', phash: '' },
+          },
+        },
+      ],
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const repro = (payload.items as Array<{ repro: Record<string, unknown> }>)[0].repro
+    // ReproBlock.EngineVersion is map[string]string — an intentional open
+    // dictionary: arbitrary engine names must survive verbatim.
+    expect(repro.engineVersion).toEqual({ chromium: '131.0', servo: '0.9' })
+    const frameHash = repro.frameHash as Record<string, unknown>
+    expect(frameHash).not.toHaveProperty('tool')
+    // `string omitempty` → empty phash is dropped from the signed bytes.
+    expect(frameHash).not.toHaveProperty('phash')
+    expect(frameHash.sha256).toBe('a'.repeat(64))
+    expect(repro.seed).toBe('0xabc')
+  })
+
+  it('drops empty-map engineVersion, empty seed, and empty assetsSHA256 (Go omitempty)', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      items: [
+        {
+          source: 'https://example.com/v.m3u8',
+          repro: { engineVersion: {}, seed: '', assetsSHA256: [] },
+        },
+      ],
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const repro = (payload.items as Array<{ repro: Record<string, unknown> }>)[0].repro
+    expect(repro).not.toHaveProperty('engineVersion')
+    expect(repro).not.toHaveProperty('seed')
+    expect(repro).not.toHaveProperty('assetsSHA256')
+  })
+
+  it('drops unknown fields inside items[i].provenance.dependencies[] (issue #4)', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      items: [
+        {
+          source: 'https://example.com/v.m3u8',
+          provenance: {
+            type: 'onChain',
+            contract: { chain: 'evm', address: '0x1' },
+            dependencies: [
+              {
+                chain: 'evm',
+                standard: 'erc721',
+                uri: 'https://dep.example',
+                extra: 'y',
+                // `string omitempty` on ProvenanceDep fields → empty strings
+                // must not reach the signed bytes.
+              },
+              { chain: '', standard: 'fa2', uri: '' },
+              'not-an-object',
+            ],
+          },
+        },
+      ],
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const prov = (payload.items as Array<{ provenance: Record<string, unknown> }>)[0]
+      .provenance
+    const deps = prov.dependencies as Array<Record<string, unknown>>
+    expect(deps).toHaveLength(2)
+    expect(deps[0]).not.toHaveProperty('extra')
+    expect(deps[0]).toEqual({
+      chain: 'evm',
+      standard: 'erc721',
+      uri: 'https://dep.example',
+    })
+    expect(deps[1]).toEqual({ standard: 'fa2' })
+  })
+
+  it('drops an empty dependencies array entirely ([]ProvenanceDep omitempty)', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      items: [
+        {
+          source: 'https://example.com/v.m3u8',
+          provenance: { type: 'offChainURI', dependencies: [] },
+        },
+      ],
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const prov = (payload.items as Array<{ provenance: Record<string, unknown> }>)[0]
+      .provenance
+    expect(prov).not.toHaveProperty('dependencies')
+  })
+
   it('drops unknown fields inside defaults and defaults.display', () => {
     const playlist = {
       ...minimalPlaylist,
@@ -154,6 +307,36 @@ describe('playlistUnsignedPayloadForSigning', () => {
     const rm = dq.responseMapping as Record<string, unknown>
     expect(rm).not.toHaveProperty('extraInRM')
     expect(rm.itemsPath).toBe('data')
+  })
+
+  // Slug defaulting — the review-and-sign paste path never runs the form's
+  // generateSlug, so the payload builder must default it the way the channel
+  // and playlist-group builders do (else pasted playlists publish slug-less).
+  it('generates a collision-resistant slug from title + id when none is provided', () => {
+    const playlist: Playlist = {
+      ...minimalPlaylist,
+      id: 'abcd1234-5678-90ab-cdef-1234567890ab',
+      title: 'Living Code',
+    }
+    delete (playlist as { slug?: string }).slug
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    expect(payload.slug).toBe('living-code-abcd1234')
+  })
+
+  it('preserves (and slugifies) an author-provided slug — idempotent, so edits keep their URL', () => {
+    const playlist: Playlist = {
+      ...minimalPlaylist,
+      id: 'abcd1234-5678-90ab-cdef-1234567890ab',
+      slug: 'living-code-abcd1234',
+    }
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    expect(payload.slug).toBe('living-code-abcd1234')
+  })
+
+  it('falls back to a title-only slug when there is no id yet (no trailing hyphen)', () => {
+    // minimalPlaylist has no id — the slug must not be "test-playlist-".
+    const payload = playlistUnsignedPayloadForSigning(minimalPlaylist)
+    expect(payload.slug).toBe('test-playlist')
   })
 
   it('should strip signatures array', () => {

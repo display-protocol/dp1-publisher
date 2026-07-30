@@ -42,14 +42,8 @@ export const sectionTabButtonInactiveClass =
 export const entityNavListClass =
   "flex h-auto w-full max-w-xl items-end justify-start gap-0 rounded-none border-b border-border/50 bg-transparent p-0"
 
-export const entityNavList2Class =
-  "flex h-auto w-full max-w-md items-end justify-start gap-0 rounded-none border-b border-border/50 bg-transparent p-0"
-
 export const entityNavTriggerCompactClass =
   "h-auto flex-1 gap-1.5 rounded-none border-b-2 border-transparent bg-transparent px-2 pb-3 pt-1 text-[11px] font-medium text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none sm:gap-2 sm:px-4 sm:text-[13px]"
-
-export const entityNavTriggerWideClass =
-  "h-auto flex-1 gap-2 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-3 pt-1 text-[13px] font-medium text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
 
 /** Level-3 editor mode — in-form pill toggle (Form / JSON).
  *  Uses rounded-full (nav control), not rounded-xl (inputs/buttons). */

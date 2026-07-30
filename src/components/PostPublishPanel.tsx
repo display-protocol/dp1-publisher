@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 
-export type PostPublishKind = 'playlist' | 'playlist-group' | 'channel'
+export type PostPublishKind = 'playlist' | 'channel'
 export type PostPublishMode = 'create' | 'update'
 export type ExistingChannel = { id: string; title: string }
 export type PublishReceipt = { title: string; description: string }
@@ -21,10 +21,6 @@ const KIND_LABEL: Record<
   playlist: {
     create: 'Playlist published',
     update: 'Playlist updated',
-  },
-  'playlist-group': {
-    create: 'Playlist group published',
-    update: 'Playlist group updated',
   },
   channel: {
     create: 'Channel published',
@@ -155,11 +151,6 @@ export default function PostPublishPanel({
                 Saved to your published list in this browser. Paste this URL
                 into a channel's <code className="font-mono">playlists</code>{' '}
                 array to reference it.
-              </>
-            ) : kind === 'playlist-group' ? (
-              <>
-                Saved to your published list in this browser. Share the URL or
-                fetch it from the feed to reference this group.
               </>
             ) : (
               <>

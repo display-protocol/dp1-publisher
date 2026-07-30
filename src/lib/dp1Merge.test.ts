@@ -7,13 +7,11 @@
 import { describe, it, expect } from 'vitest'
 import {
   mergePlaylistForPatch,
-  mergePlaylistGroupForPatch,
   mergeChannelForPatch,
 } from '@/lib/dp1Merge'
 import { playlistWithMetadata } from '@/test/fixtures/playlist'
 import { channelWithMetadata } from '@/test/fixtures/channel'
-import { playlistGroupWithMetadata } from '@/test/fixtures/playlistGroup'
-import type { Playlist, Channel, PlaylistGroup } from '@/types/dp1'
+import type { Playlist, Channel } from '@/types/dp1'
 
 describe('mergePlaylistForPatch', () => {
   it('should preserve existing values when patch is empty', () => {
@@ -147,93 +145,6 @@ describe('mergePlaylistForPatch', () => {
     const existing = { ...playlistWithMetadata }
     const originalTitle = existing.title
     mergePlaylistForPatch(existing, { title: 'Modified' })
-    expect(existing.title).toBe(originalTitle)
-  })
-})
-
-describe('mergePlaylistGroupForPatch', () => {
-  it('should preserve existing values when patch is empty', () => {
-    const existing: PlaylistGroup = {
-      ...playlistGroupWithMetadata,
-      id: 'test-id',
-      created: '2024-01-01T00:00:00Z',
-    }
-    const result = mergePlaylistGroupForPatch(existing, {})
-    expect(result).toEqual(existing)
-  })
-
-  it('should update title when provided', () => {
-    const existing: PlaylistGroup = {
-      ...playlistGroupWithMetadata,
-      id: 'test-id',
-      created: '2024-01-01T00:00:00Z',
-    }
-    const result = mergePlaylistGroupForPatch(existing, { title: 'New Title' })
-    expect(result.title).toBe('New Title')
-  })
-
-  it('should update slug when provided', () => {
-    const existing: PlaylistGroup = {
-      ...playlistGroupWithMetadata,
-      id: 'test-id',
-      created: '2024-01-01T00:00:00Z',
-    }
-    const result = mergePlaylistGroupForPatch(existing, { slug: 'new-slug' })
-    expect(result.slug).toBe('new-slug')
-  })
-
-  it('should replace playlists array when provided', () => {
-    const existing: PlaylistGroup = {
-      ...playlistGroupWithMetadata,
-      id: 'test-id',
-      created: '2024-01-01T00:00:00Z',
-    }
-    const newPlaylists = ['https://example.com/new1', 'https://example.com/new2']
-    const result = mergePlaylistGroupForPatch(existing, { playlists: newPlaylists })
-    expect(result.playlists).toBe(newPlaylists)
-  })
-
-  it('should allow setting curator to empty string', () => {
-    const existing: PlaylistGroup = {
-      ...playlistGroupWithMetadata,
-      id: 'test-id',
-      created: '2024-01-01T00:00:00Z',
-      curator: 'did:pkh:eip155:1:0xold',
-    }
-    const result = mergePlaylistGroupForPatch(existing, { curator: '' })
-    expect(result.curator).toBe('')
-  })
-
-  it('should allow setting summary to empty string', () => {
-    const existing: PlaylistGroup = {
-      ...playlistGroupWithMetadata,
-      id: 'test-id',
-      created: '2024-01-01T00:00:00Z',
-      summary: 'Old summary',
-    }
-    const result = mergePlaylistGroupForPatch(existing, { summary: '' })
-    expect(result.summary).toBe('')
-  })
-
-  it('should allow setting coverImage to empty string', () => {
-    const existing: PlaylistGroup = {
-      ...playlistGroupWithMetadata,
-      id: 'test-id',
-      created: '2024-01-01T00:00:00Z',
-      coverImage: 'https://old.com/cover.jpg',
-    }
-    const result = mergePlaylistGroupForPatch(existing, { coverImage: '' })
-    expect(result.coverImage).toBe('')
-  })
-
-  it('should not mutate the original group', () => {
-    const existing: PlaylistGroup = {
-      ...playlistGroupWithMetadata,
-      id: 'test-id',
-      created: '2024-01-01T00:00:00Z',
-    }
-    const originalTitle = existing.title
-    mergePlaylistGroupForPatch(existing, { title: 'Modified' })
     expect(existing.title).toBe(originalTitle)
   })
 })
@@ -384,20 +295,6 @@ describe('merge helpers - undefined vs null semantics', () => {
     expect(withUndefined.summary).toBe('Original')
 
     const withEmpty = mergePlaylistForPatch(existing, { summary: '' })
-    expect(withEmpty.summary).toBe('')
-  })
-
-  it('playlistGroup: undefined in patch preserves existing, explicit value replaces', () => {
-    const existing: PlaylistGroup = {
-      ...playlistGroupWithMetadata,
-      id: 'test-id',
-      created: '2024-01-01T00:00:00Z',
-      summary: 'Original',
-    }
-    const withUndefined = mergePlaylistGroupForPatch(existing, { summary: undefined })
-    expect(withUndefined.summary).toBe('Original')
-
-    const withEmpty = mergePlaylistGroupForPatch(existing, { summary: '' })
     expect(withEmpty.summary).toBe('')
   })
 

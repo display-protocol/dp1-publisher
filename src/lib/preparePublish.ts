@@ -1,7 +1,7 @@
 /**
  * Single chokepoint between an authored document and the publish surface.
  *
- * All publish forms (Playlist, PlaylistGroup, Channel) and both modes (create,
+ * All publish forms (Playlist, Channel) and both modes (create,
  * edit) end up needing the same core pipeline:
  *
  *   raw document → merge with base (edit only) → [strip extensions (playlist, off)] →
@@ -14,24 +14,20 @@
  * callers cannot independently shape one without the other.
  */
 
-import type { Channel, Playlist, PlaylistGroup } from '@/types/dp1'
+import type { Channel, Playlist } from '@/types/dp1'
 import {
   mergeChannelForPatch,
   mergePlaylistForPatch,
-  mergePlaylistGroupForPatch,
 } from '@/lib/dp1Merge'
 import { stripPlaylistExtensionFields } from '@/lib/dp1ExtensionPolicy'
 import {
   ensureChannelWalletPublisher,
-  ensurePlaylistGroupWalletCurator,
   ensurePlaylistWalletCurator,
   normalizeChannelCurators,
 } from '@/lib/dp1WalletSigner'
 import { validateChannelFields } from '@/lib/channelValidation'
-import { validatePlaylistGroupFields } from '@/lib/playlistGroupValidation'
 import { playlistUnsignedPayloadForSigning } from '@/lib/playlistSignPayload'
 import { channelUnsignedPayloadForSigning } from '@/lib/channelSignPayload'
-import { playlistGroupUnsignedPayloadForSigning } from '@/lib/playlistGroupSignPayload'
 
 /** Shape compatible with the `useToast` hook's `toast({...})` call. */
 export interface ToastInput {
@@ -240,61 +236,3 @@ export function prepareChannelForPublish(
 // Playlist group
 // ----------------------------------------------------------------------------
 
-export interface PreparePlaylistGroupArgs {
-  rawDocument: PlaylistGroup
-  walletDID: string
-  base?: PlaylistGroup
-}
-
-export function preparePlaylistGroupForPublish(
-  args: PreparePlaylistGroupArgs
-): PrepareResult<PlaylistGroup> {
-  const { rawDocument, walletDID, base } = args
-  const toasts: ToastInput[] = []
-
-  // Step 1: merge or pass through.
-  let merged: PlaylistGroup = base
-    ? mergePlaylistGroupForPatch(base, rawDocument)
-    : rawDocument
-
-  // Step 2: ensure curator matches the connected wallet (single string, like
-  // channel publisher — replace when missing or mismatched).
-  const ensured = ensurePlaylistGroupWalletCurator(merged, walletDID)
-  merged = ensured.group
-  if (ensured.updated) {
-    toasts.push({
-      title: ensured.previousCurator ? 'Curator updated' : 'Curator added',
-      description: ensured.previousCurator
-        ? `Curator set to your connected wallet (was ${ensured.previousCurator.slice(0, 32)}…).`
-        : 'No curator declared — signing with your connected wallet as curator.',
-    })
-  }
-
-  // Step 3: validate (Form-tab and JSON-tab share one gate).
-  const fieldErrors = validatePlaylistGroupFields(merged)
-  if (fieldErrors.length > 0) {
-    return { validationErrors: fieldErrors.map((e) => e.message) }
-  }
-
-  // Step 4: canonicalize ONCE. Slug auto-generation lives here; wireBody is
-  // derived from signedBytes so PATCH cannot send a different slug than signed.
-  let signedBytes: Record<string, unknown>
-  try {
-    signedBytes = playlistGroupUnsignedPayloadForSigning(merged)
-  } catch (e) {
-    return {
-      validationErrors: [
-        e instanceof Error
-          ? e.message
-          : 'Playlist group could not be canonicalized for signing.',
-      ],
-    }
-  }
-  const wireBody: Record<string, unknown> = { ...signedBytes }
-  if (base !== undefined) {
-    delete wireBody.id
-    delete wireBody.created
-  }
-
-  return { signedPayload: merged, signedBytes, wireBody, toasts }
-}

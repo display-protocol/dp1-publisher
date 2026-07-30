@@ -24,7 +24,6 @@ import {
 import {
   prepareChannelForPublish,
   preparePlaylistForPublish,
-  preparePlaylistGroupForPublish,
   type PrepareResult,
   type ToastInput,
 } from '@/lib/preparePublish'
@@ -36,25 +35,20 @@ import {
 import {
   FeedAPIError,
   feedChannelResourceUrl,
-  feedPlaylistGroupResourceUrl,
   feedPlaylistResourceUrl,
   friendlyPublishError,
   getChannel,
   getPlaylist,
-  getPlaylistGroup,
   patchChannel,
   patchPlaylist,
-  patchPlaylistGroup,
   publishChannel,
   publishPlaylist,
-  publishPlaylistGroup,
 } from '@/lib/api'
 import {
   recordPublishedChannel,
   recordPublishedPlaylist,
-  recordPublishedPlaylistGroup,
 } from '@/lib/publishedStorage'
-import type { Channel, Playlist, PlaylistGroup } from '@/types/dp1'
+import type { Channel, Playlist } from '@/types/dp1'
 
 type PreparedState =
   | { status: 'idle' }
@@ -106,13 +100,12 @@ interface PublishedDoc {
  */
 async function preflightExisting(
   reviewed: ReviewedDp1Document
-): Promise<Playlist | Channel | PlaylistGroup | undefined> {
+): Promise<Playlist | Channel | undefined> {
   const id = reviewed.document.id
   if (!id) return undefined
   try {
     if (reviewed.kind === 'playlist') return await getPlaylist(id)
-    if (reviewed.kind === 'channel') return await getChannel(id)
-    return await getPlaylistGroup(id)
+    return await getChannel(id)
   } catch (e) {
     if (e instanceof FeedAPIError && e.status === 404) return undefined
     return undefined
@@ -134,7 +127,7 @@ type PreparedOk = {
 function prepareReviewed(
   reviewed: ReviewedDp1Document,
   walletDID: string,
-  base: Playlist | Channel | PlaylistGroup | undefined,
+  base: Playlist | Channel | undefined,
   extensionsEnabled: boolean
 ): PreparedOk | { validationErrors: string[] } {
   const ok = <T,>(
@@ -161,30 +154,19 @@ function prepareReviewed(
       (p) => ({ kind: 'playlist', document: p })
     )
   }
-  if (reviewed.kind === 'channel') {
-    return ok(
-      prepareChannelForPublish({
-        rawDocument: reviewed.document,
-        walletDID,
-        base: base as Channel | undefined,
-      }),
-      (c) => ({ kind: 'channel', document: c })
-    )
-  }
   return ok(
-    preparePlaylistGroupForPublish({
+    prepareChannelForPublish({
       rawDocument: reviewed.document,
       walletDID,
-      base: base as PlaylistGroup | undefined,
+      base: base as Channel | undefined,
     }),
-    (g) => ({ kind: 'playlist-group', document: g })
+    (c) => ({ kind: 'channel', document: c })
   )
 }
 
 const OVERWRITE_NOUN = {
   playlist: 'playlist',
   channel: 'channel',
-  'playlist-group': 'playlist group',
 } as const
 
 /**
@@ -316,20 +298,13 @@ export default function ReviewAndSign() {
         recordPublishedPlaylist(address, result)
         feedUrl = feedPlaylistResourceUrl(result.slug?.trim() || result.id || '')
         title = result.title?.trim() || 'Untitled playlist'
-      } else if (signed.kind === 'channel') {
+      } else {
         const result = isUpdate
           ? await patchChannel(id, body)
           : await publishChannel(body as unknown as Channel)
         recordPublishedChannel(address, result)
         feedUrl = feedChannelResourceUrl(result.slug?.trim() || result.id || '')
         title = result.title?.trim() || 'Untitled channel'
-      } else {
-        const result = isUpdate
-          ? await patchPlaylistGroup(id, body)
-          : await publishPlaylistGroup(body)
-        recordPublishedPlaylistGroup(address, result)
-        feedUrl = feedPlaylistGroupResourceUrl(result.slug?.trim() || result.id || '')
-        title = result.title?.trim() || 'Untitled playlist group'
       }
 
       setPublishedDoc({

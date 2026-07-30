@@ -37,11 +37,6 @@ vi.mock('./PlaylistForm', () => ({
   ),
 }))
 
-vi.mock('./PlaylistGroupForm', () => ({
-  __esModule: true,
-  default: () => <div data-testid="playlist-group-form" />,
-}))
-
 vi.mock('./ChannelForm', () => ({
   __esModule: true,
   default: (props: { initialPlaylistsText?: string }) => (

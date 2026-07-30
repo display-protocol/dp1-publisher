@@ -63,13 +63,10 @@ vi.mock('@/lib/api', async () => {
     ...actual,
     getPlaylist: vi.fn(),
     getChannel: vi.fn(),
-    getPlaylistGroup: vi.fn(),
     publishPlaylist: vi.fn(),
     publishChannel: vi.fn(),
-    publishPlaylistGroup: vi.fn(),
     patchPlaylist: vi.fn(),
     patchChannel: vi.fn(),
-    patchPlaylistGroup: vi.fn(),
   }
 })
 

@@ -27,7 +27,7 @@ When changing HTTP usage, payloads, pagination, caching headers, or error handli
 
 ## Resources (shape)
 
-Plural segments mirror the server (`playlists`, `playlist-groups`, `channels`, `playlist-items`; registry routes as implemented). Kebab-case path segments stay stable with server routes.
+Plural segments mirror the server (`playlists`, `channels`, `playlist-items`; registry routes as implemented). The feed also exposes `playlist-groups`, which this app deliberately does not consume — channels supersede them and nothing publishes groups. Kebab-case path segments stay stable with server routes.
 
 ## JSON & listings
 

@@ -8,7 +8,7 @@
  * it cannot match the on-the-wire signature to a declared identity.
  */
 
-import type { Channel, Entity, Playlist, PlaylistGroup } from '@/types/dp1'
+import type { Channel, Entity, Playlist } from '@/types/dp1'
 
 export interface CuratorEnsureResult {
   playlist: Playlist
@@ -158,41 +158,3 @@ export function ensureChannelWalletPublisher(
   }
 }
 
-export interface GroupCuratorEnsureResult {
-  group: PlaylistGroup
-  /** True when `curator` was added or replaced with the wallet DID. */
-  updated: boolean
-  /** Previous `curator` string, if any (for toasts). */
-  previousCurator?: string
-}
-
-/**
- * Ensure `group.curator` matches the connected wallet's DID.
- *
- * Playlist groups declare a single curator string (not an array). Like
- * channel publisher repair, the right behavior is *replace the curator* when
- * missing or mismatched — e.g. a group authored under `did:key` via
- * `dp1-cli` can be re-signed under the partner's wallet `did:pkh` without
- * hand-editing the JSON.
- *
- * No-op when the curator already matches the wallet.
- */
-export function ensurePlaylistGroupWalletCurator(
-  group: PlaylistGroup,
-  walletDID: string
-): GroupCuratorEnsureResult {
-  const previousCurator =
-    typeof group.curator === 'string' && group.curator.trim()
-      ? group.curator.trim()
-      : undefined
-
-  if (previousCurator === walletDID) {
-    return { group: { ...group, curator: walletDID }, updated: false, previousCurator }
-  }
-
-  return {
-    group: { ...group, curator: walletDID },
-    updated: true,
-    previousCurator,
-  }
-}

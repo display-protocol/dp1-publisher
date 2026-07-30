@@ -1,5 +1,5 @@
 /**
- * Shared validation for `playlists[]` URI lists on channel and playlist-group
+ * Shared validation for `playlists[]` URI lists on channel
  * documents. Both resources carry the same feed playlist references; rules
  * must stay identical across Form-tab, JSON-tab, and preparePublish paths.
  */

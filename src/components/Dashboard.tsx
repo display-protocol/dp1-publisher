@@ -129,6 +129,16 @@ export default function Dashboard() {
                   ? 'Publish core playlists and playlist groups, and channel documents when extensions are on.'
                   : 'Publish core DP-1 playlists and playlist groups. Channel UI is hidden when extensions are off for this deployment.'}
               </p>
+              <p className="text-sm text-muted-foreground">
+                Already have a signed-ready document from ff-cli or an agent?{' '}
+                <a
+                  href="#/sign"
+                  className="text-foreground underline underline-offset-4 hover:opacity-70"
+                >
+                  Review &amp; sign it
+                </a>
+                .
+              </p>
               {extensionsLoading ? (
                 <p className="text-xs text-muted-foreground">Checking feed extension settings…</p>
               ) : null}

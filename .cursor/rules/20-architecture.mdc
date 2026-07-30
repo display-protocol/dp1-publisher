@@ -21,7 +21,7 @@ Flow (conceptual): `browser (React)` → **`src/lib/api.ts`** → **feed HTTP AP
 | Area | Location | Role |
 |------|----------|------|
 | **Entry / shell** | `src/main.tsx`, `src/App.tsx` | React root, wagmi/query providers |
-| **Screens** | `src/components/` | Compose publish flows (`Dashboard`, forms) |
+| **Screens** | `src/components/` | Compose publish flows (`Dashboard`, forms); `ReviewAndSign` (`#/sign` hash route) signs already-composed documents via `lib/reviewDocument.ts` + `preparePublish` |
 | **Feed client** | `src/lib/api.ts` | Paths, verbs, typed errors (`FeedAPIError`) |
 | **Signing** | `src/lib/signing.ts`, payloads | Strip signatures → JCS → digest → EIP-191 |
 | **Merge / wire helpers** | `src/lib/dp1Merge.ts`, `dp1EntityWire.ts` | Patch shapes aligned with server expectations |

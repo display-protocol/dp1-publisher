@@ -77,6 +77,17 @@ type PreparedState =
       mode: PostPublishMode
       /** What the pipeline adjusted beyond the pasted document (identity injection etc.). */
       receipts: ToastInput[]
+      /**
+       * The exact editor text these bytes were derived from. The page promises
+       * that you sign what you read, and everything upstream of this state is
+       * asynchronous: the editor feeds a 400 ms debounce, and the prepare
+       * effect then awaits a feed GET. Without an identity check at the sign
+       * boundary, edits made inside either window leave `prepared` holding the
+       * previous document while the editor shows the new one, and the click
+       * signs what is no longer on screen. Compare this against the live
+       * editor text rather than trusting timing.
+       */
+      sourceText: string
     }
 
 interface PublishedDoc {
@@ -215,9 +226,18 @@ export default function ReviewAndSign() {
 
   const reviewed = parseResult && 'doc' in parseResult ? parseResult.doc : null
 
+  // True while the editor holds text the pipeline has not caught up with. Both
+  // `reviewed` and `prepared` are derived from `settledJsonText`, so during
+  // this window every rendered summary describes the *previous* document.
+  const settling = jsonText !== settledJsonText
+
+  // Signing is allowed only against the text on screen. See `sourceText`.
+  const signable = prepared.status === 'ready' && prepared.sourceText === jsonText
+
   // Once the pipeline has run, summarize what will actually be signed (merged
-  // base + injected identity); before that, preview the parsed paste.
-  const summarySource = prepared.status === 'ready' ? prepared.signed : reviewed
+  // base + injected identity); before that, preview the parsed paste. While
+  // settling, show nothing rather than a summary of superseded text.
+  const summarySource = settling ? null : signable ? prepared.signed : reviewed
   const summary = useMemo(
     () => (summarySource ? describeReviewDocument(summarySource) : null),
     [summarySource]
@@ -261,12 +281,20 @@ export default function ReviewAndSign() {
         wireBody: prep.wireBody,
         mode: base ? 'update' : 'create',
         receipts: prep.toasts,
+        // `reviewed` is parsed from `settledJsonText`, so that is the text
+        // these bytes attest to.
+        sourceText: settledJsonText,
       })
     })()
-  }, [reviewed, address, extensionsEnabled])
+  }, [reviewed, settledJsonText, address, extensionsEnabled])
 
   const handleSignAndPublish = async () => {
     if (!walletClient || !address || prepared.status !== 'ready') return
+    // Refuse to sign bytes the editor has already moved past. The button is
+    // disabled in this state, so reaching here means the text changed between
+    // render and click; failing closed is the only safe answer on a page whose
+    // promise is that the signature covers what was read.
+    if (prepared.sourceText !== jsonText) return
     // Everything below reads from `prepared` only — the signed pair
     // (bytes ↔ document identity) stays atomic even if the editor text
     // changes mid-flight.
@@ -461,7 +489,9 @@ export default function ReviewAndSign() {
               </Card>
             ) : null}
 
-            {summary ? (
+            {/* `settling` keeps this card mounted through the debounce so the
+                withdrawn Sign button reads as "not yet" rather than vanishing. */}
+            {summary || settling ? (
               <Card className="border-border/50">
                 <CardHeader className="space-y-2 pb-4">
                   <CardTitle className="font-display text-xl font-normal tracking-tight">
@@ -479,6 +509,10 @@ export default function ReviewAndSign() {
                     <div className="flex justify-center py-2">
                       <WalletConnect />
                     </div>
+                  ) : settling ? (
+                    <p className="text-sm text-muted-foreground">
+                      Reading your edits…
+                    </p>
                   ) : prepared.status === 'preparing' ? (
                     <p className="text-sm text-muted-foreground">
                       Checking the feed and preparing the exact bytes you will sign…
@@ -488,7 +522,7 @@ export default function ReviewAndSign() {
                       <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
                       {prepared.message}
                     </p>
-                  ) : prepared.status === 'ready' ? (
+                  ) : signable && prepared.status === 'ready' ? (
                     <>
                       {prepared.mode === 'update' ? (
                         <p className="text-sm text-foreground">
@@ -517,7 +551,7 @@ export default function ReviewAndSign() {
                       <Button
                         type="button"
                         onClick={handleSignAndPublish}
-                        disabled={isPublishing}
+                        disabled={isPublishing || !signable}
                         className="gap-2 rounded-full"
                       >
                         <PenLine className="size-4" aria-hidden />

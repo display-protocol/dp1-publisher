@@ -277,4 +277,47 @@ describe('ReviewAndSign', () => {
       'publisher'
     )
   })
+
+  // The page's whole promise is that the signature covers what was read. Both
+  // stages upstream of `prepared` are asynchronous (400ms debounce, then a feed
+  // GET), so an edit landing inside either window used to leave a live Sign
+  // button wired to the previous document's bytes.
+  it('withdraws the sign button while the editor is ahead of the prepared bytes', async () => {
+    mockedApi.getPlaylist.mockRejectedValue(new apiModule.FeedAPIError('nf', 404))
+
+    render(<ReviewAndSign />)
+    pasteJson(pastedPlaylist)
+    await screen.findByRole('button', { name: /Sign & publish/i })
+
+    pasteJson({ ...pastedPlaylist, title: 'Edited Playlist' })
+
+    // Asserted synchronously and without waitFor on purpose: the unsafe window
+    // is the 400ms before the debounce fires, and any wait would let the page
+    // settle into a legitimately signable state and hide the regression.
+    expect(screen.getByText(/Reading your edits/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Sign & publish/i })).toBeNull()
+    expect(mockedSigning.signDocument).not.toHaveBeenCalled()
+    expect(mockedApi.publishPlaylist).not.toHaveBeenCalled()
+  })
+
+  it('signs the document in the editor, not the one it replaced', async () => {
+    mockedApi.getPlaylist.mockRejectedValue(new apiModule.FeedAPIError('nf', 404))
+    mockedApi.publishPlaylist.mockImplementation(async (p) => ({
+      ...(p as Record<string, unknown>),
+      slug: 'edited-playlist',
+    }))
+
+    render(<ReviewAndSign />)
+    pasteJson(pastedPlaylist)
+    await screen.findByRole('button', { name: /Sign & publish/i })
+
+    pasteJson({ ...pastedPlaylist, title: 'Edited Playlist' })
+
+    fireEvent.click(await screen.findByRole('button', { name: /Sign & publish/i }))
+    await waitFor(() => {
+      expect(mockedApi.publishPlaylist).toHaveBeenCalledTimes(1)
+    })
+    const body = mockedApi.publishPlaylist.mock.calls[0][0] as { title: string }
+    expect(body.title).toBe('Edited Playlist')
+  })
 })

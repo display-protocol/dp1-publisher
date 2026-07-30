@@ -73,8 +73,10 @@ export function normalizeChannelCurators(channel: Channel): Channel {
 
 export function ensurePlaylistWalletCurator(
   playlist: Playlist,
-  walletDID: string
+  walletDID: string,
+  walletName?: string
 ): CuratorEnsureResult {
+  const named = (walletName ?? '').trim()
   // Defensive: `parsePlaylistJson` only validates `title` and `items`, so an
   // imported playlist's `curators` can be any shape — object, null, array
   // with nulls, entries missing `name`, etc. Coerce to a clean Entity[] up
@@ -88,8 +90,13 @@ export function ensurePlaylistWalletCurator(
   const alreadyDeclared = validCurators.some((c) => c.key === walletDID)
 
   if (alreadyDeclared) {
+    // A typed attribution name fills an empty name on the wallet's own entry;
+    // it never overwrites a name the document already declares.
+    const curators = named
+      ? validCurators.map((c) => (c.key === walletDID && !c.name ? { ...c, name: named } : c))
+      : validCurators
     return {
-      playlist: { ...playlist, curators: validCurators },
+      playlist: { ...playlist, curators },
       injected: false,
       previousCount,
     }
@@ -98,7 +105,7 @@ export function ensurePlaylistWalletCurator(
   return {
     playlist: {
       ...playlist,
-      curators: [...validCurators, { name: '', key: walletDID, url: '' }],
+      curators: [...validCurators, { name: named, key: walletDID, url: '' }],
     },
     injected: true,
     previousCount,
@@ -126,8 +133,10 @@ export interface PublisherEnsureResult {
  */
 export function ensureChannelWalletPublisher(
   channel: Channel,
-  walletDID: string
+  walletDID: string,
+  walletName?: string
 ): PublisherEnsureResult {
+  const named = (walletName ?? '').trim()
   // Defensive against malformed JSON-imported publishers: `parseChannelJson`
   // only validates `title` and `playlists`, so `publisher` can arrive as a
   // non-object or carry non-string fields. Coerce up front so the helper
@@ -141,14 +150,31 @@ export function ensureChannelWalletPublisher(
     : {}
   const previousKey = typeof p.key === 'string' ? p.key : undefined
 
+  const existingName = typeof p.name === 'string' && p.name.trim() ? p.name : ''
+
   if (previousKey === walletDID) {
+    // Same fill-empty-only rule as playlist curators.
+    if (named && !existingName) {
+      return {
+        channel: {
+          ...channel,
+          publisher: {
+            name: named,
+            key: walletDID,
+            url: typeof p.url === 'string' ? p.url : undefined,
+          },
+        },
+        updated: false,
+        previousKey,
+      }
+    }
     return { channel, updated: false, previousKey }
   }
   return {
     channel: {
       ...channel,
       publisher: {
-        name: typeof p.name === 'string' ? p.name : '',
+        name: existingName || named,
         key: walletDID,
         url: typeof p.url === 'string' ? p.url : undefined,
       },

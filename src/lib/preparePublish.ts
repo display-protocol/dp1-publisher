@@ -85,12 +85,14 @@ export interface PreparePlaylistArgs {
   base?: Playlist
   /** Drives extension-field stripping and curator auto-inject behavior. */
   extensionsEnabled: boolean
+  /** Optional attribution: fills the injected curator's empty name. */
+  walletName?: string
 }
 
 export function preparePlaylistForPublish(
   args: PreparePlaylistArgs
 ): PrepareResult<Playlist> {
-  const { rawDocument, walletDID, base, extensionsEnabled } = args
+  const { rawDocument, walletDID, base, extensionsEnabled, walletName } = args
   const toasts: ToastInput[] = []
 
   // Step 1: merge with base (edit) or use raw verbatim (create).
@@ -118,7 +120,7 @@ export function preparePlaylistForPublish(
   // meaningful when extensions are enabled — `curators[]` is an extension
   // field; with extensions off the feed doesn't read it.
   if (extensionsEnabled) {
-    const ensured = ensurePlaylistWalletCurator(canonical, walletDID)
+    const ensured = ensurePlaylistWalletCurator(canonical, walletDID, walletName)
     canonical = ensured.playlist
     if (ensured.injected) {
       toasts.push({
@@ -182,12 +184,14 @@ export interface PrepareChannelArgs {
   rawDocument: Channel
   walletDID: string
   base?: Channel
+  /** Optional attribution: publisher name fallback when the document has none. */
+  walletName?: string
 }
 
 export function prepareChannelForPublish(
   args: PrepareChannelArgs
 ): PrepareResult<Channel> {
-  const { rawDocument, walletDID, base } = args
+  const { rawDocument, walletDID, base, walletName } = args
   const toasts: ToastInput[] = []
 
   // Step 1: merge or pass through.
@@ -207,7 +211,7 @@ export function prepareChannelForPublish(
   // Step 2: ensure publisher.key matches the connected wallet. Channel has a
   // single publisher (vs. playlist's curator array), so the right behavior is
   // replace the key, preserve the name/url.
-  const ensured = ensureChannelWalletPublisher(merged, walletDID)
+  const ensured = ensureChannelWalletPublisher(merged, walletDID, walletName)
   merged = ensured.channel
   merged = normalizeChannelCurators(merged)
   if (ensured.updated) {

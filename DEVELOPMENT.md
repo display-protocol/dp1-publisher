@@ -110,6 +110,16 @@ GitHub Actions live under **`.github/workflows/`** (mostly **`main`** / **`devel
 
 Path filters mirror **[dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2)**–style CI so only relevant workflows re-run when touched files change.
 
+## Deploying to publisher.feralfile.com
+
+Three steps, two repos. Nothing deploys automatically on merge — a merged `main` is **not** live until all three happen.
+
+1. **Build the image** (this repo): run `build.yaml` via *Actions → Build → Run workflow*, or `gh workflow run build.yaml -f tag=<suffix>`. The final tag is printed by the run's *Output image tag* step (`dp1-publisher-<suffix>`, or the 12-char SHA when no suffix is given).
+2. **Pin the tag** (`feral-file/ff-deploy`, private): set the tag in `ansible/app_defaults/dp1_publisher/config.yml` (`dp1_publisher_image`) and push to `main`.
+3. **Deploy**: run ff-deploy's **“Deploy prod-01 — Feed, Publisher, Feral File, Indexer”** workflow (`deploy-feed-feral-file-indexer.yml`). Takes a few minutes; the run must be from a branch containing latest `main`.
+
+Verify: `curl -s https://publisher.feralfile.com/` serves, and the bundle hash in the page's `<script src>` changed. For signing-path changes, publish a small playlist end-to-end through `#/sign` before announcing the deploy — unit tests cannot catch deploy-config problems (env vars, feed URL, WalletConnect project id).
+
 ---
 
 ## Pull request checklist

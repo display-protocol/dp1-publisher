@@ -386,3 +386,20 @@ describe('ReviewAndSign', () => {
     expect(body.title).toBe('Edited Playlist')
   })
 })
+
+describe('ReviewAndSign — attribution recall', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('prefills the attribution name from the last published value', () => {
+    localStorage.setItem('dp1-publisher.attribution-name', 'Sean Moss-Pultz')
+    render(<ReviewAndSign />)
+    expect(screen.getByLabelText(/attribution name/i)).toHaveValue('Sean Moss-Pultz')
+  })
+
+  it('starts empty when nothing was remembered', () => {
+    render(<ReviewAndSign />)
+    expect(screen.getByLabelText(/attribution name/i)).toHaveValue('')
+  })
+})

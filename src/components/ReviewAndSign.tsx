@@ -19,6 +19,7 @@ import WalletConnect from './WalletConnect'
 import PostPublishPanel, { type PostPublishMode } from './PostPublishPanel'
 import {
   describeReviewDocument,
+  hasUnnamedWalletEntity,
   parseReviewDocument,
   type ReviewedDp1Document,
 } from '@/lib/reviewDocument'
@@ -202,6 +203,9 @@ const OVERWRITE_NOUN = {
  * ff-cli / agents; the web surface's job is a trustworthy signing ceremony.
  * The forms remain untouched alongside this page.
  */
+/** Last attribution name that actually published, recalled across visits. */
+const ATTRIBUTION_NAME_STORAGE_KEY = 'dp1-publisher.attribution-name'
+
 export default function ReviewAndSign() {
   const { isConnected, address } = useAccount()
   const { data: walletClient } = useWalletClient()
@@ -209,7 +213,16 @@ export default function ReviewAndSign() {
   const { toast } = useToast()
 
   const [jsonText, setJsonText] = useState('')
-  const [signerName, setSignerName] = useState('')
+  // Prefilled from the last successful publish: the attribution name is
+  // near-constant per person, and an easy-to-skip empty field here signs an
+  // unnamed identity into the document (see hasUnnamedWalletEntity).
+  const [signerName, setSignerName] = useState(() => {
+    try {
+      return window.localStorage.getItem(ATTRIBUTION_NAME_STORAGE_KEY) ?? ''
+    } catch {
+      return ''
+    }
+  })
   const [prepared, setPrepared] = useState<PreparedState>({ status: 'idle' })
   const [isPublishing, setIsPublishing] = useState(false)
   const [publishedDoc, setPublishedDoc] = useState<PublishedDoc | null>(null)
@@ -251,6 +264,16 @@ export default function ReviewAndSign() {
     prepared.status === 'ready' &&
     prepared.sourceText === jsonText &&
     prepared.sourceName === signerName
+
+  // Non-blocking nudge: the prepared bytes would sign the connected wallet
+  // in as an entity with an empty display name and the attribution field is
+  // blank. Spec-legal (display-protocol/dp1#42) — signing stays enabled —
+  // but easy to do by accident, so say it before the wallet prompt.
+  const unnamedWalletIdentity =
+    signable &&
+    !signerName.trim() &&
+    !!address &&
+    hasUnnamedWalletEntity(prepared.signed, ethereumAddressToDIDPKH(getAddress(address)))
 
   // Once the pipeline has run, summarize what will actually be signed (merged
   // base + injected identity); before that, preview the parsed paste. While
@@ -358,6 +381,13 @@ export default function ReviewAndSign() {
         mode: prepared.mode,
         receipts: prepared.receipts,
       })
+      // Remember only names that published: a value abandoned mid-edit never
+      // becomes the prefill. Clearing the field and publishing forgets it.
+      try {
+        window.localStorage.setItem(ATTRIBUTION_NAME_STORAGE_KEY, signerName.trim())
+      } catch {
+        // Storage unavailable (private mode etc.) — recall is best-effort.
+      }
     } catch (error) {
       console.error('Sign-and-publish failed:', error)
       toast({
@@ -458,6 +488,19 @@ export default function ReviewAndSign() {
                     Fills the empty name when your wallet is added as curator or
                     publisher. Names already declared in the document are kept.
                   </p>
+                  {unnamedWalletIdentity ? (
+                    <p
+                      className="flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-500"
+                      data-testid="unnamed-identity-hint"
+                    >
+                      <ShieldAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                      This will publish your wallet as an unnamed{' '}
+                      {prepared.status === 'ready' && prepared.signed.kind === 'channel'
+                        ? 'publisher'
+                        : 'curator'}
+                      . Valid, but add a name above if you want to be credited.
+                    </p>
+                  ) : null}
                 </div>
                 {parseResult && 'error' in parseResult ? (
                   <p className="mt-3 flex items-start gap-2 text-sm text-destructive">

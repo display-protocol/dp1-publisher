@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest'
 import {
   describeReviewDocument,
   parseReviewDocument,
+  hasUnnamedWalletEntity,
 } from '@/lib/reviewDocument'
 import { minimalPlaylist } from '@/test/fixtures/playlist'
 import { minimalChannel } from '@/test/fixtures/channel'
@@ -209,5 +210,69 @@ describe('describeReviewDocument', () => {
     const doc = parseOk(JSON.stringify(minimalPlaylist))
     const summary = describeReviewDocument(doc)
     expect(summary.facts.join(' ')).toMatch(/example\.com/)
+  })
+})
+
+describe('hasUnnamedWalletEntity', () => {
+  const WALLET = 'did:pkh:eip155:1:0x9E4e4c30B92D4109442215027279Fdaed45a620f'
+
+  it('flags a playlist whose wallet curator has an empty name', () => {
+    expect(
+      hasUnnamedWalletEntity(
+        {
+          kind: 'playlist',
+          document: { ...minimalPlaylist, curators: [{ name: '', key: WALLET }] },
+        },
+        WALLET
+      )
+    ).toBe(true)
+  })
+
+  it('does not flag when the wallet curator is named', () => {
+    expect(
+      hasUnnamedWalletEntity(
+        {
+          kind: 'playlist',
+          document: {
+            ...minimalPlaylist,
+            curators: [{ name: 'Sean Moss-Pultz', key: WALLET }],
+          },
+        },
+        WALLET
+      )
+    ).toBe(false)
+  })
+
+  it('ignores unnamed entities belonging to other wallets', () => {
+    expect(
+      hasUnnamedWalletEntity(
+        {
+          kind: 'playlist',
+          document: {
+            ...minimalPlaylist,
+            curators: [{ name: '', key: 'did:pkh:eip155:1:0x0000000000000000000000000000000000000001' }],
+          },
+        },
+        WALLET
+      )
+    ).toBe(false)
+  })
+
+  it('checks the channel publisher slot too', () => {
+    expect(
+      hasUnnamedWalletEntity(
+        {
+          kind: 'channel',
+          document: { ...minimalChannel, publisher: { name: '  ', key: WALLET } },
+        },
+        WALLET
+      )
+    ).toBe(true)
+  })
+
+  it('never flags a playlist group (legacy string curator only)', () => {
+    expect(
+      hasUnnamedWalletEntity({ kind: 'playlist-group', document: minimalPlaylistGroup }, WALLET)
+    ).toBe(false)
   })
 })

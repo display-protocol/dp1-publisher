@@ -342,3 +342,26 @@ export function describeReviewDocument(reviewed: ReviewedDp1Document): ReviewSum
     role: 'curator',
   }
 }
+
+/**
+ * hasUnnamedWalletEntity reports whether the prepared document carries the
+ * signing wallet as a curator/publisher entity with an empty display name.
+ *
+ * Spec-legal (Entity `name` may be empty — display-protocol/dp1#42) but
+ * usually unintended when a human is at the sign page: the attribution field
+ * exists precisely to fill this slot, and it is easy to skip — two documents
+ * shipped with blank names on 2026-08-02 before anyone noticed. The sign
+ * page uses this to show a non-blocking hint next to the attribution input;
+ * it must never block signing, because an unnamed identity is valid.
+ */
+export function hasUnnamedWalletEntity(doc: ReviewedDp1Document, walletDID: string): boolean {
+  const entities: Array<Entity | undefined> = []
+  if (doc.kind === 'channel') {
+    entities.push(doc.document.publisher, ...(doc.document.curators ?? []))
+  } else if (doc.kind === 'playlist') {
+    entities.push(...(doc.document.curators ?? []))
+  }
+  // playlist-group carries only the legacy string `curator` — no Entity
+  // objects to be unnamed.
+  return entities.some((e) => e != null && e.key === walletDID && !(e.name ?? '').trim())
+}

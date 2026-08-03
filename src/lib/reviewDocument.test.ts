@@ -12,7 +12,6 @@ import {
 } from '@/lib/reviewDocument'
 import { minimalPlaylist } from '@/test/fixtures/playlist'
 import { minimalChannel } from '@/test/fixtures/channel'
-import { minimalPlaylistGroup } from '@/test/fixtures/playlistGroup'
 
 const EXT = { extensionsEnabled: true }
 const NO_EXT = { extensionsEnabled: false }
@@ -43,9 +42,13 @@ describe('parseReviewDocument — detection', () => {
     expect(doc.kind).toBe('channel')
   })
 
-  it('detects a playlist group by playlists[] without channel markers', () => {
-    const doc = parseOk(JSON.stringify(minimalPlaylistGroup))
-    expect(doc.kind).toBe('playlist-group')
+  // Groups were removed, so `playlists[]` has exactly one reading now. A
+  // channel missing version/publisher/curators is a degenerate channel, and
+  // channel validation reports the missing field rather than guessing a kind.
+  it('detects a channel by playlists[] with no other markers', () => {
+    const { version: _v, ...bare } = minimalChannel
+    const doc = parseOk(JSON.stringify(bare))
+    expect(doc.kind).toBe('channel')
   })
 
   it('rejects a document with both items and playlists', () => {
@@ -120,11 +123,6 @@ describe('parseReviewDocument — validation', () => {
       EXT
     )
     expect(ch).toHaveProperty('error')
-    const g = parseReviewDocument(
-      JSON.stringify({ ...minimalPlaylistGroup, playlists: [] }),
-      EXT
-    )
-    expect(g).toHaveProperty('error')
   })
 })
 
@@ -268,11 +266,5 @@ describe('hasUnnamedWalletEntity', () => {
         WALLET
       )
     ).toBe(true)
-  })
-
-  it('never flags a playlist group (legacy string curator only)', () => {
-    expect(
-      hasUnnamedWalletEntity({ kind: 'playlist-group', document: minimalPlaylistGroup }, WALLET)
-    ).toBe(false)
   })
 })

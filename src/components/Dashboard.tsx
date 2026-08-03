@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAccount } from 'wagmi'
-import { History, Layers, ListMusic, Radio, Upload } from 'lucide-react'
+import { History, ListMusic, Radio, Upload } from 'lucide-react'
 import {
-  entityNavList2Class,
   entityNavListClass,
   entityNavTriggerCompactClass,
-  entityNavTriggerWideClass,
   sectionTabButtonActiveClass,
   sectionTabButtonClass,
   sectionTabButtonInactiveClass,
@@ -22,11 +20,10 @@ import { useDp1Extensions } from '@/context/Dp1ExtensionsContext'
 import { loadPublished, sortByCreatedDesc } from '@/lib/publishedStorage'
 import WalletConnect from './WalletConnect'
 import PlaylistForm from './PlaylistForm'
-import PlaylistGroupForm from './PlaylistGroupForm'
 import ChannelForm from './ChannelForm'
 import PublishedView from './PublishedView'
 
-type PublishTab = 'playlist' | 'group' | 'channel'
+type PublishTab = 'playlist' | 'channel'
 
 export default function Dashboard() {
   const { isConnected, address } = useAccount()
@@ -43,7 +40,6 @@ export default function Dashboard() {
     useState<string | undefined>(undefined)
   const [publishedTick, setPublishedTick] = useState(0)
   const [editPlaylistId, setEditPlaylistId] = useState<string | null>(null)
-  const [editPlaylistGroupId, setEditPlaylistGroupId] = useState<string | null>(null)
   const [editChannelId, setEditChannelId] = useState<string | null>(null)
 
   const bumpPublished = () => setPublishedTick((n) => n + 1)
@@ -76,7 +72,6 @@ export default function Dashboard() {
 
   const clearEditState = () => {
     setEditPlaylistId(null)
-    setEditPlaylistGroupId(null)
     setEditChannelId(null)
     setPendingAppendPlaylistUrl(undefined)
     // Clear the new-channel pre-fill too — otherwise navigating away from
@@ -92,7 +87,6 @@ export default function Dashboard() {
     setPublishTab('channel')
     setView('publish')
     setEditPlaylistId(null)
-    setEditPlaylistGroupId(null)
     setEditChannelId(null)
   }
 
@@ -104,7 +98,6 @@ export default function Dashboard() {
     setPendingChannelPlaylistsText(undefined)
     setPendingAppendPlaylistUrl(feedUrl)
     setEditPlaylistId(null)
-    setEditPlaylistGroupId(null)
     setEditChannelId(channelId)
     setView('published')
   }
@@ -225,10 +218,6 @@ export default function Dashboard() {
                 <ListMusic className="size-3.5 opacity-70 sm:size-4" aria-hidden />
                 Playlist
               </TabsTrigger>
-              <TabsTrigger value="group" className={entityNavTriggerCompactClass}>
-                <Layers className="size-3.5 opacity-70 sm:size-4" aria-hidden />
-                Group
-              </TabsTrigger>
               <TabsTrigger value="channel" className={entityNavTriggerCompactClass}>
                 <Radio className="size-3.5 opacity-70 sm:size-4" aria-hidden />
                 Channel
@@ -246,13 +235,6 @@ export default function Dashboard() {
               />
             </TabsContent>
 
-            <TabsContent value="group" className="mt-10 outline-none">
-              <PlaylistGroupForm
-                onPublished={bumpPublished}
-                onViewPublished={handleViewPublished}
-              />
-            </TabsContent>
-
             <TabsContent value="channel" className="mt-10 outline-none">
               <ChannelForm
                 key={pendingChannelPlaylistsText ?? 'new-channel'}
@@ -263,37 +245,12 @@ export default function Dashboard() {
             </TabsContent>
           </Tabs>
         ) : (
-          <Tabs
-            value={publishTab === 'channel' ? 'playlist' : publishTab}
-            onValueChange={(v) => setPublishTab(v as PublishTab)}
-            className="w-full"
-          >
-            <TabsList className={entityNavList2Class}>
-              <TabsTrigger value="playlist" className={entityNavTriggerWideClass}>
-                <ListMusic className="size-4 opacity-70" aria-hidden />
-                Playlist
-              </TabsTrigger>
-              <TabsTrigger value="group" className={entityNavTriggerWideClass}>
-                <Layers className="size-4 opacity-70" aria-hidden />
-                Group
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="playlist" className="mt-10 outline-none">
-              <PlaylistForm
-                extensionsEnabled={false}
-                onPublished={bumpPublished}
-                onViewPublished={handleViewPublished}
-              />
-            </TabsContent>
-
-            <TabsContent value="group" className="mt-10 outline-none">
-              <PlaylistGroupForm
-                onPublished={bumpPublished}
-                onViewPublished={handleViewPublished}
-              />
-            </TabsContent>
-          </Tabs>
+          /* Core-only deployments can compose playlists and nothing else. */
+          <PlaylistForm
+            extensionsEnabled={false}
+            onPublished={bumpPublished}
+            onViewPublished={handleViewPublished}
+          />
         ) : editPlaylistId ? (
           <PlaylistForm
             key={editPlaylistId}
@@ -301,16 +258,6 @@ export default function Dashboard() {
             extensionsEnabled={extensionsEnabled}
             onCancelEdit={() => {
               setEditPlaylistId(null)
-              bumpPublished()
-            }}
-            onPublished={bumpPublished}
-          />
-        ) : editPlaylistGroupId ? (
-          <PlaylistGroupForm
-            key={editPlaylistGroupId}
-            editId={editPlaylistGroupId}
-            onCancelEdit={() => {
-              setEditPlaylistGroupId(null)
               bumpPublished()
             }}
             onPublished={bumpPublished}
@@ -335,18 +282,11 @@ export default function Dashboard() {
             key={publishedTick}
             extensionsEnabled={extensionsEnabled}
             onEditPlaylist={(id) => {
-              setEditPlaylistGroupId(null)
               setEditChannelId(null)
               setEditPlaylistId(id)
             }}
-            onEditPlaylistGroup={(id) => {
-              setEditPlaylistId(null)
-              setEditChannelId(null)
-              setEditPlaylistGroupId(id)
-            }}
             onEditChannel={(id) => {
               setEditPlaylistId(null)
-              setEditPlaylistGroupId(null)
               setEditChannelId(id)
             }}
           />

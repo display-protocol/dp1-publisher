@@ -3,7 +3,7 @@
  * Base URL: https://feed.feralfile.com
  */
 
-import type { Playlist, Channel, PlaylistGroup } from '@/types/dp1'
+import type { Playlist, Channel } from '@/types/dp1'
 
 /** Base feed origin, no trailing slash (matches `VITE_FEED_BASE_URL` when set). */
 export function getFeedBaseUrl(): string {
@@ -53,11 +53,6 @@ export function feedChannelResourceUrl(idOrSlug: string): string {
   return `${FEED_BASE_URL}/api/v1/channels/${encodeURIComponent(idOrSlug.trim())}`
 }
 
-/** GET resource URL for a playlist-group / exhibition (API accepts UUID or slug). */
-export function feedPlaylistGroupResourceUrl(idOrSlug: string): string {
-  return `${FEED_BASE_URL}/api/v1/playlist-groups/${encodeURIComponent(idOrSlug.trim())}`
-}
-
 /**
  * Local dev only: set `VITE_DEBUG_MODE=true` in `.env` while running the Vite dev server.
  * Disabled in production builds (`import.meta.env.DEV` is false).
@@ -87,18 +82,13 @@ export class FeedAPIError extends Error {
  */
 export function friendlyPublishError(
   err: unknown,
-  kind: 'playlist' | 'playlist-group' | 'channel',
+  kind: 'playlist' | 'channel',
   intent: 'create' | 'update'
 ): string {
-  const noun =
-    kind === 'playlist'
-      ? 'playlist'
-      : kind === 'channel'
-        ? 'channel'
-        : 'playlist group'
+  const noun = kind
 
-  // Channels sign as publisher; playlists and playlist groups sign as curator.
-  // The wrong-wallet create-mode message must point users at the right field.
+  // Channels sign as publisher; playlists sign as curator. The wrong-wallet
+  // create-mode message must point users at the right field.
   const signerField = kind === 'channel' ? 'publisher' : 'curator'
 
   if (err instanceof FeedAPIError) {
@@ -204,33 +194,6 @@ export async function publishChannel(channel: Channel): Promise<Channel> {
 }
 
 /**
- * POST /api/v1/playlist-groups — create exhibition; body matches PlaylistGroupCreateRequest (https://github.com/display-protocol/dp1-feed-v2).
- */
-export async function publishPlaylistGroup(body: Record<string, unknown>): Promise<PlaylistGroup> {
-  const response = await fetch(`${FEED_BASE_URL}/api/v1/playlist-groups`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  })
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({
-      error: 'unknown',
-      message: response.statusText,
-    }))
-    throw new FeedAPIError(
-      error.message || 'Failed to publish playlist group',
-      response.status,
-      error.error
-    )
-  }
-
-  return response.json()
-}
-
-/**
  * GET /api/v1/playlists/{id}
  * Fetch a playlist by UUID or slug
  */
@@ -284,61 +247,6 @@ export async function listPlaylists(params: {
     }))
     throw new FeedAPIError(
       error.message || 'Failed to list playlists',
-      response.status,
-      error.error
-    )
-  }
-
-  return response.json()
-}
-
-/**
- * GET /api/v1/playlist-groups/{id}
- */
-export async function getPlaylistGroup(idOrSlug: string): Promise<PlaylistGroup> {
-  const response = await fetch(
-    `${FEED_BASE_URL}/api/v1/playlist-groups/${encodeURIComponent(idOrSlug)}`
-  )
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({
-      error: 'not_found',
-      message: 'Playlist group not found',
-    }))
-    throw new FeedAPIError(
-      error.message || 'Failed to fetch playlist group',
-      response.status,
-      error.error
-    )
-  }
-
-  return response.json()
-}
-
-/**
- * GET /api/v1/playlist-groups — paginated list
- */
-export async function listPlaylistGroups(params: {
-  limit?: number
-  cursor?: string
-  sort?: 'asc' | 'desc'
-}): Promise<FeedListResponse<PlaylistGroup>> {
-  const sp = new URLSearchParams()
-  if (params.limit != null) sp.set('limit', String(params.limit))
-  if (params.cursor) sp.set('cursor', params.cursor)
-  if (params.sort) sp.set('sort', params.sort)
-  const q = sp.toString()
-  const response = await fetch(
-    `${FEED_BASE_URL}/api/v1/playlist-groups${q ? `?${q}` : ''}`
-  )
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({
-      error: 'unknown',
-      message: response.statusText,
-    }))
-    throw new FeedAPIError(
-      error.message || 'Failed to list playlist groups',
       response.status,
       error.error
     )
@@ -425,37 +333,6 @@ export async function patchPlaylist(
     }))
     throw new FeedAPIError(
       error.message || 'Failed to update playlist',
-      response.status,
-      error.error
-    )
-  }
-
-  return response.json()
-}
-
-/**
- * PATCH /api/v1/playlist-groups/{id} — partial update with signature-based auth
- */
-export async function patchPlaylistGroup(
-  idOrSlug: string,
-  body: Record<string, unknown>
-): Promise<PlaylistGroup> {
-  const response = await fetch(
-    `${FEED_BASE_URL}/api/v1/playlist-groups/${encodeURIComponent(idOrSlug)}`,
-    {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }
-  )
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({
-      error: 'unknown',
-      message: response.statusText,
-    }))
-    throw new FeedAPIError(
-      error.message || 'Failed to update playlist group',
       response.status,
       error.error
     )

@@ -24,7 +24,6 @@ Comprehensive unit testing infrastructure has been added to dp1-publisher, cover
 Reusable test data matching dp1-js patterns:
 - `src/test/fixtures/playlist.ts`: Playlist test data (minimal, with metadata, with notes, etc.)
 - `src/test/fixtures/channel.ts`: Channel test data
-- `src/test/fixtures/playlistGroup.ts`: Playlist Group test data
 
 ### 4. Test Suites
 
@@ -63,12 +62,6 @@ Tests for building unsigned channel payloads:
 - Slug generation
 - Array cloning
 
-#### Playlist Group Sign Payload (`src/lib/playlistGroupSignPayload.test.ts`) - 17 tests
-Tests for building unsigned playlist group payloads:
-- Required field validation (id, created)
-- `omitempty` semantics (curator, summary, coverImage)
-- Slug generation
-- Immutability guarantees
 
 #### Merge Helpers (`src/lib/dp1Merge.test.ts`) - 38 tests
 Tests for PATCH merge semantics:

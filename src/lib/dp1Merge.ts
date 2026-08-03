@@ -9,7 +9,6 @@ import type {
   Entity,
   Note,
   Playlist,
-  PlaylistGroup,
   PlaylistItem,
 } from '@/types/dp1'
 
@@ -41,28 +40,6 @@ export function mergePlaylistForPatch(
     dynamicQuery:
       patch.dynamicQuery !== undefined ? patch.dynamicQuery : existing.dynamicQuery,
     note: patch.note !== undefined ? patch.note : existing.note,
-  }
-}
-
-export function mergePlaylistGroupForPatch(
-  existing: PlaylistGroup,
-  patch: {
-    title?: string
-    slug?: string
-    playlists?: string[]
-    curator?: string
-    summary?: string
-    coverImage?: string
-  }
-): PlaylistGroup {
-  return {
-    ...existing,
-    title: patch.title ?? existing.title,
-    slug: patch.slug ?? existing.slug,
-    playlists: patch.playlists ?? existing.playlists,
-    curator: patch.curator !== undefined ? patch.curator : existing.curator,
-    summary: patch.summary !== undefined ? patch.summary : existing.summary,
-    coverImage: patch.coverImage !== undefined ? patch.coverImage : existing.coverImage,
   }
 }
 

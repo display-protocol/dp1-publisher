@@ -9,7 +9,7 @@
  *   plain-language summary for the signer
  *
  * Validation and normalization deliberately mirror the JSON-tab paths in
- * PlaylistForm / ChannelForm / PlaylistGroupForm (`parse*Json` +
+ * PlaylistForm / ChannelForm (`parse*Json` +
  * `*FromJsonImport`) so a document that publishes from a form's JSON tab
  * parses identically here. HTTP, wallet, and preparePublish stay out of this
  * module — the page component orchestrates those, same as the forms do.
@@ -17,11 +17,10 @@
 
 import { v4 as uuidv4 } from 'uuid'
 import { validatePlaylistURI } from '@/lib/api'
-import type { Channel, Entity, Playlist, PlaylistGroup, PlaylistItem } from '@/types/dp1'
+import type { Channel, Entity, Playlist, PlaylistItem } from '@/types/dp1'
 
 export type ReviewedDp1Document =
   | { kind: 'playlist'; document: Playlist }
-  | { kind: 'playlist-group'; document: PlaylistGroup }
   | { kind: 'channel'; document: Channel }
 
 export type ReviewParseResult = { doc: ReviewedDp1Document } | { error: string }
@@ -58,14 +57,14 @@ export interface ReviewSummary {
  * - `items[]` → playlist (only playlists carry items)
  * - `playlists[]` + any channel marker (`version` / `publisher` / `curators`)
  *   → channel
- * - `playlists[]` otherwise → playlist group (a channel authored without
- *   version, publisher, or curators is degenerate; the group reading is the
- *   safer default and validation gives a clear error either way)
+ * - `playlists[]` → channel. A channel authored without version, publisher,
+ *   or curators is degenerate rather than a different document type, and
+ *   channel validation reports the missing field plainly.
  * - both or neither → explicit error, never a guess
  */
 function detectKind(
   o: Record<string, unknown>
-): 'playlist' | 'playlist-group' | 'channel' | { error: string } {
+): 'playlist' | 'channel' | { error: string } {
   const hasItems = Array.isArray(o.items)
   const hasPlaylists = Array.isArray(o.playlists)
   if (hasItems && hasPlaylists) {
@@ -78,11 +77,10 @@ function detectKind(
   if (!hasPlaylists) {
     return {
       error:
-        'Not a recognizable DP-1 document: expected "items" (playlist) or "playlists" (channel / playlist group).',
+        'Not a recognizable DP-1 document: expected "items" (playlist) or "playlists" (channel).',
     }
   }
-  if ('version' in o || 'publisher' in o || 'curators' in o) return 'channel'
-  return 'playlist-group'
+  return 'channel'
 }
 
 // ----------------------------------------------------------------------------
@@ -167,7 +165,7 @@ function normalizePlaylist(raw: Playlist): Playlist {
   }
 }
 
-function normalizeUriList<T extends Channel | PlaylistGroup>(raw: T): T {
+function normalizeUriList<T extends Channel>(raw: T): T {
   const rest = stripSignatures(raw) as T
   return {
     ...rest,
@@ -205,20 +203,15 @@ export function parseReviewDocument(
     if (invalid) return { error: invalid }
     return { doc: { kind, document: normalizePlaylist(data as Playlist) } }
   }
-  if (kind === 'channel') {
-    if (!opts.extensionsEnabled) {
-      return {
-        error:
-          'This looks like a channel, but DP-1 extensions are off for this feed deployment — channels cannot be published here.',
-      }
+  if (!opts.extensionsEnabled) {
+    return {
+      error:
+        'This looks like a channel, but DP-1 extensions are off for this feed deployment — channels cannot be published here.',
     }
-    const invalid = validateUriListShape(o)
-    if (invalid) return { error: invalid }
-    return { doc: { kind, document: normalizeUriList(data as Channel) } }
   }
   const invalid = validateUriListShape(o)
   if (invalid) return { error: invalid }
-  return { doc: { kind, document: normalizeUriList(data as PlaylistGroup) } }
+  return { doc: { kind, document: normalizeUriList(data as Channel) } }
 }
 
 // ----------------------------------------------------------------------------
@@ -289,57 +282,31 @@ export function describeReviewDocument(reviewed: ReviewedDp1Document): ReviewSum
     }
   }
 
-  if (reviewed.kind === 'channel') {
-    const ch = reviewed.document
-    const facts: string[] = [
-      ch.playlists.length === 1 ? '1 linked playlist' : `${ch.playlists.length} linked playlists`,
-    ]
-    const hosts = uniqueHosts(ch.playlists)
-    if (hosts.length > 0) facts.push(`Playlist links point at: ${hosts.join(', ')}`)
-    if (ch.publisher) facts.push(`Declared publisher: ${entityLine(ch.publisher)}`)
-    if (ch.curators?.length) {
-      facts.push(`Declared curators: ${ch.curators.map(entityLine).join('; ')}`)
-    }
-    return {
-      kindLabel: 'Channel',
-      title: ch.title,
-      identity: identityLines(ch),
-      facts,
-      covers: [
-        'Your signature (role: publisher) attests to the channel itself: its title and its list of playlist links.',
-        'It does NOT cover the artwork behind those links — you are endorsing the list, not freezing its contents.',
-        'The published channel will name your connected wallet as the publisher.',
-      ],
-      canChangeAfter: [
-        'The linked playlists stay editable by their own curators — their contents can change without your re-approval, and your signature stays valid when that happens.',
-        'The channel document itself (title, which playlists are linked) can only be changed by this wallet or the feed operator.',
-      ],
-      role: 'publisher',
-    }
-  }
-
-  const g = reviewed.document
+  const ch = reviewed.document
   const facts: string[] = [
-    g.playlists.length === 1 ? '1 linked playlist' : `${g.playlists.length} linked playlists`,
+    ch.playlists.length === 1 ? '1 linked playlist' : `${ch.playlists.length} linked playlists`,
   ]
-  const hosts = uniqueHosts(g.playlists)
+  const hosts = uniqueHosts(ch.playlists)
   if (hosts.length > 0) facts.push(`Playlist links point at: ${hosts.join(', ')}`)
-  if (g.curator?.trim()) facts.push(`Declared curator: ${shortDid(g.curator.trim())}`)
+  if (ch.publisher) facts.push(`Declared publisher: ${entityLine(ch.publisher)}`)
+  if (ch.curators?.length) {
+    facts.push(`Declared curators: ${ch.curators.map(entityLine).join('; ')}`)
+  }
   return {
-    kindLabel: 'Playlist group',
-    title: g.title,
-    identity: identityLines(g),
+    kindLabel: 'Channel',
+    title: ch.title,
+    identity: identityLines(ch),
     facts,
     covers: [
-      'Your signature (role: curator) attests to the group itself: its title and its list of playlist links.',
-      'It does NOT cover the artwork behind those links.',
-      'The published group will name your connected wallet as the curator.',
+      'Your signature (role: publisher) attests to the channel itself: its title and its list of playlist links.',
+      'It does NOT cover the artwork behind those links — you are endorsing the list, not freezing its contents.',
+      'The published channel will name your connected wallet as the publisher.',
     ],
     canChangeAfter: [
-      'The linked playlists stay editable by their own curators — their contents can change without your re-approval.',
-      'The group document itself can only be changed by this wallet or the feed operator.',
+      'The linked playlists stay editable by their own curators — their contents can change without your re-approval, and your signature stays valid when that happens.',
+      'The channel document itself (title, which playlists are linked) can only be changed by this wallet or the feed operator.',
     ],
-    role: 'curator',
+    role: 'publisher',
   }
 }
 

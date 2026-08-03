@@ -408,13 +408,6 @@ describe('friendlyPublishError', () => {
       expect(msg).not.toMatch(/publisher/i)
     })
 
-    it('points at the curator field for playlist groups on create-mode failures', () => {
-      const err = new FeedAPIError('signature rejected', 401, 'unauthorized')
-      const msg = friendlyPublishError(err, 'playlist-group', 'create')
-      expect(msg).toMatch(/curator/i)
-      expect(msg).not.toMatch(/publisher/i)
-    })
-
     it('points at the publisher field for channels on create-mode failures', () => {
       const err = new FeedAPIError('signature rejected', 401, 'unauthorized')
       const msg = friendlyPublishError(err, 'channel', 'create')
@@ -459,7 +452,7 @@ describe('friendlyPublishError', () => {
         500,
         'db_error'
       )
-      const msg = friendlyPublishError(err, 'playlist-group', 'create')
+      const msg = friendlyPublishError(err, 'playlist', 'create')
       expect(msg).toMatch(/with this id already exists/i)
     })
   })

@@ -1,21 +1,21 @@
 /**
- * Local registry of playlists, playlist-groups, and channels published from this browser,
+ * Local registry of playlists and channels published from this browser,
  * keyed by wallet address. Rows are lightweight list metadata only (id, slug, title, created).
  * Editing always refetches the full document via GET /api/v1/... — never use these records as the merge base for PATCH.
  */
 
 import { getAddress } from 'viem'
-import type { Channel, Playlist, PlaylistGroup } from '@/types/dp1'
+import type { Channel, Playlist } from '@/types/dp1'
 
 /** Current key for per-wallet published-metadata registry. */
 const STORAGE_KEY = 'dp1-publisher:published:v2'
 /** Prior v2 key when the repo/npm package was `ff-publisher`; migrated on read. */
 const LEGACY_STORAGE_KEY_V2 = 'ff-publisher:published:v2'
-/** Original v1 layout (no playlistGroups). */
+/** Original v1 layout, before the (since removed) playlist-group list. */
 const LEGACY_STORAGE_KEY_V1 = 'ff-publisher:published:v1'
 
 export type PublishedRecord = {
-  kind: 'playlist' | 'playlist-group' | 'channel'
+  kind: 'playlist' | 'channel'
   id: string
   slug?: string
   title: string
@@ -24,7 +24,6 @@ export type PublishedRecord = {
 
 type AddressBucket = {
   playlists: PublishedRecord[]
-  playlistGroups: PublishedRecord[]
   channels: PublishedRecord[]
 }
 
@@ -33,7 +32,7 @@ type Root = {
 }
 
 function emptyBucket(): AddressBucket {
-  return { playlists: [], playlistGroups: [], channels: [] }
+  return { playlists: [], channels: [] }
 }
 
 function readRoot(): Root {
@@ -55,7 +54,7 @@ function readRoot(): Root {
   }
 }
 
-/** Migrate v1 layout (no playlistGroups) to v2 with three lists. */
+/** Migrate the original v1 layout onto the current key. */
 function readRootWithMigration(): Root {
   try {
     const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY_V1)
@@ -73,7 +72,6 @@ function readRootWithMigration(): Root {
             playlists: dedupeById(
               (b.playlists ?? []).filter((x) => x && x.kind === 'playlist')
             ),
-            playlistGroups: [],
             channels: dedupeById((b.channels ?? []).filter((x) => x && x.kind === 'channel')),
           }
         }
@@ -99,7 +97,7 @@ function addrKey(address: string): string {
 
 function toRecord(
   kind: PublishedRecord['kind'],
-  doc: Pick<Playlist | Channel | PlaylistGroup, 'id' | 'slug' | 'title' | 'created'>
+  doc: Pick<Playlist | Channel, 'id' | 'slug' | 'title' | 'created'>
 ): PublishedRecord {
   return {
     kind,
@@ -124,10 +122,10 @@ function dedupeById(list: PublishedRecord[]): PublishedRecord[] {
 function normalizeBucket(b: Partial<AddressBucket> | undefined): AddressBucket {
   if (!b) return emptyBucket()
   return {
+    // Filtering by kind is also how blobs written before playlist-groups were
+    // removed degrade: any stored group row is dropped on read rather than
+    // surfacing a document type this app can no longer open.
     playlists: dedupeById((b.playlists ?? []).filter((x) => x?.kind === 'playlist')),
-    playlistGroups: dedupeById(
-      (b.playlistGroups ?? []).filter((x) => x?.kind === 'playlist-group')
-    ),
     channels: dedupeById((b.channels ?? []).filter((x) => x?.kind === 'channel')),
   }
 }
@@ -155,20 +153,6 @@ export function recordPublishedPlaylist(
   savePublished(address, {
     ...cur,
     playlists: [rec, ...rest],
-  })
-}
-
-export function recordPublishedPlaylistGroup(
-  address: string,
-  doc: Pick<PlaylistGroup, 'id' | 'slug' | 'title' | 'created'>
-) {
-  if (!doc.id) return
-  const cur = loadPublished(address)
-  const rec = toRecord('playlist-group', doc)
-  const rest = cur.playlistGroups.filter((p) => p.id !== rec.id)
-  savePublished(address, {
-    ...cur,
-    playlistGroups: [rec, ...rest],
   })
 }
 

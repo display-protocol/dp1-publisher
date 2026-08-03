@@ -97,16 +97,6 @@ describe('PostPublishPanel', () => {
       />,
     )
     expect(screen.queryByText(/Paste this URL into a channel's/i)).toBeNull()
-
-    rerender(
-      <PostPublishPanel
-        kind="playlist-group"
-        feedUrl="https://feed.example/api/v1/playlist-groups/x"
-        onPublishAnother={() => undefined}
-        onViewPublished={() => undefined}
-      />,
-    )
-    expect(screen.queryByText(/Paste this URL into a channel's/i)).toBeNull()
   })
 
   it('hides the channel-CTA section entirely for non-playlist kinds', () => {
@@ -182,13 +172,13 @@ describe('PostPublishPanel', () => {
   it('uses the right headline for each kind', () => {
     const { rerender } = render(
       <PostPublishPanel
-        kind="playlist-group"
-        feedUrl="https://feed.example/api/v1/playlist-groups/x"
+        kind="playlist"
+        feedUrl="https://feed.example/api/v1/playlists/x"
         onPublishAnother={() => undefined}
         onViewPublished={() => undefined}
       />,
     )
-    expect(screen.getByText('Playlist group published')).toBeTruthy()
+    expect(screen.getByText('Playlist published')).toBeTruthy()
     rerender(
       <PostPublishPanel
         kind="channel"

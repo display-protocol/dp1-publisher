@@ -133,19 +133,6 @@ export interface Playlist {
   note?: Note
 }
 
-/** Core DP-1 playlist-group (exhibition); see dp-1/core/v1.1.0/schemas/playlist-group.json */
-export interface PlaylistGroup {
-  id?: string
-  slug?: string
-  title: string
-  created?: string
-  playlists: string[] // URIs
-  /** Curator DID (must match signing `kid`); feed verifies signatures against this string. */
-  curator?: string
-  summary?: string
-  coverImage?: string
-  signatures?: Signature[]
-}
 
 export interface Channel {
   id?: string

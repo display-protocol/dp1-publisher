@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAccount } from 'wagmi'
-import { Layers, ListMusic, Radio } from 'lucide-react'
+import { ListMusic, Radio } from 'lucide-react'
 import {
-  entityNavList2Class,
   entityNavListClass,
   entityNavTriggerCompactClass,
-  entityNavTriggerWideClass,
   Tabs,
   TabsContent,
   TabsList,
@@ -14,7 +12,6 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   feedChannelResourceUrl,
-  feedPlaylistGroupResourceUrl,
   feedPlaylistResourceUrl,
 } from '@/lib/api'
 import { loadPublished, sortByCreatedDesc, type PublishedRecord } from '@/lib/publishedStorage'
@@ -32,29 +29,24 @@ function formatWhen(iso?: string): string {
 export default function PublishedView({
   extensionsEnabled,
   onEditPlaylist,
-  onEditPlaylistGroup,
   onEditChannel,
 }: {
   extensionsEnabled: boolean
   onEditPlaylist: (id: string) => void
-  onEditPlaylistGroup: (id: string) => void
   onEditChannel: (id: string) => void
 }) {
   const { address } = useAccount()
   const [playlists, setPlaylists] = useState<PublishedRecord[]>([])
-  const [playlistGroups, setPlaylistGroups] = useState<PublishedRecord[]>([])
   const [channels, setChannels] = useState<PublishedRecord[]>([])
 
   const reloadFromStorage = useCallback(() => {
     if (!address) {
       setPlaylists([])
-      setPlaylistGroups([])
       setChannels([])
       return
     }
     const b = loadPublished(address)
     setPlaylists(sortByCreatedDesc(b.playlists))
-    setPlaylistGroups(sortByCreatedDesc(b.playlistGroups))
     setChannels(sortByCreatedDesc(b.channels))
   }, [address])
 
@@ -66,13 +58,11 @@ export default function PublishedView({
     return null
   }
 
-  const titleHeading = extensionsEnabled
-    ? 'Your playlists, groups & channels'
-    : 'Your playlists & groups'
+  const titleHeading = extensionsEnabled ? 'Your playlists & channels' : 'Your playlists'
 
   const titleDescription = extensionsEnabled
     ? 'Entries saved in this browser when you publish from here. Sorted by created time (newest first).'
-    : 'Core playlists and playlist groups saved here when you publish. Sorted by created time (newest first).'
+    : 'Core playlists saved here when you publish. Sorted by created time (newest first).'
 
   return (
     <Card className="border-border/45 shadow-[0_2px_40px_-20px_rgba(15,23,42,0.15)]">
@@ -91,10 +81,6 @@ export default function PublishedView({
                 <ListMusic className="size-3.5 opacity-70 sm:size-4" aria-hidden />
                 Playlists
               </TabsTrigger>
-              <TabsTrigger value="group" className={entityNavTriggerCompactClass}>
-                <Layers className="size-3.5 opacity-70 sm:size-4" aria-hidden />
-                Groups
-              </TabsTrigger>
               <TabsTrigger value="channel" className={entityNavTriggerCompactClass}>
                 <Radio className="size-3.5 opacity-70 sm:size-4" aria-hidden />
                 Channels
@@ -112,17 +98,6 @@ export default function PublishedView({
               />
             </TabsContent>
 
-            <TabsContent value="group" className="mt-8 outline-none">
-              <PublishedTable
-                rows={playlistGroups}
-                empty="No playlist groups recorded yet. Publish one from the Publish screen."
-                onRowClick={(r) => onEditPlaylistGroup(r.id)}
-                feedResourceUrl={(r) =>
-                  feedPlaylistGroupResourceUrl(r.slug?.trim() || r.id)
-                }
-              />
-            </TabsContent>
-
             <TabsContent value="channel" className="mt-8 outline-none">
               <PublishedTable
                 rows={channels}
@@ -135,40 +110,14 @@ export default function PublishedView({
             </TabsContent>
           </Tabs>
         ) : (
-          <Tabs defaultValue="playlist" className="w-full">
-            <TabsList className={entityNavList2Class}>
-              <TabsTrigger value="playlist" className={entityNavTriggerWideClass}>
-                <ListMusic className="size-4 opacity-70" aria-hidden />
-                Playlists
-              </TabsTrigger>
-              <TabsTrigger value="group" className={entityNavTriggerWideClass}>
-                <Layers className="size-4 opacity-70" aria-hidden />
-                Groups
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="playlist" className="mt-8 outline-none">
-              <PublishedTable
-                rows={playlists}
-                empty="No playlists recorded yet. Publish one from the Publish screen."
-                onRowClick={(r) => onEditPlaylist(r.id)}
-                feedResourceUrl={(r) =>
-                  feedPlaylistResourceUrl(r.slug?.trim() || r.id)
-                }
-              />
-            </TabsContent>
-
-            <TabsContent value="group" className="mt-8 outline-none">
-              <PublishedTable
-                rows={playlistGroups}
-                empty="No playlist groups recorded yet. Publish one from the Publish screen."
-                onRowClick={(r) => onEditPlaylistGroup(r.id)}
-                feedResourceUrl={(r) =>
-                  feedPlaylistGroupResourceUrl(r.slug?.trim() || r.id)
-                }
-              />
-            </TabsContent>
-          </Tabs>
+          // Core-only deployments publish playlists and nothing else, so there
+          // is no second list to tab between.
+          <PublishedTable
+            rows={playlists}
+            empty="No playlists recorded yet. Publish one from the Publish screen."
+            onRowClick={(r) => onEditPlaylist(r.id)}
+            feedResourceUrl={(r) => feedPlaylistResourceUrl(r.slug?.trim() || r.id)}
+          />
         )}
       </CardContent>
     </Card>

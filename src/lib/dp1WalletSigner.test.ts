@@ -11,11 +11,10 @@
 import { describe, it, expect } from 'vitest'
 import {
   ensureChannelWalletPublisher,
-  ensurePlaylistGroupWalletCurator,
   ensurePlaylistWalletCurator,
   normalizeChannelCurators,
 } from '@/lib/dp1WalletSigner'
-import type { Channel, Entity, Playlist, PlaylistGroup } from '@/types/dp1'
+import type { Channel, Entity, Playlist } from '@/types/dp1'
 
 const WALLET = 'did:pkh:eip155:1:0xabcdef0123456789abcdef0123456789abcdef01'
 const DID_KEY = 'did:key:z6MkExampleDidKeyFromDp1Cli'
@@ -369,37 +368,3 @@ describe('ensureChannelWalletPublisher', () => {
   })
 })
 
-describe('ensurePlaylistGroupWalletCurator', () => {
-  const baseGroup: PlaylistGroup = {
-    id: 'grp-1',
-    created: '2026-05-22T00:00:00Z',
-    title: 'Test Group',
-    playlists: ['https://example.com/p1'],
-  }
-
-  it('adds wallet curator when missing', () => {
-    const r = ensurePlaylistGroupWalletCurator(baseGroup, WALLET)
-    expect(r.updated).toBe(true)
-    expect(r.previousCurator).toBeUndefined()
-    expect(r.group.curator).toBe(WALLET)
-  })
-
-  it('replaces did:key curator with wallet', () => {
-    const r = ensurePlaylistGroupWalletCurator({ ...baseGroup, curator: DID_KEY }, WALLET)
-    expect(r.updated).toBe(true)
-    expect(r.previousCurator).toBe(DID_KEY)
-    expect(r.group.curator).toBe(WALLET)
-  })
-
-  it('no-op when curator already matches wallet', () => {
-    const r = ensurePlaylistGroupWalletCurator({ ...baseGroup, curator: WALLET }, WALLET)
-    expect(r.updated).toBe(false)
-    expect(r.group.curator).toBe(WALLET)
-  })
-
-  it('repaired curator is suitable for both signing and PATCH body', () => {
-    const r = ensurePlaylistGroupWalletCurator({ ...baseGroup, curator: DID_KEY }, WALLET)
-    expect(r.group.curator).toBe(WALLET)
-    expect(r.group.curator).not.toBe(DID_KEY)
-  })
-})

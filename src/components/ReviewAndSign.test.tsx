@@ -297,6 +297,71 @@ describe('ReviewAndSign', () => {
     expect(mockedApi.publishPlaylist).not.toHaveBeenCalled()
   })
 
+  it('carries the typed attribution name into the injected curator', async () => {
+    mockedApi.getPlaylist.mockRejectedValue(new apiModule.FeedAPIError('nf', 404))
+    mockedApi.publishPlaylist.mockImplementation(async (p) => ({
+      ...(p as Record<string, unknown>),
+      slug: 'pasted-playlist',
+    }))
+
+    render(<ReviewAndSign />)
+    pasteJson(pastedPlaylist)
+    fireEvent.change(screen.getByLabelText(/Attribution name/i), {
+      target: { value: 'Test Curator' },
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: /Sign & publish/i }))
+    await waitFor(() => {
+      expect(mockedApi.publishPlaylist).toHaveBeenCalledTimes(1)
+    })
+    const body = mockedApi.publishPlaylist.mock.calls[0][0] as {
+      curators: Array<{ name: string; key: string }>
+    }
+    expect(body.curators).toHaveLength(1)
+    expect(body.curators[0].name).toBe('Test Curator')
+    expect(body.curators[0].key).toBe(TEST_WALLET_DID)
+  })
+
+  it('never overwrites a curator name the document already declares', async () => {
+    mockedApi.getPlaylist.mockRejectedValue(new apiModule.FeedAPIError('nf', 404))
+    mockedApi.publishPlaylist.mockImplementation(async (p) => p as Record<string, unknown>)
+
+    render(<ReviewAndSign />)
+    pasteJson({
+      ...pastedPlaylist,
+      curators: [{ name: 'Declared Name', key: TEST_WALLET_DID }],
+    })
+    fireEvent.change(screen.getByLabelText(/Attribution name/i), {
+      target: { value: 'Typed Name' },
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: /Sign & publish/i }))
+    await waitFor(() => {
+      expect(mockedApi.publishPlaylist).toHaveBeenCalledTimes(1)
+    })
+    const body = mockedApi.publishPlaylist.mock.calls[0][0] as {
+      curators: Array<{ name: string }>
+    }
+    expect(body.curators[0].name).toBe('Declared Name')
+  })
+
+  it('withdraws the sign button while the attribution name is ahead of the prepared bytes', async () => {
+    mockedApi.getPlaylist.mockRejectedValue(new apiModule.FeedAPIError('nf', 404))
+
+    render(<ReviewAndSign />)
+    pasteJson(pastedPlaylist)
+    await screen.findByRole('button', { name: /Sign & publish/i })
+
+    fireEvent.change(screen.getByLabelText(/Attribution name/i), {
+      target: { value: 'Late Edit' },
+    })
+
+    // Same synchronous assertion rationale as the editor-text variant: the
+    // unsafe window is the 400ms before the debounce fires.
+    expect(screen.queryByRole('button', { name: /Sign & publish/i })).toBeNull()
+    expect(mockedSigning.signDocument).not.toHaveBeenCalled()
+  })
+
   it('signs the document in the editor, not the one it replaced', async () => {
     mockedApi.getPlaylist.mockRejectedValue(new apiModule.FeedAPIError('nf', 404))
     mockedApi.publishPlaylist.mockImplementation(async (p) => ({
@@ -316,5 +381,22 @@ describe('ReviewAndSign', () => {
     })
     const body = mockedApi.publishPlaylist.mock.calls[0][0] as { title: string }
     expect(body.title).toBe('Edited Playlist')
+  })
+})
+
+describe('ReviewAndSign — attribution recall', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('prefills the attribution name from the last published value', () => {
+    localStorage.setItem('dp1-publisher.attribution-name', 'Sean Moss-Pultz')
+    render(<ReviewAndSign />)
+    expect(screen.getByLabelText(/attribution name/i)).toHaveValue('Sean Moss-Pultz')
+  })
+
+  it('starts empty when nothing was remembered', () => {
+    render(<ReviewAndSign />)
+    expect(screen.getByLabelText(/attribution name/i)).toHaveValue('')
   })
 })

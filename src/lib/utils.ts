@@ -27,10 +27,13 @@ export function generateSlug(title: string, id: string, userSlug?: string): stri
     const slugified = slugify(userSlug)
     if (slugified) return slugified
   }
-  
+
   const base = slugify(title) || 'playlist'
-  const shortId = id.slice(0, 8)
-  return `${base}-${shortId}`
+  // The id suffix is what makes the auto slug collision-resistant in the feed's
+  // global slug namespace. When there's no id yet (e.g. a bare fixture), fall
+  // back to the base alone rather than emitting a trailing-hyphen slug.
+  const shortId = id ? id.slice(0, 8) : ''
+  return shortId ? `${base}-${shortId}` : base
 }
 
 /**

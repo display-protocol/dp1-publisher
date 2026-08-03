@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Toaster } from '@/components/ui/toaster'
 import { useToast } from '@/hooks/use-toast'
 import { useDp1Extensions } from '@/context/Dp1ExtensionsContext'
@@ -18,6 +19,7 @@ import WalletConnect from './WalletConnect'
 import PostPublishPanel, { type PostPublishMode } from './PostPublishPanel'
 import {
   describeReviewDocument,
+  hasUnnamedWalletEntity,
   parseReviewDocument,
   type ReviewedDp1Document,
 } from '@/lib/reviewDocument'
@@ -82,6 +84,8 @@ type PreparedState =
        * editor text rather than trusting timing.
        */
       sourceText: string
+      /** The attribution name these bytes were derived from — same gate as `sourceText`. */
+      sourceName: string
     }
 
 interface PublishedDoc {
@@ -128,7 +132,8 @@ function prepareReviewed(
   reviewed: ReviewedDp1Document,
   walletDID: string,
   base: Playlist | Channel | undefined,
-  extensionsEnabled: boolean
+  extensionsEnabled: boolean,
+  walletName: string
 ): PreparedOk | { validationErrors: string[] } {
   const ok = <T,>(
     r: PrepareResult<T>,
@@ -150,6 +155,7 @@ function prepareReviewed(
         walletDID,
         base: base as Playlist | undefined,
         extensionsEnabled,
+        walletName,
       }),
       (p) => ({ kind: 'playlist', document: p })
     )
@@ -159,6 +165,7 @@ function prepareReviewed(
       rawDocument: reviewed.document,
       walletDID,
       base: base as Channel | undefined,
+      walletName,
     }),
     (c) => ({ kind: 'channel', document: c })
   )
@@ -178,6 +185,9 @@ const OVERWRITE_NOUN = {
  * ff-cli / agents; the web surface's job is a trustworthy signing ceremony.
  * The forms remain untouched alongside this page.
  */
+/** Last attribution name that actually published, recalled across visits. */
+const ATTRIBUTION_NAME_STORAGE_KEY = 'dp1-publisher.attribution-name'
+
 export default function ReviewAndSign() {
   const { isConnected, address } = useAccount()
   const { data: walletClient } = useWalletClient()
@@ -185,6 +195,16 @@ export default function ReviewAndSign() {
   const { toast } = useToast()
 
   const [jsonText, setJsonText] = useState('')
+  // Prefilled from the last successful publish: the attribution name is
+  // near-constant per person, and an easy-to-skip empty field here signs an
+  // unnamed identity into the document (see hasUnnamedWalletEntity).
+  const [signerName, setSignerName] = useState(() => {
+    try {
+      return window.localStorage.getItem(ATTRIBUTION_NAME_STORAGE_KEY) ?? ''
+    } catch {
+      return ''
+    }
+  })
   const [prepared, setPrepared] = useState<PreparedState>({ status: 'idle' })
   const [isPublishing, setIsPublishing] = useState(false)
   const [publishedDoc, setPublishedDoc] = useState<PublishedDoc | null>(null)
@@ -200,6 +220,14 @@ export default function ReviewAndSign() {
     return () => window.clearTimeout(t)
   }, [jsonText])
 
+  // The attribution name lands inside the signed bytes, so it rides the same
+  // debounce → prepare → staleness gate as the document text.
+  const [settledSignerName, setSettledSignerName] = useState('')
+  useEffect(() => {
+    const t = window.setTimeout(() => setSettledSignerName(signerName), 400)
+    return () => window.clearTimeout(t)
+  }, [signerName])
+
   const parseResult = useMemo(() => {
     const trimmed = settledJsonText.trim()
     if (!trimmed) return null
@@ -211,10 +239,23 @@ export default function ReviewAndSign() {
   // True while the editor holds text the pipeline has not caught up with. Both
   // `reviewed` and `prepared` are derived from `settledJsonText`, so during
   // this window every rendered summary describes the *previous* document.
-  const settling = jsonText !== settledJsonText
+  const settling = jsonText !== settledJsonText || signerName !== settledSignerName
 
   // Signing is allowed only against the text on screen. See `sourceText`.
-  const signable = prepared.status === 'ready' && prepared.sourceText === jsonText
+  const signable =
+    prepared.status === 'ready' &&
+    prepared.sourceText === jsonText &&
+    prepared.sourceName === signerName
+
+  // Non-blocking nudge: the prepared bytes would sign the connected wallet
+  // in as an entity with an empty display name and the attribution field is
+  // blank. Spec-legal (display-protocol/dp1#42) — signing stays enabled —
+  // but easy to do by accident, so say it before the wallet prompt.
+  const unnamedWalletIdentity =
+    signable &&
+    !signerName.trim() &&
+    !!address &&
+    hasUnnamedWalletEntity(prepared.signed, ethereumAddressToDIDPKH(getAddress(address)))
 
   // Once the pipeline has run, summarize what will actually be signed (merged
   // base + injected identity); before that, preview the parsed paste. While
@@ -250,7 +291,7 @@ export default function ReviewAndSign() {
           return
         }
       }
-      const prep = prepareReviewed(reviewed, walletDID, base, extensionsEnabled)
+      const prep = prepareReviewed(reviewed, walletDID, base, extensionsEnabled, settledSignerName)
       if (token !== prepareTokenRef.current) return
       if ('validationErrors' in prep) {
         setPrepared({ status: 'blocked', message: prep.validationErrors[0] })
@@ -266,9 +307,10 @@ export default function ReviewAndSign() {
         // `reviewed` is parsed from `settledJsonText`, so that is the text
         // these bytes attest to.
         sourceText: settledJsonText,
+        sourceName: settledSignerName,
       })
     })()
-  }, [reviewed, settledJsonText, address, extensionsEnabled])
+  }, [reviewed, settledJsonText, settledSignerName, address, extensionsEnabled])
 
   const handleSignAndPublish = async () => {
     if (!walletClient || !address || prepared.status !== 'ready') return
@@ -276,7 +318,7 @@ export default function ReviewAndSign() {
     // disabled in this state, so reaching here means the text changed between
     // render and click; failing closed is the only safe answer on a page whose
     // promise is that the signature covers what was read.
-    if (prepared.sourceText !== jsonText) return
+    if (prepared.sourceText !== jsonText || prepared.sourceName !== signerName) return
     // Everything below reads from `prepared` only — the signed pair
     // (bytes ↔ document identity) stays atomic even if the editor text
     // changes mid-flight.
@@ -314,6 +356,13 @@ export default function ReviewAndSign() {
         mode: prepared.mode,
         receipts: prepared.receipts,
       })
+      // Remember only names that published: a value abandoned mid-edit never
+      // becomes the prefill. Clearing the field and publishing forgets it.
+      try {
+        window.localStorage.setItem(ATTRIBUTION_NAME_STORAGE_KEY, signerName.trim())
+      } catch {
+        // Storage unavailable (private mode etc.) — recall is best-effort.
+      }
     } catch (error) {
       console.error('Sign-and-publish failed:', error)
       toast({
@@ -396,6 +445,38 @@ export default function ReviewAndSign() {
               </CardHeader>
               <CardContent>
                 <JsonFileDropZone value={jsonText} onChange={setJsonText} rows={10} />
+                <div className="mt-4 space-y-1.5">
+                  <label
+                    htmlFor="signer-attribution-name"
+                    className="text-sm font-medium text-foreground"
+                  >
+                    Attribution name <span className="text-muted-foreground">(optional)</span>
+                  </label>
+                  <Input
+                    id="signer-attribution-name"
+                    value={signerName}
+                    onChange={(e) => setSignerName(e.target.value)}
+                    placeholder="Shown next to your wallet on the published document"
+                    autoComplete="name"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Fills the empty name when your wallet is added as curator or
+                    publisher. Names already declared in the document are kept.
+                  </p>
+                  {unnamedWalletIdentity ? (
+                    <p
+                      className="flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-500"
+                      data-testid="unnamed-identity-hint"
+                    >
+                      <ShieldAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                      This will publish your wallet as an unnamed{' '}
+                      {prepared.status === 'ready' && prepared.signed.kind === 'channel'
+                        ? 'publisher'
+                        : 'curator'}
+                      . Valid, but add a name above if you want to be credited.
+                    </p>
+                  ) : null}
+                </div>
                 {parseResult && 'error' in parseResult ? (
                   <p className="mt-3 flex items-start gap-2 text-sm text-destructive">
                     <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />

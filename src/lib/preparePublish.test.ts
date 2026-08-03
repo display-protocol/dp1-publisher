@@ -55,8 +55,9 @@ describe('preparePlaylistForPublish — create', () => {
     expect(r.signedBytes.curators).toEqual([{ name: '', key: WALLET }])
     // The critical invariant: what gets POSTed exactly equals what was hashed.
     expect(r.wireBody).toEqual(r.signedBytes)
-    expect(r.toasts).toHaveLength(1)
-    expect(r.toasts[0].title).toMatch(/curator/i)
+    expect(r.toasts.some((t) => /curator/i.test(t.title))).toBe(true)
+    // basePlaylist carries no slug, so the auto-slug receipt also fires.
+    expect(r.toasts.some((t) => /slug/i.test(t.title))).toBe(true)
   })
 
   it('appends wallet to existing did:key curators (the regression case)', () => {
@@ -96,7 +97,7 @@ describe('preparePlaylistForPublish — create', () => {
     expect(r.signedPayload.summary).toBeUndefined()
     expect(r.wireBody.curators).toBeUndefined()
     expect(r.wireBody.summary).toBeUndefined()
-    expect(r.toasts).toHaveLength(0) // no curator-inject toast (extensions off)
+    expect(r.toasts.some((t) => /curator/i.test(t.title))).toBe(false) // no curator-inject toast (extensions off)
   })
 
   it('returns validation errors for missing title', () => {
@@ -260,7 +261,7 @@ describe('preparePlaylistForPublish — edit', () => {
     })
     ok<Playlist>(r)
     expect(r.signedPayload.curators).toEqual([{ name: 'Sean', key: WALLET, url: '' }])
-    expect(r.toasts).toHaveLength(0) // no injection happened
+    expect(r.toasts.some((t) => /curator/i.test(t.title))).toBe(false) // no curator injection happened
   })
 
   it('preserves existing dpVersion when patch omits it (JSON-tab edit regression)', () => {
@@ -275,6 +276,40 @@ describe('preparePlaylistForPublish — edit', () => {
     ok<Playlist>(r)
     expect(r.signedPayload.dpVersion).toBe('2.0.0')
     expect(r.signedBytes.dpVersion).toBe('2.0.0')
+  })
+
+  it('auto-fills a slug for a slugless playlist, surfaces it on signedPayload, and receipts it', () => {
+    const { slug: _drop, ...noSlug } = {
+      ...basePlaylist,
+      // Real UUID → id[:8] is 8 clean hex chars (no intra-id hyphen).
+      id: 'abcd1234-5678-90ab-cdef-1234567890ab',
+      slug: undefined,
+    }
+    void _drop
+    const r = preparePlaylistForPublish({
+      rawDocument: noSlug as Playlist,
+      walletDID: WALLET,
+      extensionsEnabled: true,
+    })
+    ok<Playlist>(r)
+    expect(r.signedBytes.slug).toBe('season-1-abcd1234')
+    // The typed document the review renders from carries the resolved slug,
+    // so the signer sees the final feed URL before signing.
+    expect(r.signedPayload.slug).toBe('season-1-abcd1234')
+    expect(r.wireBody.slug).toBe(r.signedBytes.slug)
+    const slugToast = r.toasts.find((t) => /slug/i.test(t.title))
+    expect(slugToast?.description).toContain('season-1-abcd1234')
+  })
+
+  it('does not receipt a slug when the author already provided one', () => {
+    const r = preparePlaylistForPublish({
+      rawDocument: { ...basePlaylist, slug: 'my-chosen-slug' },
+      walletDID: WALLET,
+      extensionsEnabled: true,
+    })
+    ok<Playlist>(r)
+    expect(r.signedBytes.slug).toBe('my-chosen-slug')
+    expect(r.toasts.some((t) => /slug/i.test(t.title))).toBe(false)
   })
 })
 

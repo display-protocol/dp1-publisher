@@ -81,12 +81,14 @@ export interface PreparePlaylistArgs {
   base?: Playlist
   /** Drives extension-field stripping and curator auto-inject behavior. */
   extensionsEnabled: boolean
+  /** Optional attribution: fills the injected curator's empty name. */
+  walletName?: string
 }
 
 export function preparePlaylistForPublish(
   args: PreparePlaylistArgs
 ): PrepareResult<Playlist> {
-  const { rawDocument, walletDID, base, extensionsEnabled } = args
+  const { rawDocument, walletDID, base, extensionsEnabled, walletName } = args
   const toasts: ToastInput[] = []
 
   // Step 1: merge with base (edit) or use raw verbatim (create).
@@ -114,7 +116,7 @@ export function preparePlaylistForPublish(
   // meaningful when extensions are enabled — `curators[]` is an extension
   // field; with extensions off the feed doesn't read it.
   if (extensionsEnabled) {
-    const ensured = ensurePlaylistWalletCurator(canonical, walletDID)
+    const ensured = ensurePlaylistWalletCurator(canonical, walletDID, walletName)
     canonical = ensured.playlist
     if (ensured.injected) {
       toasts.push({
@@ -144,6 +146,22 @@ export function preparePlaylistForPublish(
   // is derived from it, so it can't drift from what was signed except in the
   // intentional PATCH omissions below.
   const signedBytes = playlistUnsignedPayloadForSigning(canonical)
+
+  // The signer defaults the slug (generateSlug) when the document lacks one —
+  // the review-and-sign paste path never runs the form's slug generation.
+  // Mirror the resolved slug back onto the typed document so the review
+  // summary shows the final feed URL, and tell the user when we filled it in.
+  const resolvedSlug = signedBytes.slug
+  if (typeof resolvedSlug === 'string') {
+    if (!canonical.slug?.trim()) {
+      toasts.push({
+        title: 'Slug set automatically',
+        description: `This playlist will publish as "${resolvedSlug}". Future updates keep the same URL.`,
+      })
+    }
+    canonical = { ...canonical, slug: resolvedSlug }
+  }
+
   const wireBody: Record<string, unknown> = { ...signedBytes }
   if (base !== undefined) {
     // PATCH: id is in the URL path, created is immutable.
@@ -162,12 +180,14 @@ export interface PrepareChannelArgs {
   rawDocument: Channel
   walletDID: string
   base?: Channel
+  /** Optional attribution: publisher name fallback when the document has none. */
+  walletName?: string
 }
 
 export function prepareChannelForPublish(
   args: PrepareChannelArgs
 ): PrepareResult<Channel> {
-  const { rawDocument, walletDID, base } = args
+  const { rawDocument, walletDID, base, walletName } = args
   const toasts: ToastInput[] = []
 
   // Step 1: merge or pass through.
@@ -187,7 +207,7 @@ export function prepareChannelForPublish(
   // Step 2: ensure publisher.key matches the connected wallet. Channel has a
   // single publisher (vs. playlist's curator array), so the right behavior is
   // replace the key, preserve the name/url.
-  const ensured = ensureChannelWalletPublisher(merged, walletDID)
+  const ensured = ensureChannelWalletPublisher(merged, walletDID, walletName)
   merged = ensured.channel
   merged = normalizeChannelCurators(merged)
   if (ensured.updated) {

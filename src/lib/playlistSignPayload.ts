@@ -54,6 +54,10 @@ const PLAYLIST_ITEM_FIELDS: readonly string[] = [
   'repro',
   'provenance',
   'note',
+  // playlists-extension §3.5.2 (dp1-go v0.5.1 PlaylistItem.DisplayAt,
+  // `json:"displayAt,omitempty"`). Absent from this list it was silently
+  // stripped before hashing, so published playlists lost their schedule.
+  'displayAt',
 ]
 
 const PLAYLIST_DEFAULTS_FIELDS: readonly string[] = ['display', 'license', 'duration']
@@ -174,6 +178,11 @@ function canonicalPlaylistItem(item: unknown): Record<string, unknown> | undefin
   const out = pickFields(item, PLAYLIST_ITEM_FIELDS)
   if ('display' in out) out.display = canonicalDisplayPrefs(out.display)
   if (isPlainObject(out.note)) out.note = pickFields(out.note, NOTE_FIELDS)
+  // `DisplayAt *string omitempty` — Go omits only a nil pointer, so JSON null
+  // must be dropped pre-hash (the feed's re-marshal drops it; keeping it here
+  // would break signature verification). An empty string round-trips verbatim
+  // through the pointer, so it is deliberately NOT dropped.
+  if (out.displayAt === null) delete out.displayAt
   if (isPlainObject(out.repro)) {
     const repro = pickFields(out.repro, REPRO_FIELDS)
     // engineVersion is an open dictionary (map[string]string) — pass keys

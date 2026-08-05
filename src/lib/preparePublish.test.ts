@@ -100,6 +100,40 @@ describe('preparePlaylistForPublish — create', () => {
     expect(r.toasts.some((t) => /curator/i.test(t.title))).toBe(false) // no curator-inject toast (extensions off)
   })
 
+  it('keeps item displayAt in signed bytes and wire body (extensions on)', () => {
+    const r = preparePlaylistForPublish({
+      rawDocument: {
+        ...basePlaylist,
+        items: [
+          { source: 'https://example.com/day1.html', displayAt: '2026-07-21T00:00:00' },
+          { source: 'https://example.com/evergreen.html' },
+        ],
+      },
+      walletDID: WALLET,
+      extensionsEnabled: true,
+    })
+    ok<Playlist>(r)
+    const items = r.signedBytes.items as Array<Record<string, unknown>>
+    expect(items[0].displayAt).toBe('2026-07-21T00:00:00')
+    expect(items[1]).not.toHaveProperty('displayAt')
+    expect(r.wireBody).toEqual(r.signedBytes)
+  })
+
+  it('strips item displayAt when extensions are off (core-only feed)', () => {
+    const r = preparePlaylistForPublish({
+      rawDocument: {
+        ...basePlaylist,
+        items: [{ source: 'https://example.com/day1.html', displayAt: '2026-07-21T00:00:00' }],
+      },
+      walletDID: WALLET,
+      extensionsEnabled: false,
+    })
+    ok<Playlist>(r)
+    const items = r.signedBytes.items as Array<Record<string, unknown>>
+    expect(items[0]).not.toHaveProperty('displayAt')
+    expect(r.wireBody).toEqual(r.signedBytes)
+  })
+
   it('returns validation errors for missing title', () => {
     const r = preparePlaylistForPublish({
       rawDocument: { ...basePlaylist, title: '' },

@@ -107,6 +107,11 @@ export interface PlaylistItem {
   repro?: ReproBlock
   provenance?: ProvenanceBlock
   note?: Note
+  // Playlists-extension §3.5.2 scheduling (dp1-go v0.5.1+): local datetime with
+  // seconds and no timezone, or RFC 3339 with Z/colon offset. The feed only
+  // validates the format under extension validation; it does not compute the
+  // active set, so this is stored item metadata from the publisher's view.
+  displayAt?: string
 }
 
 export interface PlaylistDefaults {

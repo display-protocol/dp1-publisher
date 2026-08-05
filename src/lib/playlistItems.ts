@@ -23,6 +23,7 @@ export function isEmptyManualPlaceholder(item: PlaylistItem): boolean {
   if (item.repro != null) return false
   if (item.provenance) return false
   if (item.note?.text?.trim()) return false
+  if (item.displayAt?.trim()) return false
   if (item.display && Object.keys(item.display).length > 0) return false
   return true
 }

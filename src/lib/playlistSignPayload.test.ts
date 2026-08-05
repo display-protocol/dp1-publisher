@@ -59,6 +59,39 @@ describe('playlistUnsignedPayloadForSigning', () => {
     expect(items[0]).toHaveProperty('title')
   })
 
+  it('preserves items[i].displayAt through the whitelist (playlists-extension §3.5.2)', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      items: [
+        { source: 'https://example.com/day1.html', displayAt: '2026-07-21T00:00:00' },
+        { source: 'https://example.com/day2.html', displayAt: '2026-07-22T00:00:00Z' },
+        { source: 'https://example.com/evergreen.html' },
+      ],
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const items = payload.items as Array<Record<string, unknown>>
+    expect(items[0].displayAt).toBe('2026-07-21T00:00:00')
+    expect(items[1].displayAt).toBe('2026-07-22T00:00:00Z')
+    expect(items[2]).not.toHaveProperty('displayAt')
+  })
+
+  it('drops a null displayAt but keeps an empty string (Go *string omitempty)', () => {
+    // Feed-side `DisplayAt *string omitempty`: JSON null unmarshals to a nil
+    // pointer and is omitted on re-marshal; "" survives through the pointer.
+    // The pre-hash shape must match or the signature will not verify.
+    const playlist = {
+      ...minimalPlaylist,
+      items: [
+        { source: 'https://example.com/a.html', displayAt: null },
+        { source: 'https://example.com/b.html', displayAt: '' },
+      ],
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const items = payload.items as Array<Record<string, unknown>>
+    expect(items[0]).not.toHaveProperty('displayAt')
+    expect(items[1].displayAt).toBe('')
+  })
+
   it('drops unknown fields inside items[i].display (nested DisplayPrefs)', () => {
     const playlist = {
       ...minimalPlaylist,

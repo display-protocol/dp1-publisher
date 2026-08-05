@@ -61,6 +61,16 @@ describe('isEmptyManualPlaceholder', () => {
   it('returns false when id is set (edit-mode persisted item)', () => {
     expect(isEmptyManualPlaceholder({ ...emptyPlaceholder, id: 'some-uuid' })).toBe(false)
   })
+
+  it('returns false when displayAt is set', () => {
+    expect(
+      isEmptyManualPlaceholder({ ...emptyPlaceholder, displayAt: '2026-01-01T10:00:00' })
+    ).toBe(false)
+  })
+
+  it('treats a whitespace-only displayAt as no content', () => {
+    expect(isEmptyManualPlaceholder({ ...emptyPlaceholder, displayAt: '   ' })).toBe(true)
+  })
 })
 
 describe('itemsForPlaylistExport', () => {
@@ -75,6 +85,14 @@ describe('itemsForPlaylistExport', () => {
   it('keeps a filled first manual item alongside series items', () => {
     const manual = { ...emptyPlaceholder, source: 'https://manual.example' }
     expect(itemsForPlaylistExport([manual, seriesItem])).toEqual([manual, seriesItem])
+  })
+
+  // Regression: a manual row whose only curator-entered value is a per-item
+  // displayAt schedule must survive export alongside series items — dropping it
+  // would silently discard the schedule from the signed playlist.
+  it('keeps a first manual item whose only content is displayAt', () => {
+    const scheduled = { ...emptyPlaceholder, displayAt: '2026-01-01T10:00:00' }
+    expect(itemsForPlaylistExport([scheduled, seriesItem])).toEqual([scheduled, seriesItem])
   })
 
   it('does not drop a persisted edit-mode item that has an id but blank source', () => {

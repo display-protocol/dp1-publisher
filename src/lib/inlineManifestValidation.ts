@@ -21,10 +21,11 @@ const ENVELOPE_FIELDS = ['refVersion', 'id', 'created', 'locale'] as const
  * Returns an error message for a malformed `inlineManifest`, or null when the
  * field is absent or plausibly shaped.
  *
- * Only call this when extensions are enabled. With extensions off,
- * `stripItemExtensionFields` drops the field before signing, so rejecting the
- * whole document over bytes we are about to discard would be unhelpful — the
- * same reason `note` is stripped silently rather than rejected in core mode.
+ * Call it on items that are about to be signed — `preparePublish` runs it
+ * after the extension strip, so with extensions off there is nothing left to
+ * reject and the gate needs no separate flag. Validating the strip's output
+ * rather than its input is also what keeps this honest: what we check is
+ * exactly what we sign.
  */
 export function validateItemInlineManifest(item: unknown, index: number): string | null {
   if (!item || typeof item !== 'object') return null

@@ -44,7 +44,6 @@ import CuratorList from './CuratorList'
 import JsonFileDropZone from './JsonFileDropZone'
 import { preparePlaylistForPublish } from '@/lib/preparePublish'
 import { itemsForPlaylistExport, playlistItemExportCount, substantiveItemCount } from '@/lib/playlistItems'
-import { validateItemInlineManifest } from '@/lib/inlineManifestValidation'
 import PostPublishPanel from './PostPublishPanel'
 
 function parsePlaylistJson(
@@ -94,12 +93,6 @@ function parsePlaylistJson(
       const validation = validatePlaylistURI(src)
       if (!validation.valid) {
         return { error: `items[${i}].source: ${validation.reason || 'Invalid URI'}` }
-      }
-      if (extensionsEnabled) {
-        const manifestError = validateItemInlineManifest(it, i)
-        if (manifestError) {
-          return { error: manifestError }
-        }
       }
     }
   }

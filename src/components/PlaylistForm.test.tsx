@@ -296,4 +296,40 @@ describe('PlaylistForm — publish flow', () => {
     })
     expect(mockedApi.publishPlaylist).not.toHaveBeenCalled()
   })
+
+  // Regression: pasted JSON syncs into form state, so switching back to the
+  // Form tab publishes without `parsePlaylistJson` ever running. When the
+  // manifest check lived in that parser, this path signed a malformed manifest
+  // with no error at all — which is why the check moved to preparePublish.
+  it('still refuses a malformed manifest after switching back to the Form tab', async () => {
+    mockedApi.getPlaylist.mockRejectedValue(new apiModule.FeedAPIError('not found', 404))
+
+    render(<PlaylistForm extensionsEnabled />)
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /JSON/i }))
+    fireEvent.change(screen.getByPlaceholderText(/paste DP-1 JSON/i), {
+      target: {
+        value: JSON.stringify({
+          dpVersion: '1.1.0',
+          title: 'Broken manifest playlist',
+          items: [
+            {
+              source: 'https://example.com/art/pre-process.html',
+              inlineManifest: { refVersion: '0.1.0', id: 'ref-9d26ecb3' },
+            },
+          ],
+        }),
+      },
+    })
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Form/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Sign & publish/i }))
+
+    await waitFor(() => {
+      expect(
+        toastMock.mock.calls.some(([arg]) =>
+          /inlineManifest/.test(String(arg?.description ?? '')),
+        ),
+      ).toBe(true)
+    })
+    expect(mockedApi.publishPlaylist).not.toHaveBeenCalled()
+  })
 })

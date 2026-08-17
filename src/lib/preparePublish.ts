@@ -26,6 +26,7 @@ import {
   normalizeChannelCurators,
 } from '@/lib/dp1WalletSigner'
 import { validateChannelFields } from '@/lib/channelValidation'
+import { validateItemInlineManifest } from '@/lib/inlineManifestValidation'
 import { playlistUnsignedPayloadForSigning } from '@/lib/playlistSignPayload'
 import { channelUnsignedPayloadForSigning } from '@/lib/channelSignPayload'
 
@@ -138,6 +139,20 @@ export function preparePlaylistForPublish(
   }
   if (!Array.isArray(canonical.items)) {
     validationErrors.push('Items must be an array.')
+  } else {
+    // §3.6 inline manifests are the one item field the form never builds: they
+    // arrive by paste or import and ride through form state untouched, so the
+    // JSON-tab parser is not a chokepoint for them (paste in the JSON tab,
+    // switch to the Form tab, publish — and that parser never runs). Checking
+    // here instead covers every entry path at once.
+    //
+    // Running after the extension strip above is what gates this correctly:
+    // with extensions off the field is already gone, and rejecting a document
+    // over bytes we just discarded would be noise.
+    for (let i = 0; i < canonical.items.length; i++) {
+      const manifestError = validateItemInlineManifest(canonical.items[i], i)
+      if (manifestError) validationErrors.push(manifestError)
+    }
   }
   if (validationErrors.length) return { validationErrors }
 

@@ -12,6 +12,7 @@ import {
 } from '@/lib/reviewDocument'
 import { minimalPlaylist } from '@/test/fixtures/playlist'
 import { minimalChannel } from '@/test/fixtures/channel'
+import type { Playlist } from '@/types/dp1'
 
 const EXT = { extensionsEnabled: true }
 const NO_EXT = { extensionsEnabled: false }
@@ -117,57 +118,25 @@ describe('parseReviewDocument — validation', () => {
     expect((r as { error: string }).error).toMatch(/dynamicQuery/)
   })
 
-  // §3.6 inline Ref Manifest: an ff-cli-built playlist is the main way one
-  // reaches this page, so a malformed manifest must surface here rather than
-  // becoming signed bytes the feed will reject.
-  it('rejects an inlineManifest missing its envelope', () => {
-    const r = parseReviewDocument(
+  // §3.6 inline manifests pass through this parser untouched — they are
+  // checked in preparePublish, the one chokepoint every entry path shares
+  // (see preparePublish.test.ts). This page must not reject them on its own.
+  it('carries an item inlineManifest through to the parsed document', () => {
+    const inlineManifest = {
+      refVersion: '0.1.0',
+      id: 'ref-9d26ecb3',
+      created: '2026-07-28T00:00:00Z',
+      locale: 'en',
+    }
+    const doc = parseOk(
       JSON.stringify({
         ...minimalPlaylist,
-        items: [
-          {
-            source: 'https://example.com/a.html',
-            inlineManifest: { refVersion: '0.1.0', id: 'ref-1' },
-          },
-        ],
-      }),
-      EXT
+        items: [{ source: 'https://example.com/a.html', inlineManifest }],
+      })
     )
-    expect((r as { error: string }).error).toMatch(/inlineManifest.*created, locale/)
-  })
-
-  it('accepts a well-formed inlineManifest', () => {
-    const r = parseReviewDocument(
-      JSON.stringify({
-        ...minimalPlaylist,
-        items: [
-          {
-            source: 'https://example.com/a.html',
-            inlineManifest: {
-              refVersion: '0.1.0',
-              id: 'ref-9d26ecb3',
-              created: '2026-07-28T00:00:00Z',
-              locale: 'en',
-            },
-          },
-        ],
-      }),
-      EXT
-    )
-    expect(r).not.toHaveProperty('error')
-  })
-
-  // With extensions off the field is stripped before signing, so rejecting the
-  // document over bytes we are about to discard would be unhelpful noise.
-  it('ignores a malformed inlineManifest when extensions are off', () => {
-    const r = parseReviewDocument(
-      JSON.stringify({
-        ...minimalPlaylist,
-        items: [{ source: 'https://example.com/a.html', inlineManifest: 'not an object' }],
-      }),
-      NO_EXT
-    )
-    expect(r).not.toHaveProperty('error')
+    expect(doc.kind).toBe('playlist')
+    const items = (doc.document as Playlist).items
+    expect(items[0].inlineManifest).toEqual(inlineManifest)
   })
 
   it('requires at least one playlist URI on channels and groups', () => {

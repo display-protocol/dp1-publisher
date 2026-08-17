@@ -49,6 +49,12 @@ const PLAYLIST_ITEM_FIELDS: readonly string[] = [
   'duration',
   'license',
   'ref',
+  // NOTE: `refHash` is missing here, and that is a bug, not a decision.
+  // dp1-go's PlaylistItem has carried `RefHash string json:"refHash,omitempty"`
+  // since v0.5.1, so the feed keeps a refHash we drop — silently losing the
+  // integrity hash that §3.6 requires for a manifest served over mutable
+  // HTTPS. Left out of this change to keep it scoped to inlineManifest;
+  // fixing it means adding the key here and to `PlaylistItem`.
   'override',
   'display',
   'repro',

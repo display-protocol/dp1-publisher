@@ -12,7 +12,9 @@
  * §3.6: "Emitters MUST populate the manifest envelope (refVersion, id,
  * created, locale) exactly as they would for a hosted manifest." Those four
  * are `required` in the ref-manifest schema, so demanding them here can only
- * reject documents the feed would reject too.
+ * reject documents the feed would reject too — modulo whitespace-only values,
+ * which `minLength: 1` accepts and this rejects. A blank envelope field is a
+ * mistake, never intent.
  */
 
 const ENVELOPE_FIELDS = ['refVersion', 'id', 'created', 'locale'] as const

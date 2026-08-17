@@ -69,6 +69,13 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 - **Base URL:** `VITE_FEED_BASE_URL` at build/dev time (see `.env.example`). Default fallback in code is production Feral File feed unless overridden.
 - **Extensions:** Channel routes and playlist extension-dependent UI align with **`GET /api/v1`** (`extensionsEnabled`) unless **`VITE_DP1_EXTENSIONS_ENABLED`** forces on/off locally.
 - **Contract:** HTTP paths, payloads, errors, ETag semantics, and pagination are defined by **[dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2)** ([OpenAPI](https://github.com/display-protocol/dp1-feed-v2/blob/main/api/openapi.yaml), [API design](https://github.com/display-protocol/dp1-feed-v2/blob/main/docs/api_design.md)). This app implements a **subset** of calls needed for dashboard workflows; treat that repository as normative.
+- **The canonicalizer tracks the feed's dp1-go version, not the spec's.** The feed binds requests into dp1-go's typed structs and rebuilds the document with `json.Marshal` before verifying a signature, so a field the feed's dp1-go does not know is dropped from the bytes it hashes. A field we sign but the feed drops is a verification failure; a field we drop but the feed would keep is silently lost metadata. `playlistSignPayload.ts` is where that alignment is written down.
+
+### Known gap: `inlineManifest` needs dp1-go v0.6.0 on the feed
+
+The publisher carries item-level `inlineManifest` (playlists extension §3.6, dp1-go v0.6.0 `PlaylistItem.InlineManifest`) through to the signed bytes. `dp1-feed-v2@main` still pins **dp1-go v0.5.1**, whose `PlaylistItem` has no such field, so today the feed drops it at bind time in `buildPlaylistDocument` — the curator signature fails to verify on the signature path, and on the API-key path the publish succeeds but stores a document without the manifest. Publishing a playlist that carries one therefore does not work end to end until the feed bumps to dp1-go v0.6.0; playlists without one are unaffected. Note that bump is breaking for the feed: `refmanifest.Thumbnail.W`/`.H` changed from `int` to `*int`.
+
+Verified against dp1-go v0.6.0 directly: for a playlist whose item carries an inline manifest, our canonical signing bytes match Go's bind → re-marshal → JCS output byte for byte, so the signature will verify as soon as the feed carries the field.
 
 ## Dependencies on ff-indexer-v2 (series expand)
 

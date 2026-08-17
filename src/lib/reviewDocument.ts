@@ -17,6 +17,7 @@
 
 import { v4 as uuidv4 } from 'uuid'
 import { validatePlaylistURI } from '@/lib/api'
+import { validateItemInlineManifest } from '@/lib/inlineManifestValidation'
 import type { Channel, Entity, Playlist, PlaylistItem } from '@/types/dp1'
 
 export type ReviewedDp1Document =
@@ -109,6 +110,10 @@ function validatePlaylistShape(
       if (!src) return `items[${i}].source is required.`
       const validation = validatePlaylistURI(src)
       if (!validation.valid) return `items[${i}].source: ${validation.reason || 'Invalid URI'}`
+      if (extensionsEnabled) {
+        const manifestError = validateItemInlineManifest(it, i)
+        if (manifestError) return manifestError
+      }
     }
   }
   if (!extensionsEnabled && o.dynamicQuery != null && typeof o.dynamicQuery === 'object') {

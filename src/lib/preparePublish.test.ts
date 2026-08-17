@@ -134,6 +134,57 @@ describe('preparePlaylistForPublish — create', () => {
     expect(r.wireBody).toEqual(r.signedBytes)
   })
 
+  it('keeps item inlineManifest in signed bytes and wire body (extensions on)', () => {
+    const inlineManifest = {
+      refVersion: '0.1.0',
+      id: 'ref-9d26ecb3',
+      created: '2026-07-28T00:00:00Z',
+      locale: 'en',
+      metadata: { title: 'Pre-Process', artists: [{ name: 'Casey Reas', id: '' }] },
+    }
+    const r = preparePlaylistForPublish({
+      rawDocument: {
+        ...basePlaylist,
+        items: [
+          { source: 'https://example.com/art/pre-process.html', inlineManifest },
+          { source: 'https://example.com/plain.html' },
+        ],
+      },
+      walletDID: WALLET,
+      extensionsEnabled: true,
+    })
+    ok<Playlist>(r)
+    const items = r.signedBytes.items as Array<Record<string, unknown>>
+    expect(items[0].inlineManifest).toEqual(inlineManifest)
+    expect(items[1]).not.toHaveProperty('inlineManifest')
+    expect(r.wireBody).toEqual(r.signedBytes)
+  })
+
+  it('strips item inlineManifest when extensions are off (core-only feed)', () => {
+    const r = preparePlaylistForPublish({
+      rawDocument: {
+        ...basePlaylist,
+        items: [
+          {
+            source: 'https://example.com/art/pre-process.html',
+            inlineManifest: {
+              refVersion: '0.1.0',
+              id: 'ref-9d26ecb3',
+              created: '2026-07-28T00:00:00Z',
+              locale: 'en',
+            },
+          },
+        ],
+      },
+      walletDID: WALLET,
+      extensionsEnabled: false,
+    })
+    ok<Playlist>(r)
+    const items = r.signedBytes.items as Array<Record<string, unknown>>
+    expect(items[0]).not.toHaveProperty('inlineManifest')
+    expect(r.wireBody).toEqual(r.signedBytes)
+  })
+
   it('returns validation errors for missing title', () => {
     const r = preparePlaylistForPublish({
       rawDocument: { ...basePlaylist, title: '' },

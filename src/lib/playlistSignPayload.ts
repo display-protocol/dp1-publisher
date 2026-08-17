@@ -58,6 +58,14 @@ const PLAYLIST_ITEM_FIELDS: readonly string[] = [
   // `json:"displayAt,omitempty"`). Absent from this list it was silently
   // stripped before hashing, so published playlists lost their schedule.
   'displayAt',
+  // playlists-extension §3.6 (dp1-go v0.6.0 PlaylistItem.InlineManifest,
+  // `json.RawMessage json:"inlineManifest,omitempty"`). An open shape like
+  // `override`: listed here so the whole value is copied verbatim, and
+  // deliberately given no nested `*_FIELDS` list. The feed carries these bytes
+  // through as raw JSON rather than a typed struct, so filtering keys inside
+  // the manifest would remove bytes the feed keeps and break verification —
+  // the exact inverse of the omitempty stripping the other blocks need.
+  'inlineManifest',
 ]
 
 const PLAYLIST_DEFAULTS_FIELDS: readonly string[] = ['display', 'license', 'duration']
@@ -183,6 +191,12 @@ function canonicalPlaylistItem(item: unknown): Record<string, unknown> | undefin
   // would break signature verification). An empty string round-trips verbatim
   // through the pointer, so it is deliberately NOT dropped.
   if (out.displayAt === null) delete out.displayAt
+  // `inlineManifest` gets no such treatment, and that asymmetry is deliberate.
+  // `json.RawMessage` implements Unmarshaler, so Go hands it the literal bytes
+  // `null` — a non-empty slice that `omitempty` does not drop and that
+  // re-marshals as `"inlineManifest":null`. Verified against dp1-go v0.6.0:
+  // null, `{}`, unknown keys, and present-but-empty strings all survive the
+  // feed's round trip untouched, so we must not touch them either.
   if (isPlainObject(out.repro)) {
     const repro = pickFields(out.repro, REPRO_FIELDS)
     // engineVersion is an open dictionary (map[string]string) — pass keys

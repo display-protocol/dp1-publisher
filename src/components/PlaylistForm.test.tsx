@@ -219,4 +219,117 @@ describe('PlaylistForm — publish flow', () => {
       expect(desc).toMatch(/different wallet/i)
     })
   })
+
+  // playlists-extension §3.6. A playlist carrying an inline Ref Manifest is
+  // authored elsewhere (ff-cli, an agent) and pasted into the JSON tab — there
+  // is no form control for the field — so the JSON tab is the whole user-facing
+  // path for it, and these two cases are what "publishing an item with an
+  // inline manifest works" actually means end to end.
+  function pasteJsonAndPublish(document: unknown) {
+    // Radix tabs switch on mousedown, not click.
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /JSON/i }))
+    fireEvent.change(screen.getByPlaceholderText(/paste DP-1 JSON/i), {
+      target: { value: JSON.stringify(document) },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Sign & publish/i }))
+  }
+
+  const INLINE_MANIFEST = {
+    refVersion: '0.1.0',
+    id: 'ref-9d26ecb3',
+    created: '2026-07-28T00:00:00Z',
+    locale: 'en',
+    metadata: {
+      title: 'Pre-Process',
+      artists: [{ name: 'Casey Reas', id: '' }],
+    },
+  }
+
+  it('publishes a pasted item inlineManifest verbatim (JSON tab, extensions on)', async () => {
+    mockedApi.getPlaylist.mockRejectedValue(new apiModule.FeedAPIError('not found', 404))
+    mockedApi.publishPlaylist.mockImplementation(async (p) => p as Record<string, unknown>)
+
+    render(<PlaylistForm extensionsEnabled />)
+    pasteJsonAndPublish({
+      dpVersion: '1.1.0',
+      title: 'Inline manifest playlist',
+      items: [
+        {
+          source: 'https://example.com/art/pre-process.html',
+          inlineManifest: INLINE_MANIFEST,
+        },
+      ],
+    })
+
+    await waitFor(() => {
+      expect(mockedApi.publishPlaylist).toHaveBeenCalledTimes(1)
+    })
+    const body = mockedApi.publishPlaylist.mock.calls[0][0] as {
+      items: Array<Record<string, unknown>>
+    }
+    // Deep equality, not a spot check: the artist `"id": ""` is the field a
+    // typed re-marshal would drop, and dropping it changes the signed bytes.
+    expect(body.items[0].inlineManifest).toEqual(INLINE_MANIFEST)
+  })
+
+  it('refuses to publish an inlineManifest missing its envelope', async () => {
+    mockedApi.getPlaylist.mockRejectedValue(new apiModule.FeedAPIError('not found', 404))
+
+    render(<PlaylistForm extensionsEnabled />)
+    pasteJsonAndPublish({
+      dpVersion: '1.1.0',
+      title: 'Broken manifest playlist',
+      items: [
+        {
+          source: 'https://example.com/art/pre-process.html',
+          inlineManifest: { refVersion: '0.1.0', id: 'ref-9d26ecb3' },
+        },
+      ],
+    })
+
+    await waitFor(() => {
+      expect(
+        toastMock.mock.calls.some(([arg]) =>
+          /inlineManifest/.test(String(arg?.description ?? '')),
+        ),
+      ).toBe(true)
+    })
+    expect(mockedApi.publishPlaylist).not.toHaveBeenCalled()
+  })
+
+  // Regression: pasted JSON syncs into form state, so switching back to the
+  // Form tab publishes without `parsePlaylistJson` ever running. When the
+  // manifest check lived in that parser, this path signed a malformed manifest
+  // with no error at all — which is why the check moved to preparePublish.
+  it('still refuses a malformed manifest after switching back to the Form tab', async () => {
+    mockedApi.getPlaylist.mockRejectedValue(new apiModule.FeedAPIError('not found', 404))
+
+    render(<PlaylistForm extensionsEnabled />)
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /JSON/i }))
+    fireEvent.change(screen.getByPlaceholderText(/paste DP-1 JSON/i), {
+      target: {
+        value: JSON.stringify({
+          dpVersion: '1.1.0',
+          title: 'Broken manifest playlist',
+          items: [
+            {
+              source: 'https://example.com/art/pre-process.html',
+              inlineManifest: { refVersion: '0.1.0', id: 'ref-9d26ecb3' },
+            },
+          ],
+        }),
+      },
+    })
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Form/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Sign & publish/i }))
+
+    await waitFor(() => {
+      expect(
+        toastMock.mock.calls.some(([arg]) =>
+          /inlineManifest/.test(String(arg?.description ?? '')),
+        ),
+      ).toBe(true)
+    })
+    expect(mockedApi.publishPlaylist).not.toHaveBeenCalled()
+  })
 })

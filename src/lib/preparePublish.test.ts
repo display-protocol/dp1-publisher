@@ -134,6 +134,119 @@ describe('preparePlaylistForPublish — create', () => {
     expect(r.wireBody).toEqual(r.signedBytes)
   })
 
+  it('keeps item inlineManifest in signed bytes and wire body (extensions on)', () => {
+    const inlineManifest = {
+      refVersion: '0.1.0',
+      id: 'ref-9d26ecb3',
+      created: '2026-07-28T00:00:00Z',
+      locale: 'en',
+      metadata: { title: 'Pre-Process', artists: [{ name: 'Casey Reas', id: '' }] },
+    }
+    const r = preparePlaylistForPublish({
+      rawDocument: {
+        ...basePlaylist,
+        items: [
+          { source: 'https://example.com/art/pre-process.html', inlineManifest },
+          { source: 'https://example.com/plain.html' },
+        ],
+      },
+      walletDID: WALLET,
+      extensionsEnabled: true,
+    })
+    ok<Playlist>(r)
+    const items = r.signedBytes.items as Array<Record<string, unknown>>
+    expect(items[0].inlineManifest).toEqual(inlineManifest)
+    expect(items[1]).not.toHaveProperty('inlineManifest')
+    expect(r.wireBody).toEqual(r.signedBytes)
+  })
+
+  it('strips item inlineManifest when extensions are off (core-only feed)', () => {
+    const r = preparePlaylistForPublish({
+      rawDocument: {
+        ...basePlaylist,
+        items: [
+          {
+            source: 'https://example.com/art/pre-process.html',
+            inlineManifest: {
+              refVersion: '0.1.0',
+              id: 'ref-9d26ecb3',
+              created: '2026-07-28T00:00:00Z',
+              locale: 'en',
+            },
+          },
+        ],
+      },
+      walletDID: WALLET,
+      extensionsEnabled: false,
+    })
+    ok<Playlist>(r)
+    const items = r.signedBytes.items as Array<Record<string, unknown>>
+    expect(items[0]).not.toHaveProperty('inlineManifest')
+    expect(r.wireBody).toEqual(r.signedBytes)
+  })
+
+  // This is the only place the envelope is checked, deliberately: an inline
+  // manifest is never built by the form, it arrives by paste or import and
+  // rides through form state untouched, so gating it in the JSON-tab parser
+  // left the Form-tab publish path open.
+  it('rejects an inlineManifest missing its envelope, naming every gap', () => {
+    const r = preparePlaylistForPublish({
+      rawDocument: {
+        ...basePlaylist,
+        items: [
+          {
+            source: 'https://example.com/a.html',
+            inlineManifest: { refVersion: '0.1.0', id: 'ref-9d26ecb3' },
+          },
+        ],
+      },
+      walletDID: WALLET,
+      extensionsEnabled: true,
+    })
+    expect(r).toHaveProperty('validationErrors')
+    expect((r as { validationErrors: string[] }).validationErrors).toEqual([
+      'items[0].inlineManifest is missing required Ref Manifest fields: created, locale.',
+    ])
+  })
+
+  it('rejects a non-object inlineManifest', () => {
+    const r = preparePlaylistForPublish({
+      rawDocument: {
+        ...basePlaylist,
+        items: [
+          {
+            source: 'https://example.com/a.html',
+            inlineManifest: 'https://example.com/manifest.json',
+          },
+        ],
+      } as unknown as Playlist,
+      walletDID: WALLET,
+      extensionsEnabled: true,
+    })
+    expect((r as { validationErrors: string[] }).validationErrors).toEqual([
+      'items[0].inlineManifest must be a Ref Manifest object.',
+    ])
+  })
+
+  // The check runs on the strip's output, so with extensions off there is
+  // nothing left to reject — the document publishes without the manifest
+  // rather than failing over bytes we just discarded.
+  it('ignores a malformed inlineManifest when extensions are off', () => {
+    const r = preparePlaylistForPublish({
+      rawDocument: {
+        ...basePlaylist,
+        items: [
+          { source: 'https://example.com/a.html', inlineManifest: 'not an object' },
+        ],
+      } as unknown as Playlist,
+      walletDID: WALLET,
+      extensionsEnabled: false,
+    })
+    ok<Playlist>(r)
+    const items = r.signedBytes.items as Array<Record<string, unknown>>
+    expect(items[0]).not.toHaveProperty('inlineManifest')
+  })
+
   it('returns validation errors for missing title', () => {
     const r = preparePlaylistForPublish({
       rawDocument: { ...basePlaylist, title: '' },

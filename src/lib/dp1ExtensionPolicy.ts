@@ -17,11 +17,17 @@ export function parseEnvExtensionsOverride(): boolean | undefined {
 }
 
 export function stripItemExtensionFields(item: PlaylistItem): PlaylistItem {
-  // `note` and `displayAt` (§3.5.2 scheduling) are both playlists-extension
-  // fields. A core-only feed accepts unknown item keys without validating
-  // them, so stripping here is what keeps a core-mode publish from signing
-  // an unvalidated schedule into the document.
-  const { note: _omit, displayAt: _omitDisplayAt, ...rest } = item
+  // `note`, `displayAt` (§3.5.2 scheduling), and `inlineManifest` (§3.6 inline
+  // Ref Manifest) are all playlists-extension fields. A core-only feed accepts
+  // unknown item keys without validating them, so stripping here is what keeps
+  // a core-mode publish from signing an unvalidated schedule — or a whole
+  // unvalidated manifest — into the document.
+  const {
+    note: _omit,
+    displayAt: _omitDisplayAt,
+    inlineManifest: _omitInlineManifest,
+    ...rest
+  } = item
   return rest
 }
 

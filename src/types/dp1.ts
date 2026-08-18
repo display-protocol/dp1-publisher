@@ -103,6 +103,15 @@ export interface PlaylistItem {
   license?: LicenseMode
   ref?: string // URI
   override?: Record<string, unknown>
+  // Playlists-extension §3.6 (dp1-go v0.6.0 PlaylistItem.InlineManifest): a
+  // complete Ref Manifest carried inline instead of hosted behind `ref`. Typed
+  // as an open shape like `override` because dp1-go holds it as
+  // `json.RawMessage` and never decodes it — its bytes are covered by the
+  // playlist signature with no `refHash` counterpart, so decoding and
+  // re-encoding would drop present-but-empty fields (the artist `"id": ""` in
+  // the §3.6 example) and change the JCS payload. Anything narrower here would
+  // invite code that reshapes a document we are only allowed to carry.
+  inlineManifest?: Record<string, unknown>
   display?: DisplayPrefs
   repro?: ReproBlock
   provenance?: ProvenanceBlock
@@ -130,7 +139,7 @@ export interface Playlist {
   items: PlaylistItem[]
   signatures?: Signature[]
   signature?: string // Legacy v1.0.x
-  // Extension fields (playlists v0.1.0)
+  // Extension fields (playlists v0.2.0)
   curators?: Entity[]
   summary?: string
   coverImage?: string

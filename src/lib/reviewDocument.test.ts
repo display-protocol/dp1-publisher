@@ -12,6 +12,7 @@ import {
 } from '@/lib/reviewDocument'
 import { minimalPlaylist } from '@/test/fixtures/playlist'
 import { minimalChannel } from '@/test/fixtures/channel'
+import type { Playlist } from '@/types/dp1'
 
 const EXT = { extensionsEnabled: true }
 const NO_EXT = { extensionsEnabled: false }
@@ -115,6 +116,27 @@ describe('parseReviewDocument — validation', () => {
       NO_EXT
     )
     expect((r as { error: string }).error).toMatch(/dynamicQuery/)
+  })
+
+  // §3.6 inline manifests pass through this parser untouched — they are
+  // checked in preparePublish, the one chokepoint every entry path shares
+  // (see preparePublish.test.ts). This page must not reject them on its own.
+  it('carries an item inlineManifest through to the parsed document', () => {
+    const inlineManifest = {
+      refVersion: '0.1.0',
+      id: 'ref-9d26ecb3',
+      created: '2026-07-28T00:00:00Z',
+      locale: 'en',
+    }
+    const doc = parseOk(
+      JSON.stringify({
+        ...minimalPlaylist,
+        items: [{ source: 'https://example.com/a.html', inlineManifest }],
+      })
+    )
+    expect(doc.kind).toBe('playlist')
+    const items = (doc.document as Playlist).items
+    expect(items[0].inlineManifest).toEqual(inlineManifest)
   })
 
   it('requires at least one playlist URI on channels and groups', () => {

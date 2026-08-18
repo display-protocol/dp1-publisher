@@ -71,6 +71,20 @@ describe('isEmptyManualPlaceholder', () => {
   it('treats a whitespace-only displayAt as no content', () => {
     expect(isEmptyManualPlaceholder({ ...emptyPlaceholder, displayAt: '   ' })).toBe(true)
   })
+
+  it('returns false when inlineManifest is set', () => {
+    expect(
+      isEmptyManualPlaceholder({
+        ...emptyPlaceholder,
+        inlineManifest: {
+          refVersion: '0.1.0',
+          id: 'ref-9d26ecb3',
+          created: '2026-07-28T00:00:00Z',
+          locale: 'en',
+        },
+      })
+    ).toBe(false)
+  })
 })
 
 describe('itemsForPlaylistExport', () => {
@@ -93,6 +107,21 @@ describe('itemsForPlaylistExport', () => {
   it('keeps a first manual item whose only content is displayAt', () => {
     const scheduled = { ...emptyPlaceholder, displayAt: '2026-01-01T10:00:00' }
     expect(itemsForPlaylistExport([scheduled, seriesItem])).toEqual([scheduled, seriesItem])
+  })
+
+  // Same reasoning as displayAt: an item whose only curator-supplied content is
+  // the inline Ref Manifest carries the metadata a player labels the work with.
+  it('keeps a first manual item whose only content is inlineManifest', () => {
+    const described = {
+      ...emptyPlaceholder,
+      inlineManifest: {
+        refVersion: '0.1.0',
+        id: 'ref-9d26ecb3',
+        created: '2026-07-28T00:00:00Z',
+        locale: 'en',
+      },
+    }
+    expect(itemsForPlaylistExport([described, seriesItem])).toEqual([described, seriesItem])
   })
 
   it('does not drop a persisted edit-mode item that has an id but blank source', () => {

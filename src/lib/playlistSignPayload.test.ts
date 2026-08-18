@@ -92,6 +92,63 @@ describe('playlistUnsignedPayloadForSigning', () => {
     expect(items[1].displayAt).toBe('')
   })
 
+  // playlists-extension §3.6. `InlineManifest` is `json.RawMessage` on the feed
+  // side, so unlike every other nested block here the correct behavior is to
+  // touch nothing: the manifest's bytes are covered by the playlist signature
+  // with no refHash counterpart. The expectations below were checked against a
+  // real dp1-go v0.6.0 unmarshal/marshal round trip.
+  it('preserves items[i].inlineManifest verbatim, including keys we do not model', () => {
+    // The §3.6 example from display-protocol/dp1, extended with a block no
+    // version of this app knows about. Both must survive: the feed keeps the
+    // raw bytes, so anything we drop is a signature mismatch.
+    const inlineManifest = {
+      refVersion: '0.1.0',
+      id: 'ref-9d26ecb3',
+      created: '2026-07-28T00:00:00Z',
+      locale: 'en',
+      metadata: {
+        title: 'Pre-Process',
+        // A present-but-empty string: a typed re-marshal would drop this, which
+        // is exactly why dp1-go refuses to decode the manifest at all.
+        artists: [{ name: 'Casey Reas', id: '' }],
+        thumbnails: {
+          default: { uri: 'https://example.com/art/pre-process-thumb.png', w: 1200, h: 900 },
+        },
+      },
+      i18n: { fr: { title: 'Pré-Process' } },
+      somethingNobodyModelsYet: { deep: [1, 2, 3] },
+    }
+    const playlist = {
+      ...minimalPlaylist,
+      items: [
+        { source: 'https://example.com/art/pre-process.html', inlineManifest },
+        { source: 'https://example.com/plain.html' },
+      ],
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const items = payload.items as Array<Record<string, unknown>>
+    expect(items[0].inlineManifest).toEqual(inlineManifest)
+    expect(items[1]).not.toHaveProperty('inlineManifest')
+  })
+
+  it('keeps a null or empty inlineManifest (json.RawMessage, not a pointer)', () => {
+    // RawMessage implements Unmarshaler, so Go stores the literal bytes `null`
+    // — a non-empty slice that omitempty does not drop and that re-marshals as
+    // `"inlineManifest":null`. The opposite of the displayAt case above; both
+    // were verified against dp1-go v0.6.0.
+    const playlist = {
+      ...minimalPlaylist,
+      items: [
+        { source: 'https://example.com/a.html', inlineManifest: null },
+        { source: 'https://example.com/b.html', inlineManifest: {} },
+      ],
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const items = payload.items as Array<Record<string, unknown>>
+    expect(items[0].inlineManifest).toBeNull()
+    expect(items[1].inlineManifest).toEqual({})
+  })
+
   it('drops unknown fields inside items[i].display (nested DisplayPrefs)', () => {
     const playlist = {
       ...minimalPlaylist,

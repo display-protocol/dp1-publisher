@@ -20,6 +20,7 @@ export function isEmptyManualPlaceholder(item: PlaylistItem): boolean {
   if (item.duration != null) return false
   if (item.license != null) return false
   if (item.override != null) return false
+  if (item.inlineManifest != null) return false
   if (item.repro != null) return false
   if (item.provenance) return false
   if (item.note?.text?.trim()) return false

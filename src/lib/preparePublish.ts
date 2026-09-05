@@ -19,7 +19,10 @@ import {
   mergeChannelForPatch,
   mergePlaylistForPatch,
 } from '@/lib/dp1Merge'
-import { stripPlaylistExtensionFields } from '@/lib/dp1ExtensionPolicy'
+import {
+  playlistExtensionFieldsPresent,
+  stripPlaylistExtensionFields,
+} from '@/lib/dp1ExtensionPolicy'
 import {
   ensureChannelWalletPublisher,
   ensurePlaylistWalletCurator,
@@ -107,6 +110,32 @@ export function preparePlaylistForPublish(
         typeof merged.dpVersion === 'string' && merged.dpVersion.trim() !== ''
           ? merged.dpVersion.trim()
           : '1.1.0',
+    }
+  }
+
+  // Step 1c: refuse to replace an extension-bearing document while extensions are off.
+  //
+  // Stripping is right for a create — it shapes a fresh payload to what a core-only feed validates. A
+  // replace sends the *complete* document, so every stripped field is erased on the feed. That was
+  // invisible under PATCH, where the feed merged a partial body and omissions survived untouched.
+  //
+  // `curators` makes it worse than data loss: it is the feed's owner set, a replace may not change it,
+  // and step 3 below only re-adds the wallet when extensions are on. So the request either fails as an
+  // owner change or, where the feed accepts it, silently drops fields the user never saw. Refusing is the
+  // honest outcome — the alternative is signing a document that quietly discards someone's work.
+  if (!extensionsEnabled && base) {
+    // Read the STORED document, not the merged result. What a replace erases is whatever the feed holds
+    // and the outgoing document omits, and the merge can hide that: an edit whose items replace the
+    // stored ones drops their extension data from `merged` before this check ever sees it.
+    const losing = playlistExtensionFieldsPresent(base)
+    if (losing.length > 0) {
+      return {
+        validationErrors: [
+          `This playlist uses extension fields (${losing.join(', ')}), and extensions are off for this ` +
+            `session. Replacing it now would erase them, and dropping "curators" would change the owner ` +
+            `the feed recorded. Enable extensions to edit this playlist.`,
+        ],
+      }
     }
   }
 

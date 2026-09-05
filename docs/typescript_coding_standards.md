@@ -31,7 +31,7 @@ This repository favors clarity, predictable boundaries, and behavior aligned wit
 Add comments where future maintainers could otherwise misalign with DP-1 or the feed:
 
 - signing / canonicalization invariants (`signing.ts`, payload builders)
-- why refetch-before-PATCH matters (`publishedStorage.ts`)
+- why refetch-before-replace matters (`publishedStorage.ts`) — a replace sends the whole document, so a stale base silently drops fields
 - extensions fallbacks (`Dp1ExtensionsContext.tsx`)
 
 Avoid narrating obvious JSX or trivial assignments.
@@ -42,7 +42,7 @@ Avoid narrating obvious JSX or trivial assignments.
 
 - Use **`FeedAPIError`** for failed feed calls; propagate `status` and stable `error` for branching and toasts where appropriate.
 - Do not swallow failures without user-visible or logged diagnostics.
-- Prefer **controlled** parsing with explicit types (`as Type` sparingly)—validate at boundaries where the feed shape is loosely typed (`Record<string, unknown>` PATCH bodies).
+- Prefer **controlled** parsing with explicit types (`as Type` sparingly)—validate at boundaries where the feed shape is loosely typed (`Record<string, unknown>` request bodies).
 
 ---
 

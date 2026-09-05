@@ -748,3 +748,75 @@ describe('prepareChannelForPublish — edit (round-6 regression guards)', () => 
 })
 
 
+
+/**
+ * Core mode plus replace is the combination that only became dangerous when updates moved from PATCH to
+ * PUT. Stripping shapes a create; on a replace it erases, because the whole document is sent. `curators`
+ * is the sharpest case — it is the feed's owner set, a replace may not change it, and the wallet is only
+ * re-added when extensions are on, so a stripped replace carries no owner at all.
+ */
+describe('core mode never silently strips a stored document on replace', () => {
+  const withExtensions: Playlist = {
+    ...basePlaylist,
+    id: 'pl-ext-1',
+    created: '2026-05-20T08:30:00Z',
+    curators: [{ name: 'NODE', key: DID_KEY, url: '' }],
+    summary: 'a summary the user cannot see in core mode',
+  }
+
+  it('refuses the replace and names what would be lost', () => {
+    const r = preparePlaylistForPublish({
+      rawDocument: { ...basePlaylist, title: 'edited in core mode' },
+      walletDID: WALLET,
+      base: withExtensions,
+      extensionsEnabled: false,
+    })
+    expect('validationErrors' in r).toBe(true)
+    const [message] = (r as { validationErrors: string[] }).validationErrors
+    expect(message).toContain('curators')
+    expect(message).toContain('summary')
+    expect(message).toMatch(/enable extensions/i)
+  })
+
+  it('refuses on item-level extension data too', () => {
+    const base: Playlist = {
+      ...basePlaylist,
+      id: 'pl-ext-2',
+      created: '2026-05-20T08:30:00Z',
+      items: basePlaylist.items.map((i) => ({ ...i, displayAt: '2026-07-21T00:00:00' })),
+    }
+    const r = preparePlaylistForPublish({
+      rawDocument: { ...basePlaylist, title: 'edited' },
+      walletDID: WALLET,
+      base,
+      extensionsEnabled: false,
+    })
+    expect('validationErrors' in r).toBe(true)
+    expect((r as { validationErrors: string[] }).validationErrors[0]).toContain('items[].displayAt')
+  })
+
+  // A create has nothing stored to erase, so core mode must still shape the payload rather than refuse.
+  it('still strips on create, where there is nothing to lose', () => {
+    const r = preparePlaylistForPublish({
+      rawDocument: { ...basePlaylist, summary: 'dropped', curators: [{ name: 'N', key: DID_KEY }] },
+      walletDID: WALLET,
+      extensionsEnabled: false,
+    })
+    ok<Playlist>(r)
+    expect(r.wireBody.summary).toBeUndefined()
+    expect(r.wireBody.curators).toBeUndefined()
+  })
+
+  // A stored document with no extension data is safe to replace in core mode.
+  it('allows the replace when the stored document carries no extension fields', () => {
+    const plain: Playlist = { ...basePlaylist, id: 'pl-plain', created: '2026-05-20T08:30:00Z' }
+    const r = preparePlaylistForPublish({
+      rawDocument: { ...basePlaylist, title: 'edited' },
+      walletDID: WALLET,
+      base: plain,
+      extensionsEnabled: false,
+    })
+    ok<Playlist>(r)
+    expect(r.wireBody).toEqual(r.signedBytes)
+  })
+})

@@ -1,26 +1,45 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Loader2 } from 'lucide-react'
-import { useAccount, useWalletClient } from 'wagmi'
-import { v4 as uuidv4 } from 'uuid'
-import { getAddress } from 'viem'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
+import { useAccount, useWalletClient } from 'wagmi';
+import { v4 as uuidv4 } from 'uuid';
+import { getAddress } from 'viem';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import {
   playlistFormCreateDescription,
   playlistFormCreateDescriptionCoreOnly,
   publishFormEditDescription,
-} from '@/lib/publishFormDescriptions'
-import { Tabs, TabsContent, TabsList, TabsTrigger, editorModeListClass, editorModeTriggerClass } from '@/components/ui/tabs'
-import { Label } from '@/components/ui/label'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { useToast } from '@/hooks/use-toast'
-import { generateSlug } from '@/lib/utils'
-import { ethereumAddressToDIDPKH } from '@/lib/signing'
-import { signDocument } from '@/lib/signing'
-import { buildReplaceIntent } from '@/lib/replaceIntent'
-import { playlistUnsignedPayloadForSigning } from '@/lib/playlistSignPayload'
+} from '@/lib/publishFormDescriptions';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  editorModeListClass,
+  editorModeTriggerClass,
+} from '@/components/ui/tabs';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useToast } from '@/hooks/use-toast';
+import { generateSlug } from '@/lib/utils';
+import { ethereumAddressToDIDPKH } from '@/lib/signing';
+import { signDocument } from '@/lib/signing';
+import { buildReplaceIntent } from '@/lib/replaceIntent';
+import { playlistUnsignedPayloadForSigning } from '@/lib/playlistSignPayload';
 import {
   FeedAPIError,
   feedPlaylistResourceUrl,
@@ -29,138 +48,167 @@ import {
   replacePlaylist,
   publishPlaylist,
   validatePlaylistURI,
-} from '@/lib/api'
-import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription'
+} from '@/lib/api';
+import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription';
 import {
   isWalletAuthorizedToOverwrite,
   wrongWalletForOverwriteMessage,
-} from '@/lib/overwriteAuth'
-import { mergePlaylistForPatch } from '@/lib/dp1Merge'
-import { stripPlaylistExtensionFields, stripItemExtensionFields } from '@/lib/dp1ExtensionPolicy'
-import { recordPublishedPlaylist } from '@/lib/publishedStorage'
-import type { DynamicQuery, Entity, Playlist, PlaylistItem } from '@/types/dp1'
-import SeriesExpander from './SeriesExpander'
-import ManualItemsSection from './ManualItemsSection'
-import CuratorList from './CuratorList'
-import JsonFileDropZone from './JsonFileDropZone'
-import { preparePlaylistForPublish } from '@/lib/preparePublish'
-import { itemsForPlaylistExport, playlistItemExportCount, substantiveItemCount } from '@/lib/playlistItems'
-import PostPublishPanel from './PostPublishPanel'
+} from '@/lib/overwriteAuth';
+import { mergePlaylistForPatch } from '@/lib/dp1Merge';
+import {
+  stripPlaylistExtensionFields,
+  stripItemExtensionFields,
+} from '@/lib/dp1ExtensionPolicy';
+import { recordPublishedPlaylist } from '@/lib/publishedStorage';
+import type { DynamicQuery, Entity, Playlist, PlaylistItem } from '@/types/dp1';
+import SeriesExpander from './SeriesExpander';
+import ManualItemsSection from './ManualItemsSection';
+import CuratorList from './CuratorList';
+import JsonFileDropZone from './JsonFileDropZone';
+import { preparePlaylistForPublish } from '@/lib/preparePublish';
+import {
+  itemsForPlaylistExport,
+  playlistItemExportCount,
+  substantiveItemCount,
+} from '@/lib/playlistItems';
+import PostPublishPanel from './PostPublishPanel';
 
 function parsePlaylistJson(
   text: string,
   extensionsEnabled: boolean
 ): { playlist: Playlist } | { error: string } {
-  let data: unknown
+  let data: unknown;
   try {
-    data = JSON.parse(text)
+    data = JSON.parse(text);
   } catch {
-    return { error: 'Not valid JSON.' }
+    return { error: 'Not valid JSON.' };
   }
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    return { error: 'Playlist must be a JSON object.' }
+    return { error: 'Playlist must be a JSON object.' };
   }
-  const o = data as Record<string, unknown>
-  const title = typeof o.title === 'string' ? o.title.trim() : ''
+  const o = data as Record<string, unknown>;
+  const title = typeof o.title === 'string' ? o.title.trim() : '';
   if (!title) {
-    return { error: 'Title is required.' }
+    return { error: 'Title is required.' };
   }
   if (!Array.isArray(o.items)) {
-    return { error: 'Property "items" must be an array.' }
+    return { error: 'Property "items" must be an array.' };
   }
   // Allow empty items only if dynamicQuery is present (extensions / dynamic playlists)
   if (o.items.length === 0) {
     if (!extensionsEnabled) {
-      return { error: 'At least one item with a source URI is required.' }
+      return { error: 'At least one item with a source URI is required.' };
     }
     if (!o.dynamicQuery) {
-      return { error: 'At least one item with a source URI is required, or provide dynamicQuery.' }
+      return {
+        error:
+          'At least one item with a source URI is required, or provide dynamicQuery.',
+      };
     }
   } else {
     // Validate items if present
     for (let i = 0; i < o.items.length; i++) {
-      const it = o.items[i]
+      const it = o.items[i];
       if (!it || typeof it !== 'object') {
-        return { error: `items[${i}] must be an object.` }
+        return { error: `items[${i}] must be an object.` };
       }
       const src =
         typeof (it as PlaylistItem).source === 'string'
           ? (it as PlaylistItem).source.trim()
-          : ''
+          : '';
       if (!src) {
-        return { error: `items[${i}].source is required.` }
+        return { error: `items[${i}].source is required.` };
       }
       // Validate URI format and security
-      const validation = validatePlaylistURI(src)
+      const validation = validatePlaylistURI(src);
       if (!validation.valid) {
-        return { error: `items[${i}].source: ${validation.reason || 'Invalid URI'}` }
+        return {
+          error: `items[${i}].source: ${validation.reason || 'Invalid URI'}`,
+        };
       }
     }
   }
-  if (!extensionsEnabled && o.dynamicQuery != null && typeof o.dynamicQuery === 'object') {
-    return { error: 'dynamicQuery requires DP-1 extensions (disabled for this publisher).' }
+  if (
+    !extensionsEnabled &&
+    o.dynamicQuery != null &&
+    typeof o.dynamicQuery === 'object'
+  ) {
+    return {
+      error:
+        'dynamicQuery requires DP-1 extensions (disabled for this publisher).',
+    };
   }
-  return { playlist: data as Playlist }
+  return { playlist: data as Playlist };
 }
 
 /** Lenient parse for live JSON ↔ form sync (publish still uses strict `parsePlaylistJson`). */
 function parsePlaylistJsonForFormSync(text: string): Playlist | null {
-  let data: unknown
+  let data: unknown;
   try {
-    data = JSON.parse(text)
+    data = JSON.parse(text);
   } catch {
-    return null
+    return null;
   }
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    return null
+    return null;
   }
-  const o = data as Record<string, unknown>
+  const o = data as Record<string, unknown>;
   if (!('title' in o)) {
-    return null
+    return null;
   }
   const titleStr =
-    o.title == null ? '' : typeof o.title === 'string' ? o.title : String(o.title)
+    o.title == null
+      ? ''
+      : typeof o.title === 'string'
+        ? o.title
+        : String(o.title);
   if (!Array.isArray(o.items)) {
-    return null
+    return null;
   }
-  const items: PlaylistItem[] = []
+  const items: PlaylistItem[] = [];
   for (let i = 0; i < o.items.length; i++) {
-    const it = o.items[i]
+    const it = o.items[i];
     if (!it || typeof it !== 'object' || Array.isArray(it)) {
-      continue
+      continue;
     }
-    const row = it as PlaylistItem
+    const row = it as PlaylistItem;
     const source =
       typeof row.source === 'string'
         ? row.source
         : row.source != null
           ? String(row.source)
-          : ''
+          : '';
     items.push({
       ...row,
       source,
       id: row.id || uuidv4(),
-    })
+    });
   }
   if (items.length === 0) {
     return {
       ...(data as Playlist),
       title: titleStr,
-      items: [{ source: '', title: '', duration: undefined, license: undefined }],
-    }
+      items: [
+        { source: '', title: '', duration: undefined, license: undefined },
+      ],
+    };
   }
-  return { ...(data as Playlist), title: titleStr, items }
+  return { ...(data as Playlist), title: titleStr, items };
 }
 
 /** Unsigned playlist ready to sign (no prior signatures). */
 function playlistFromJsonImport(raw: Playlist, fallbackId: string): Playlist {
-  const { signatures: _s, signature: _legacy, ...rest } = raw as Playlist & {
-    signature?: string
-  }
+  const {
+    signatures: _s,
+    signature: _legacy,
+    ...rest
+  } = raw as Playlist & {
+    signature?: string;
+  };
   const created =
     typeof rest.created === 'string' && rest.created.trim() !== ''
       ? rest.created
-      : new Date().toISOString()
+      : new Date().toISOString();
   return {
     ...rest,
     id: rest.id || fallbackId,
@@ -168,9 +216,10 @@ function playlistFromJsonImport(raw: Playlist, fallbackId: string): Playlist {
     items: rest.items.map((item) => ({
       ...item,
       id: item.id || uuidv4(),
-      source: typeof item.source === 'string' ? item.source.trim() : item.source,
+      source:
+        typeof item.source === 'string' ? item.source.trim() : item.source,
     })),
-  }
+  };
 }
 
 export default function PlaylistForm({
@@ -183,25 +232,25 @@ export default function PlaylistForm({
   onViewPublished,
   extensionsEnabled,
 }: {
-  editId?: string
-  onCancelEdit?: () => void
-  onPublished?: () => void
+  editId?: string;
+  onCancelEdit?: () => void;
+  onPublished?: () => void;
   /** Fires when the user clicks "Start a new channel" on the post-publish panel. */
-  onUseInNewChannel?: (feedUrl: string) => void
+  onUseInNewChannel?: (feedUrl: string) => void;
   /** User's existing channels (read from localStorage); each renders as an
    * "Add to: <title>" CTA on the post-publish panel. */
-  existingChannels?: { id: string; title: string }[]
+  existingChannels?: { id: string; title: string }[];
   /** Fires when the user picks an existing channel to add this playlist to. */
-  onAddToExistingChannel?: (channelId: string, feedUrl: string) => void
+  onAddToExistingChannel?: (channelId: string, feedUrl: string) => void;
   /** Called when the user clicks "View all published" after a create publish. */
-  onViewPublished?: () => void
-  extensionsEnabled: boolean
+  onViewPublished?: () => void;
+  extensionsEnabled: boolean;
 }) {
-  const { address } = useAccount()
-  const { data: walletClient } = useWalletClient()
-  const { toast } = useToast()
+  const { address } = useAccount();
+  const { data: walletClient } = useWalletClient();
+  const { toast } = useToast();
 
-  const loadedRef = useRef<Playlist | null>(null)
+  const loadedRef = useRef<Playlist | null>(null);
   /**
    * The stored document exactly as the feed returned it, before any core-mode stripping.
    *
@@ -210,55 +259,65 @@ export default function PlaylistForm({
    * catch: the guard asked "does the stored document carry extension data?" of a value those fields had
    * already been removed from, so it always answered no and the replace went ahead and erased them.
    */
-  const storedBaseRef = useRef<Playlist | null>(null)
-  const newPlaylistCreatedRef = useRef<string>(new Date().toISOString())
-  const [id, setId] = useState(() => uuidv4())
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [isLoadingDoc, setIsLoadingDoc] = useState(false)
-  const [title, setTitle] = useState('')
-  const [slug, setSlug] = useState('')
-  const [isAutoSlug, setIsAutoSlug] = useState(true)
-  const [summary, setSummary] = useState('')
-  const [coverImage, setCoverImage] = useState('')
-  
+  const storedBaseRef = useRef<Playlist | null>(null);
+  const newPlaylistCreatedRef = useRef<string>(new Date().toISOString());
+  const [id, setId] = useState(() => uuidv4());
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoadingDoc, setIsLoadingDoc] = useState(false);
+  const [title, setTitle] = useState('');
+  const [slug, setSlug] = useState('');
+  const [isAutoSlug, setIsAutoSlug] = useState(true);
+  const [summary, setSummary] = useState('');
+  const [coverImage, setCoverImage] = useState('');
+
   // Playlist-level note (optional intermission)
-  const [playlistNoteText, setPlaylistNoteText] = useState('')
-  const [playlistNoteDuration, setPlaylistNoteDuration] = useState('')
-  
+  const [playlistNoteText, setPlaylistNoteText] = useState('');
+  const [playlistNoteDuration, setPlaylistNoteDuration] = useState('');
+
   // Curators (first one is always the connected wallet)
   const [curators, setCurators] = useState<Entity[]>([
-    { name: '', key: address ? ethereumAddressToDIDPKH(getAddress(address)) : '', url: '' }
-  ])
+    {
+      name: '',
+      key: address ? ethereumAddressToDIDPKH(getAddress(address)) : '',
+      url: '',
+    },
+  ]);
 
   // Default settings
-  const [defaultScaling, setDefaultScaling] = useState<'fit' | 'fill' | 'stretch' | 'auto'>('fit')
-  const [defaultLicense, setDefaultLicense] = useState<'open' | 'token' | 'subscription'>('open')
-  const [defaultDuration, setDefaultDuration] = useState('')
-  const [defaultAutoplay, setDefaultAutoplay] = useState(true)
-  const [defaultLoop, setDefaultLoop] = useState(true)
-  const [defaultBackground, setDefaultBackground] = useState('#000000')
+  const [defaultScaling, setDefaultScaling] = useState<
+    'fit' | 'fill' | 'stretch' | 'auto'
+  >('fit');
+  const [defaultLicense, setDefaultLicense] = useState<
+    'open' | 'token' | 'subscription'
+  >('open');
+  const [defaultDuration, setDefaultDuration] = useState('');
+  const [defaultAutoplay, setDefaultAutoplay] = useState(true);
+  const [defaultLoop, setDefaultLoop] = useState(true);
+  const [defaultBackground, setDefaultBackground] = useState('#000000');
 
   // Playlist items
   const [items, setItems] = useState<PlaylistItem[]>([
-    { source: '', title: '', duration: undefined, license: undefined }
-  ])
+    { source: '', title: '', duration: undefined, license: undefined },
+  ]);
 
   // Dynamic Query (optional, allows empty items)
-  const [enableDynamicQuery, setEnableDynamicQuery] = useState(false)
-  const [dynamicProfile, setDynamicProfile] = useState<'https-json-v1' | 'graphql-v1'>('https-json-v1')
-  const [dynamicEndpoint, setDynamicEndpoint] = useState('')
-  const [dynamicMethod, setDynamicMethod] = useState<'GET' | 'POST'>('GET')
-  const [dynamicHeaders, setDynamicHeaders] = useState('')
-  const [dynamicQuery, setDynamicQuery] = useState('')
-  const [dynamicItemsPath, setDynamicItemsPath] = useState('')
-  const [dynamicItemSchema, setDynamicItemSchema] = useState('dp1/1.1')
-  const [dynamicItemMap, setDynamicItemMap] = useState('')
+  const [enableDynamicQuery, setEnableDynamicQuery] = useState(false);
+  const [dynamicProfile, setDynamicProfile] = useState<
+    'https-json-v1' | 'graphql-v1'
+  >('https-json-v1');
+  const [dynamicEndpoint, setDynamicEndpoint] = useState('');
+  const [dynamicMethod, setDynamicMethod] = useState<'GET' | 'POST'>('GET');
+  const [dynamicHeaders, setDynamicHeaders] = useState('');
+  const [dynamicQuery, setDynamicQuery] = useState('');
+  const [dynamicItemsPath, setDynamicItemsPath] = useState('');
+  const [dynamicItemSchema, setDynamicItemSchema] = useState('dp1/1.1');
+  const [dynamicItemMap, setDynamicItemMap] = useState('');
 
   // JSON editor
-  const [jsonMode, setJsonMode] = useState<'form' | 'json'>('form')
-  const [jsonText, setJsonText] = useState('')
+  const [jsonMode, setJsonMode] = useState<'form' | 'json'>('form');
+  const [jsonText, setJsonText] = useState('');
 
-  const [isPublishing, setIsPublishing] = useState(false)
+  const [isPublishing, setIsPublishing] = useState(false);
   /** After a successful create publish, hold the feed URL + title so the
    * post-publish panel can replace the form until the user picks a next step.
    * `mode='update'` means the publish detected an existing playlist with the
@@ -266,122 +325,154 @@ export default function PlaylistForm({
    * `receipts` captures the prepare-pipeline notes (wallet identity replacement,
    * curator injection, etc.) so the user has a permanent record. */
   const [publishedDoc, setPublishedDoc] = useState<{
-    feedUrl: string
-    title: string
-    mode: 'create' | 'update'
-    receipts: { title: string; description: string }[]
-  } | null>(null)
+    feedUrl: string;
+    title: string;
+    mode: 'create' | 'update';
+    receipts: { title: string; description: string }[];
+  } | null>(null);
 
-  const isEdit = Boolean(editId)
+  const isEdit = Boolean(editId);
 
   useEffect(() => {
     if (!editId || !address) {
-      loadedRef.current = null
-      storedBaseRef.current = null
-      return
+      loadedRef.current = null;
+      storedBaseRef.current = null;
+      return;
     }
-    let cancelled = false
-    setLoadError(null)
-    setIsLoadingDoc(true)
-    const kid = ethereumAddressToDIDPKH(getAddress(address))
+    let cancelled = false;
+    setLoadError(null);
+    setIsLoadingDoc(true);
+    const kid = ethereumAddressToDIDPKH(getAddress(address));
     getPlaylist(editId)
       .then((p) => {
-        if (cancelled) return
-        const pDoc = extensionsEnabled ? p : stripPlaylistExtensionFields(p)
+        if (cancelled) return;
+        const pDoc = extensionsEnabled ? p : stripPlaylistExtensionFields(p);
         // Raw for the replace check, stripped for the form.
-        storedBaseRef.current = p
-        loadedRef.current = pDoc
-        setId(pDoc.id || uuidv4())
-        setTitle(pDoc.title)
-        setIsAutoSlug(false)
-        setSlug(pDoc.slug || '')
-        setSummary(pDoc.summary || '')
-        setCoverImage(pDoc.coverImage || '')
+        storedBaseRef.current = p;
+        loadedRef.current = pDoc;
+        setId(pDoc.id || uuidv4());
+        setTitle(pDoc.title);
+        setIsAutoSlug(false);
+        setSlug(pDoc.slug || '');
+        setSummary(pDoc.summary || '');
+        setCoverImage(pDoc.coverImage || '');
         // Load playlist-level note
-        setPlaylistNoteText(pDoc.note?.text || '')
-        setPlaylistNoteDuration(pDoc.note?.duration != null ? String(pDoc.note.duration) : '')
+        setPlaylistNoteText(pDoc.note?.text || '');
+        setPlaylistNoteDuration(
+          pDoc.note?.duration != null ? String(pDoc.note.duration) : ''
+        );
         setCurators(
           pDoc.curators?.length
             ? pDoc.curators
             : [{ name: '', key: kid, url: '' }]
-        )
-        const d = pDoc.defaults?.display
-        setDefaultScaling(d?.scaling ?? 'fit')
-        setDefaultLicense(pDoc.defaults?.license ?? 'open')
+        );
+        const d = pDoc.defaults?.display;
+        setDefaultScaling(d?.scaling ?? 'fit');
+        setDefaultLicense(pDoc.defaults?.license ?? 'open');
         setDefaultDuration(
           pDoc.defaults?.duration != null ? String(pDoc.defaults.duration) : ''
-        )
-        setDefaultAutoplay(d?.autoplay ?? true)
-        setDefaultLoop(d?.loop ?? true)
+        );
+        setDefaultAutoplay(d?.autoplay ?? true);
+        setDefaultLoop(d?.loop ?? true);
         setDefaultBackground(
           typeof d?.background === 'string' ? d.background : '#000000'
-        )
+        );
         setItems(
           pDoc.items?.length
             ? pDoc.items.map((it) => ({
                 ...it,
                 id: it.id || uuidv4(),
               }))
-            : [{ source: '', title: '', duration: undefined, license: undefined }]
-        )
+            : [
+                {
+                  source: '',
+                  title: '',
+                  duration: undefined,
+                  license: undefined,
+                },
+              ]
+        );
         // Load dynamicQuery if present
         if (pDoc.dynamicQuery) {
-          setEnableDynamicQuery(true)
-          setDynamicProfile(pDoc.dynamicQuery.profile || 'https-json-v1')
-          setDynamicEndpoint(pDoc.dynamicQuery.endpoint || '')
-          setDynamicMethod(pDoc.dynamicQuery.method || 'GET')
-          setDynamicHeaders(pDoc.dynamicQuery.headers ? JSON.stringify(pDoc.dynamicQuery.headers, null, 2) : '')
-          setDynamicQuery(pDoc.dynamicQuery.query || '')
-          setDynamicItemsPath(pDoc.dynamicQuery.responseMapping?.itemsPath || '')
-          setDynamicItemSchema(pDoc.dynamicQuery.responseMapping?.itemSchema || 'dp1/1.1')
-          setDynamicItemMap(pDoc.dynamicQuery.responseMapping?.itemMap ? JSON.stringify(pDoc.dynamicQuery.responseMapping.itemMap, null, 2) : '')
+          setEnableDynamicQuery(true);
+          setDynamicProfile(pDoc.dynamicQuery.profile || 'https-json-v1');
+          setDynamicEndpoint(pDoc.dynamicQuery.endpoint || '');
+          setDynamicMethod(pDoc.dynamicQuery.method || 'GET');
+          setDynamicHeaders(
+            pDoc.dynamicQuery.headers
+              ? JSON.stringify(pDoc.dynamicQuery.headers, null, 2)
+              : ''
+          );
+          setDynamicQuery(pDoc.dynamicQuery.query || '');
+          setDynamicItemsPath(
+            pDoc.dynamicQuery.responseMapping?.itemsPath || ''
+          );
+          setDynamicItemSchema(
+            pDoc.dynamicQuery.responseMapping?.itemSchema || 'dp1/1.1'
+          );
+          setDynamicItemMap(
+            pDoc.dynamicQuery.responseMapping?.itemMap
+              ? JSON.stringify(
+                  pDoc.dynamicQuery.responseMapping.itemMap,
+                  null,
+                  2
+                )
+              : ''
+          );
         } else {
-          setEnableDynamicQuery(false)
+          setEnableDynamicQuery(false);
         }
-        setJsonText(JSON.stringify(playlistUnsignedPayloadForSigning(pDoc), null, 2))
-        setJsonMode('form')
+        setJsonText(
+          JSON.stringify(playlistUnsignedPayloadForSigning(pDoc), null, 2)
+        );
+        setJsonMode('form');
       })
       .catch((e) => {
         if (!cancelled) {
-          setLoadError(e instanceof Error ? e.message : 'Failed to load playlist')
-          loadedRef.current = null
-          storedBaseRef.current = null
+          setLoadError(
+            e instanceof Error ? e.message : 'Failed to load playlist'
+          );
+          loadedRef.current = null;
+          storedBaseRef.current = null;
         }
       })
       .finally(() => {
-        if (!cancelled) setIsLoadingDoc(false)
-      })
+        if (!cancelled) setIsLoadingDoc(false);
+      });
     return () => {
-      cancelled = true
-    }
-  }, [editId, address, extensionsEnabled])
+      cancelled = true;
+    };
+  }, [editId, address, extensionsEnabled]);
 
   // Auto-generate slug
-  const autoSlug = generateSlug(title, id)
-  const displaySlug = isAutoSlug ? autoSlug : slug
+  const autoSlug = generateSlug(title, id);
+  const displaySlug = isAutoSlug ? autoSlug : slug;
 
   const handleAddItem = () => {
-    setItems([...items, { source: '', title: '', duration: undefined, license: undefined }])
-  }
+    setItems([
+      ...items,
+      { source: '', title: '', duration: undefined, license: undefined },
+    ]);
+  };
 
   const handleRemoveItem = (index: number) => {
     if (items.length > 1) {
-      setItems(items.filter((_, i) => i !== index))
+      setItems(items.filter((_, i) => i !== index));
     }
-  }
+  };
 
   const handleUpdateItem = (index: number, item: PlaylistItem) => {
-    const newItems = [...items]
-    newItems[index] = item
-    setItems(newItems)
-  }
+    const newItems = [...items];
+    newItems[index] = item;
+    setItems(newItems);
+  };
 
   const handleSeriesAdd = useCallback(
     (newItems: PlaylistItem[], releaseName: string | null) => {
       // Each series add replaces the whole items list — manual rows from prior edits are cleared.
-      setItems(newItems)
+      setItems(newItems);
       if (!title.trim() && releaseName?.trim()) {
-        setTitle(releaseName.trim())
+        setTitle(releaseName.trim());
       }
       // When Dynamic Query is active the signed playlist will contain both the loaded
       // static items and the dynamicQuery block. Display players that support Dynamic
@@ -393,21 +484,23 @@ export default function PlaylistForm({
           title: 'Dynamic Query is still active',
           description:
             'The loaded series items are included as static fallbacks. Display players that support Dynamic Query may override them at play time. Disable Dynamic Query if you want only the series items.',
-        })
+        });
       }
     },
     [title, extensionsEnabled, enableDynamicQuery, toast]
-  )
+  );
 
   const buildDynamicQuery = useCallback((): DynamicQuery | undefined => {
-    if (!enableDynamicQuery) return undefined
-    if (!dynamicEndpoint.trim() || !dynamicItemsPath.trim()) return undefined
+    if (!enableDynamicQuery) return undefined;
+    if (!dynamicEndpoint.trim() || !dynamicItemsPath.trim()) return undefined;
 
     try {
-      const headers = dynamicHeaders.trim() ? 
-        (JSON.parse(dynamicHeaders) as Record<string, string>) : undefined
-      const itemMap = dynamicItemMap.trim() ? 
-        (JSON.parse(dynamicItemMap) as Record<string, string>) : undefined
+      const headers = dynamicHeaders.trim()
+        ? (JSON.parse(dynamicHeaders) as Record<string, string>)
+        : undefined;
+      const itemMap = dynamicItemMap.trim()
+        ? (JSON.parse(dynamicItemMap) as Record<string, string>)
+        : undefined;
 
       return {
         profile: dynamicProfile,
@@ -420,10 +513,10 @@ export default function PlaylistForm({
           itemSchema: dynamicItemSchema.trim(),
           itemMap,
         },
-      }
+      };
     } catch (error) {
-      console.error('Failed to build dynamic query:', error)
-      return undefined
+      console.error('Failed to build dynamic query:', error);
+      return undefined;
     }
   }, [
     enableDynamicQuery,
@@ -435,27 +528,29 @@ export default function PlaylistForm({
     dynamicItemsPath,
     dynamicItemSchema,
     dynamicItemMap,
-  ])
+  ]);
 
   const buildPlaylist = useCallback((): Playlist => {
-    const created = newPlaylistCreatedRef.current
-    const dq = extensionsEnabled ? buildDynamicQuery() : undefined
+    const created = newPlaylistCreatedRef.current;
+    const dq = extensionsEnabled ? buildDynamicQuery() : undefined;
 
     const note =
       extensionsEnabled && playlistNoteText.trim()
         ? {
             text: playlistNoteText.trim(),
-            duration: playlistNoteDuration ? parseFloat(playlistNoteDuration) : undefined,
+            duration: playlistNoteDuration
+              ? parseFloat(playlistNoteDuration)
+              : undefined,
           }
-        : undefined
+        : undefined;
 
     const mappedItems = itemsForPlaylistExport(items).map((item) => {
-      const base = extensionsEnabled ? item : stripItemExtensionFields(item)
+      const base = extensionsEnabled ? item : stripItemExtensionFields(item);
       return {
         ...base,
         id: base.id || uuidv4(),
-      }
-    })
+      };
+    });
 
     return {
       dpVersion: '1.1.0',
@@ -483,7 +578,7 @@ export default function PlaylistForm({
         license: defaultLicense,
         duration: defaultDuration ? parseFloat(defaultDuration) : undefined,
       },
-    }
+    };
   }, [
     id,
     displaySlug,
@@ -502,24 +597,26 @@ export default function PlaylistForm({
     defaultLicense,
     defaultDuration,
     extensionsEnabled,
-  ])
+  ]);
 
   const serializePlaylistJsonPreview = useCallback((): string => {
     if (isEdit && loadedRef.current) {
-      const base = loadedRef.current
-      const dq = extensionsEnabled ? buildDynamicQuery() : undefined
+      const base = loadedRef.current;
+      const dq = extensionsEnabled ? buildDynamicQuery() : undefined;
       const note =
         extensionsEnabled && playlistNoteText.trim()
           ? {
               text: playlistNoteText.trim(),
-              duration: playlistNoteDuration ? parseFloat(playlistNoteDuration) : undefined,
+              duration: playlistNoteDuration
+                ? parseFloat(playlistNoteDuration)
+                : undefined,
             }
-          : undefined
+          : undefined;
 
       const mappedItems = itemsForPlaylistExport(items).map((item) => {
-        const it = extensionsEnabled ? item : stripItemExtensionFields(item)
-        return { ...it, id: item.id || uuidv4() }
-      })
+        const it = extensionsEnabled ? item : stripItemExtensionFields(item);
+        return { ...it, id: item.id || uuidv4() };
+      });
 
       const patchFields = {
         dpVersion: '1.1.0',
@@ -545,14 +642,18 @@ export default function PlaylistForm({
           license: defaultLicense,
           duration: defaultDuration ? parseFloat(defaultDuration) : undefined,
         },
-      }
-      const merged = mergePlaylistForPatch(base, patchFields)
-      const toSign = extensionsEnabled ? merged : stripPlaylistExtensionFields(merged)
-      return JSON.stringify(playlistUnsignedPayloadForSigning(toSign), null, 2)
+      };
+      const merged = mergePlaylistForPatch(base, patchFields);
+      const toSign = extensionsEnabled
+        ? merged
+        : stripPlaylistExtensionFields(merged);
+      return JSON.stringify(playlistUnsignedPayloadForSigning(toSign), null, 2);
     }
-    const playlist = buildPlaylist()
-    const toSign = extensionsEnabled ? playlist : stripPlaylistExtensionFields(playlist)
-    return JSON.stringify(playlistUnsignedPayloadForSigning(toSign), null, 2)
+    const playlist = buildPlaylist();
+    const toSign = extensionsEnabled
+      ? playlist
+      : stripPlaylistExtensionFields(playlist);
+    return JSON.stringify(playlistUnsignedPayloadForSigning(toSign), null, 2);
   }, [
     isEdit,
     title,
@@ -572,42 +673,42 @@ export default function PlaylistForm({
     defaultDuration,
     buildPlaylist,
     extensionsEnabled,
-  ])
+  ]);
 
   const applyParsedPlaylistToForm = useCallback(
     (raw: Playlist) => {
-      const p = playlistFromJsonImport(raw, id)
-      const kid = address ? ethereumAddressToDIDPKH(getAddress(address)) : ''
+      const p = playlistFromJsonImport(raw, id);
+      const kid = address ? ethereumAddressToDIDPKH(getAddress(address)) : '';
       if (!isEdit && p.created?.trim()) {
-        newPlaylistCreatedRef.current = p.created.trim()
+        newPlaylistCreatedRef.current = p.created.trim();
       }
-      setId(p.id || id)
-      const resolvedId = p.id || id
-      setTitle(p.title)
-      const auto = generateSlug(p.title, resolvedId)
+      setId(p.id || id);
+      const resolvedId = p.id || id;
+      setTitle(p.title);
+      const auto = generateSlug(p.title, resolvedId);
       if (!p.slug?.trim() || p.slug.trim() === auto) {
-        setIsAutoSlug(true)
-        setSlug('')
+        setIsAutoSlug(true);
+        setSlug('');
       } else {
-        setIsAutoSlug(false)
-        setSlug(p.slug.trim())
+        setIsAutoSlug(false);
+        setSlug(p.slug.trim());
       }
-      setSummary(p.summary || '')
-      setCoverImage(p.coverImage || '')
+      setSummary(p.summary || '');
+      setCoverImage(p.coverImage || '');
       setCurators(
         p.curators?.length ? p.curators : [{ name: '', key: kid, url: '' }]
-      )
-      const d = p.defaults?.display
-      setDefaultScaling(d?.scaling ?? 'fit')
-      setDefaultLicense(p.defaults?.license ?? 'open')
+      );
+      const d = p.defaults?.display;
+      setDefaultScaling(d?.scaling ?? 'fit');
+      setDefaultLicense(p.defaults?.license ?? 'open');
       setDefaultDuration(
         p.defaults?.duration != null ? String(p.defaults.duration) : ''
-      )
-      setDefaultAutoplay(d?.autoplay ?? true)
-      setDefaultLoop(d?.loop ?? true)
+      );
+      setDefaultAutoplay(d?.autoplay ?? true);
+      setDefaultLoop(d?.loop ?? true);
       setDefaultBackground(
         typeof d?.background === 'string' ? d.background : '#000000'
-      )
+      );
       setItems(
         p.items?.length
           ? p.items.map((it) => ({
@@ -615,55 +716,67 @@ export default function PlaylistForm({
               id: it.id || uuidv4(),
             }))
           : [{ source: '', title: '', duration: undefined, license: undefined }]
-      )
+      );
       // Load dynamicQuery if present
       if (p.dynamicQuery) {
-        setEnableDynamicQuery(true)
-        setDynamicProfile(p.dynamicQuery.profile || 'https-json-v1')
-        setDynamicEndpoint(p.dynamicQuery.endpoint || '')
-        setDynamicMethod(p.dynamicQuery.method || 'GET')
-        setDynamicHeaders(p.dynamicQuery.headers ? JSON.stringify(p.dynamicQuery.headers, null, 2) : '')
-        setDynamicQuery(p.dynamicQuery.query || '')
-        setDynamicItemsPath(p.dynamicQuery.responseMapping?.itemsPath || '')
-        setDynamicItemSchema(p.dynamicQuery.responseMapping?.itemSchema || 'dp1/1.1')
-        setDynamicItemMap(p.dynamicQuery.responseMapping?.itemMap ? JSON.stringify(p.dynamicQuery.responseMapping.itemMap, null, 2) : '')
+        setEnableDynamicQuery(true);
+        setDynamicProfile(p.dynamicQuery.profile || 'https-json-v1');
+        setDynamicEndpoint(p.dynamicQuery.endpoint || '');
+        setDynamicMethod(p.dynamicQuery.method || 'GET');
+        setDynamicHeaders(
+          p.dynamicQuery.headers
+            ? JSON.stringify(p.dynamicQuery.headers, null, 2)
+            : ''
+        );
+        setDynamicQuery(p.dynamicQuery.query || '');
+        setDynamicItemsPath(p.dynamicQuery.responseMapping?.itemsPath || '');
+        setDynamicItemSchema(
+          p.dynamicQuery.responseMapping?.itemSchema || 'dp1/1.1'
+        );
+        setDynamicItemMap(
+          p.dynamicQuery.responseMapping?.itemMap
+            ? JSON.stringify(p.dynamicQuery.responseMapping.itemMap, null, 2)
+            : ''
+        );
       } else {
-        setEnableDynamicQuery(false)
+        setEnableDynamicQuery(false);
       }
       // Load playlist-level note
-      setPlaylistNoteText(p.note?.text || '')
-      setPlaylistNoteDuration(p.note?.duration != null ? String(p.note.duration) : '')
+      setPlaylistNoteText(p.note?.text || '');
+      setPlaylistNoteDuration(
+        p.note?.duration != null ? String(p.note.duration) : ''
+      );
     },
     [id, isEdit, address]
-  )
+  );
 
   const handleJsonTextChange = (value: string) => {
-    setJsonText(value)
-    const trimmed = value.trim()
+    setJsonText(value);
+    const trimmed = value.trim();
     if (!trimmed) {
-      return
+      return;
     }
-    const playlist = parsePlaylistJsonForFormSync(trimmed)
+    const playlist = parsePlaylistJsonForFormSync(trimmed);
     if (!playlist) {
-      return
+      return;
     }
-    applyParsedPlaylistToForm(playlist)
-  }
+    applyParsedPlaylistToForm(playlist);
+  };
 
   useEffect(() => {
     if (jsonMode !== 'form' || isLoadingDoc) {
-      return
+      return;
     }
     if (isEdit && !loadedRef.current) {
-      return
+      return;
     }
-    setJsonText(serializePlaylistJsonPreview())
-  }, [jsonMode, isLoadingDoc, isEdit, serializePlaylistJsonPreview])
+    setJsonText(serializePlaylistJsonPreview());
+  }, [jsonMode, isLoadingDoc, isEdit, serializePlaylistJsonPreview]);
 
   const handleGenerateJSON = () => {
-    setJsonText(serializePlaylistJsonPreview())
-    setJsonMode('json')
-  }
+    setJsonText(serializePlaylistJsonPreview());
+    setJsonMode('json');
+  };
 
   /**
    * Form-tab specific pre-publish validation (immediate UX feedback for
@@ -672,103 +785,119 @@ export default function PlaylistForm({
    * not run this — `parsePlaylistJson` covers the schema checks there.
    */
   const validateFormTab = (): string | null => {
-    if (!title.trim()) return 'Title is required'
-    const allowEmptyViaDynamic = extensionsEnabled && enableDynamicQuery
-    const exportItems = itemsForPlaylistExport(items)
-    if (!allowEmptyViaDynamic && (exportItems.length === 0 || exportItems.some((item) => !item.source))) {
+    if (!title.trim()) return 'Title is required';
+    const allowEmptyViaDynamic = extensionsEnabled && enableDynamicQuery;
+    const exportItems = itemsForPlaylistExport(items);
+    if (
+      !allowEmptyViaDynamic &&
+      (exportItems.length === 0 || exportItems.some((item) => !item.source))
+    ) {
       return extensionsEnabled
         ? 'At least one item with source URI is required, or enable Dynamic Query'
-        : 'At least one item with source URI is required'
+        : 'At least one item with source URI is required';
     }
     // Validate every source URI through the same policy applied to JSON-tab imports.
     // This catches disallowed schemes and private/local hosts regardless of whether
     // items were entered manually or expanded from an indexer series.
     for (let i = 0; i < exportItems.length; i++) {
-      const src = exportItems[i].source?.trim()
-      if (!src) continue
-      const validation = validatePlaylistURI(src)
+      const src = exportItems[i].source?.trim();
+      if (!src) continue;
+      const validation = validatePlaylistURI(src);
       if (!validation.valid) {
-        return `Item ${i + 1} source: ${validation.reason || 'Invalid URI'}`
+        return `Item ${i + 1} source: ${validation.reason || 'Invalid URI'}`;
       }
     }
     if (extensionsEnabled && enableDynamicQuery) {
-      if (!dynamicEndpoint.trim()) return 'Dynamic Query: Endpoint is required'
-      if (!dynamicItemsPath.trim()) return 'Dynamic Query: Items Path is required'
+      if (!dynamicEndpoint.trim()) return 'Dynamic Query: Endpoint is required';
+      if (!dynamicItemsPath.trim())
+        return 'Dynamic Query: Items Path is required';
       if (dynamicHeaders.trim()) {
         try {
-          JSON.parse(dynamicHeaders)
+          JSON.parse(dynamicHeaders);
         } catch {
-          return 'Dynamic Query: Headers must be valid JSON'
+          return 'Dynamic Query: Headers must be valid JSON';
         }
       }
       if (dynamicItemMap.trim()) {
         try {
-          JSON.parse(dynamicItemMap)
+          JSON.parse(dynamicItemMap);
         } catch {
-          return 'Dynamic Query: Item Map must be valid JSON'
+          return 'Dynamic Query: Item Map must be valid JSON';
         }
       }
     }
-    return null
-  }
+    return null;
+  };
 
   const handlePublish = async () => {
     if (!walletClient || !address) {
-      toast({ title: 'Error', description: 'Wallet not connected', variant: 'destructive' })
-      return
+      toast({
+        title: 'Error',
+        description: 'Wallet not connected',
+        variant: 'destructive',
+      });
+      return;
     }
     if (isEdit && (!editId || !loadedRef.current)) {
       toast({
         title: 'Error',
         description: loadError || 'Playlist not loaded yet.',
         variant: 'destructive',
-      })
-      return
+      });
+      return;
     }
 
     // Step 1: resolve raw document — from form state or from imported JSON.
-    let rawDocument: Playlist
+    let rawDocument: Playlist;
     if (jsonMode === 'json') {
-      const trimmed = jsonText.trim()
+      const trimmed = jsonText.trim();
       if (!trimmed) {
         toast({
           title: 'Error',
           description: 'Paste playlist JSON here, or use the Form tab.',
           variant: 'destructive',
-        })
-        return
+        });
+        return;
       }
-      const parsed = parsePlaylistJson(trimmed, extensionsEnabled)
+      const parsed = parsePlaylistJson(trimmed, extensionsEnabled);
       if ('error' in parsed) {
-        toast({ title: 'Invalid playlist', description: parsed.error, variant: 'destructive' })
-        return
+        toast({
+          title: 'Invalid playlist',
+          description: parsed.error,
+          variant: 'destructive',
+        });
+        return;
       }
-      rawDocument = playlistFromJsonImport(parsed.playlist, id)
+      rawDocument = playlistFromJsonImport(parsed.playlist, id);
     } else {
-      const formError = validateFormTab()
+      const formError = validateFormTab();
       if (formError) {
-        toast({ title: 'Error', description: formError, variant: 'destructive' })
-        return
+        toast({
+          title: 'Error',
+          description: formError,
+          variant: 'destructive',
+        });
+        return;
       }
-      rawDocument = buildPlaylist()
+      rawDocument = buildPlaylist();
     }
 
-    setIsPublishing(true)
+    setIsPublishing(true);
     // Tracks whether the operation we ultimately attempt is a replace (PUT).
     // Both explicit edit-mode and auto-overwrite count; used so the catch
     // surfaces the "different wallet" message instead of the create variant.
-    let attemptedUpdate = isEdit
+    let attemptedUpdate = isEdit;
     try {
       // Step 2: pre-flight overwrite detection. On create publishes, look up
       // the document's id on the feed; if it already exists, switch to a replace
       // so the user transparently overwrites their own prior publish (same
       // wallet → feed accepts). A different wallet's signature will fail at
       // the replace and surface a friendly "wrong wallet" error.
-      const targetId = rawDocument.id
-      let overwriteBase: Playlist | undefined
+      const targetId = rawDocument.id;
+      let overwriteBase: Playlist | undefined;
       if (!isEdit && targetId) {
         try {
-          overwriteBase = await getPlaylist(targetId)
+          overwriteBase = await getPlaylist(targetId);
         } catch (e) {
           // 404 is the happy path — proceed with POST. Other errors:
           // ignore the pre-flight signal and let the POST surface whatever
@@ -778,22 +907,24 @@ export default function PlaylistForm({
           }
         }
       }
-      const walletDID = ethereumAddressToDIDPKH(getAddress(address))
+      const walletDID = ethereumAddressToDIDPKH(getAddress(address));
 
       // Step 2b: pre-sign ownership gate. If preflight found an existing doc
       // but the connected wallet did not sign it as curator, refuse to sign a
       // wallet-rewritten payload — abort with the friendly wrong-wallet error
       // before any identity mutation runs in preparePublish.
       if (overwriteBase && targetId) {
-        if (!isWalletAuthorizedToOverwrite(overwriteBase, 'curator', walletDID)) {
+        if (
+          !isWalletAuthorizedToOverwrite(overwriteBase, 'curator', walletDID)
+        ) {
           toast({
             title: 'Update failed',
             description: wrongWalletForOverwriteMessage('playlist'),
             variant: 'destructive',
-          })
-          return
+          });
+          return;
         }
-        attemptedUpdate = true
+        attemptedUpdate = true;
       }
 
       // Step 3: route through the single publish pipeline. signedPayload and
@@ -801,45 +932,83 @@ export default function PlaylistForm({
       const prepared = preparePlaylistForPublish({
         rawDocument,
         walletDID,
-        base: isEdit ? storedBaseRef.current ?? undefined : overwriteBase,
+        base: isEdit ? (storedBaseRef.current ?? undefined) : overwriteBase,
         extensionsEnabled,
-      })
+      });
       if ('validationErrors' in prepared) {
         toast({
           title: 'Validation error',
           description: prepared.validationErrors[0],
           variant: 'destructive',
-        })
-        return
+        });
+        return;
       }
-      prepared.toasts.forEach((t) => toast(t))
+      prepared.toasts.forEach((t) => toast(t));
 
       // Step 4: sign and POST (create) or PUT (replace).
-      const signature = await signDocument(prepared.signedBytes, walletClient, 'curator')
-      const body = { ...prepared.wireBody, signatures: [signature] }
+      const signature = await signDocument(
+        prepared.signedBytes,
+        walletClient,
+        'curator'
+      );
+      const body = { ...prepared.wireBody, signatures: [signature] };
 
       if (isEdit && editId) {
-        const updated = await replacePlaylist(editId, body, await buildReplaceIntent({ type: 'playlist', document: body, walletClient, role: 'curator' }))
-        recordPublishedPlaylist(address, updated)
-        onPublished?.()
-        storedBaseRef.current = updated
-        loadedRef.current = extensionsEnabled ? updated : stripPlaylistExtensionFields(updated)
+        const updated = await replacePlaylist(
+          editId,
+          body,
+          await buildReplaceIntent({
+            type: 'playlist',
+            document: body,
+            walletClient,
+            role: 'curator',
+            onIntentRefresh: () =>
+              toast({
+                title: 'Confirm once more',
+                description:
+                  'The authorization aged out while waiting for your wallet, so it has been refreshed. Your document signature is unchanged.',
+              }),
+          })
+        );
+        recordPublishedPlaylist(address, updated);
+        onPublished?.();
+        storedBaseRef.current = updated;
+        loadedRef.current = extensionsEnabled
+          ? updated
+          : stripPlaylistExtensionFields(updated);
         toast({
           title: 'Updated',
           description: (
             <FeedUrlToastDescription
-              url={feedPlaylistResourceUrl(updated.slug?.trim() || updated.id || '')}
+              url={feedPlaylistResourceUrl(
+                updated.slug?.trim() || updated.id || ''
+              )}
             />
           ),
-        })
+        });
       } else if (overwriteBase && targetId) {
         // Overwrite-on-create: feed already has this id, so replace it instead.
-        const updated = await replacePlaylist(targetId, body, await buildReplaceIntent({ type: 'playlist', document: body, walletClient, role: 'curator' }))
-        recordPublishedPlaylist(address, updated)
-        onPublished?.()
+        const updated = await replacePlaylist(
+          targetId,
+          body,
+          await buildReplaceIntent({
+            type: 'playlist',
+            document: body,
+            walletClient,
+            role: 'curator',
+            onIntentRefresh: () =>
+              toast({
+                title: 'Confirm once more',
+                description:
+                  'The authorization aged out while waiting for your wallet, so it has been refreshed. Your document signature is unchanged.',
+              }),
+          })
+        );
+        recordPublishedPlaylist(address, updated);
+        onPublished?.();
         const feedUrl = feedPlaylistResourceUrl(
           updated.slug?.trim() || updated.id || ''
-        )
+        );
         setPublishedDoc({
           feedUrl,
           title: updated.title?.trim() || 'Untitled playlist',
@@ -848,35 +1017,37 @@ export default function PlaylistForm({
             title: t.title,
             description: t.description,
           })),
-        })
+        });
         // Reset form so "Publish another" returns to a clean state.
-        setTitle('')
-        setSlug('')
-        setIsAutoSlug(true)
-        setSummary('')
-        setCoverImage('')
-        setPlaylistNoteText('')
-        setPlaylistNoteDuration('')
-        setJsonText('')
-        newPlaylistCreatedRef.current = new Date().toISOString()
-        setItems([{ source: '', title: '', duration: undefined, license: undefined }])
-        setEnableDynamicQuery(false)
-        setDynamicProfile('https-json-v1')
-        setDynamicEndpoint('')
-        setDynamicMethod('GET')
-        setDynamicHeaders('')
-        setDynamicQuery('')
-        setDynamicItemsPath('')
-        setDynamicItemSchema('dp1/1.1')
-        setDynamicItemMap('')
-        setId(uuidv4())
+        setTitle('');
+        setSlug('');
+        setIsAutoSlug(true);
+        setSummary('');
+        setCoverImage('');
+        setPlaylistNoteText('');
+        setPlaylistNoteDuration('');
+        setJsonText('');
+        newPlaylistCreatedRef.current = new Date().toISOString();
+        setItems([
+          { source: '', title: '', duration: undefined, license: undefined },
+        ]);
+        setEnableDynamicQuery(false);
+        setDynamicProfile('https-json-v1');
+        setDynamicEndpoint('');
+        setDynamicMethod('GET');
+        setDynamicHeaders('');
+        setDynamicQuery('');
+        setDynamicItemsPath('');
+        setDynamicItemSchema('dp1/1.1');
+        setDynamicItemMap('');
+        setId(uuidv4());
       } else {
-        const published = await publishPlaylist(body as Playlist)
-        recordPublishedPlaylist(address, published)
-        onPublished?.()
+        const published = await publishPlaylist(body as Playlist);
+        recordPublishedPlaylist(address, published);
+        onPublished?.();
         const feedUrl = feedPlaylistResourceUrl(
           published.slug?.trim() || published.id || ''
-        )
+        );
         setPublishedDoc({
           feedUrl,
           title: published.title?.trim() || 'Untitled playlist',
@@ -885,31 +1056,36 @@ export default function PlaylistForm({
             title: t.title,
             description: t.description,
           })),
-        })
+        });
         // Reset form (create only — edit leaves the form populated)
-        setTitle('')
-        setSlug('')
-        setIsAutoSlug(true)
-        setSummary('')
-        setCoverImage('')
-        setPlaylistNoteText('')
-        setPlaylistNoteDuration('')
-        setJsonText('')
-        newPlaylistCreatedRef.current = new Date().toISOString()
-        setItems([{ source: '', title: '', duration: undefined, license: undefined }])
-        setEnableDynamicQuery(false)
-        setDynamicProfile('https-json-v1')
-        setDynamicEndpoint('')
-        setDynamicMethod('GET')
-        setDynamicHeaders('')
-        setDynamicQuery('')
-        setDynamicItemsPath('')
-        setDynamicItemSchema('dp1/1.1')
-        setDynamicItemMap('')
-        setId(uuidv4())
+        setTitle('');
+        setSlug('');
+        setIsAutoSlug(true);
+        setSummary('');
+        setCoverImage('');
+        setPlaylistNoteText('');
+        setPlaylistNoteDuration('');
+        setJsonText('');
+        newPlaylistCreatedRef.current = new Date().toISOString();
+        setItems([
+          { source: '', title: '', duration: undefined, license: undefined },
+        ]);
+        setEnableDynamicQuery(false);
+        setDynamicProfile('https-json-v1');
+        setDynamicEndpoint('');
+        setDynamicMethod('GET');
+        setDynamicHeaders('');
+        setDynamicQuery('');
+        setDynamicItemsPath('');
+        setDynamicItemSchema('dp1/1.1');
+        setDynamicItemMap('');
+        setId(uuidv4());
       }
     } catch (error) {
-      console.error(attemptedUpdate ? 'Update failed:' : 'Publish failed:', error)
+      console.error(
+        attemptedUpdate ? 'Update failed:' : 'Publish failed:',
+        error
+      );
       toast({
         title: attemptedUpdate ? 'Update failed' : 'Publish failed',
         description: friendlyPublishError(
@@ -918,11 +1094,11 @@ export default function PlaylistForm({
           attemptedUpdate ? 'update' : 'create'
         ),
         variant: 'destructive',
-      })
+      });
     } finally {
-      setIsPublishing(false)
+      setIsPublishing(false);
     }
-  }
+  };
 
   if (publishedDoc) {
     return (
@@ -947,13 +1123,13 @@ export default function PlaylistForm({
         onPublishAnother={() => setPublishedDoc(null)}
         onViewPublished={() => {
           if (onViewPublished) {
-            onViewPublished()
+            onViewPublished();
           } else {
-            setPublishedDoc(null)
+            setPublishedDoc(null);
           }
         }}
       />
-    )
+    );
   }
 
   return (
@@ -997,385 +1173,408 @@ export default function PlaylistForm({
             {loadError}
           </p>
         ) : (
-        <Tabs value={jsonMode} onValueChange={(v) => setJsonMode(v as 'form' | 'json')}>
-          <TabsList className={editorModeListClass}>
-            <TabsTrigger value="form" className={editorModeTriggerClass}>
-              Form
-            </TabsTrigger>
-            <TabsTrigger value="json" className={editorModeTriggerClass}>
-              JSON
-            </TabsTrigger>
-          </TabsList>
+          <Tabs
+            value={jsonMode}
+            onValueChange={(v) => setJsonMode(v as 'form' | 'json')}
+          >
+            <TabsList className={editorModeListClass}>
+              <TabsTrigger value="form" className={editorModeTriggerClass}>
+                Form
+              </TabsTrigger>
+              <TabsTrigger value="json" className={editorModeTriggerClass}>
+                JSON
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="form" className="mt-8 space-y-10">
-            {/* Basic Info */}
-            <div className="space-y-5">
-              <h3 className="section-label">Details</h3>
-              <div className="grid gap-4">
-                <div>
-                  <Label htmlFor="title">Title *</Label>
-                  <Input
-                    id="title"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="My Awesome Playlist"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="slug">Slug</Label>
-                  <div className="flex gap-2">
+            <TabsContent value="form" className="mt-8 space-y-10">
+              {/* Basic Info */}
+              <div className="space-y-5">
+                <h3 className="section-label">Details</h3>
+                <div className="grid gap-4">
+                  <div>
+                    <Label htmlFor="title">Title *</Label>
                     <Input
-                      id="slug"
-                      value={displaySlug}
-                      onChange={(e) => {
-                        setSlug(e.target.value)
-                        setIsAutoSlug(false)
-                      }}
-                      placeholder="Auto-generated from title"
+                      id="title"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="My Awesome Playlist"
                     />
-                    {!isAutoSlug && (
-                      <Button
-                        variant="outline"
-                        onClick={() => setIsAutoSlug(true)}
-                      >
-                        Reset
-                      </Button>
-                    )}
                   </div>
-                  <p className="mt-1.5 text-xs text-muted-foreground/90">
-                    Suggested: {autoSlug}
-                  </p>
-                </div>
-                {extensionsEnabled ? (
-                  <>
-                    <div>
-                      <Label htmlFor="summary">Summary</Label>
-                      <Textarea
-                        id="summary"
-                        value={summary}
-                        onChange={(e) => setSummary(e.target.value)}
-                        placeholder="Description of your playlist"
-                        rows={3}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="coverImage">Cover Image URL</Label>
+                  <div>
+                    <Label htmlFor="slug">Slug</Label>
+                    <div className="flex gap-2">
                       <Input
-                        id="coverImage"
-                        value={coverImage}
-                        onChange={(e) => setCoverImage(e.target.value)}
-                        placeholder="https://... or ipfs://..."
+                        id="slug"
+                        value={displaySlug}
+                        onChange={(e) => {
+                          setSlug(e.target.value);
+                          setIsAutoSlug(false);
+                        }}
+                        placeholder="Auto-generated from title"
                       />
+                      {!isAutoSlug && (
+                        <Button
+                          variant="outline"
+                          onClick={() => setIsAutoSlug(true)}
+                        >
+                          Reset
+                        </Button>
+                      )}
                     </div>
-                  </>
-                ) : null}
-              </div>
-            </div>
-
-            {/* Playlist Note — playlists extension */}
-            {extensionsEnabled ? (
-            <div className="space-y-5">
-              <h3 className="section-label">Intermission Note (Optional)</h3>
-              <p className="text-sm text-muted-foreground">
-                Optional intermission card displayed before playlist starts. Short artist-authored text.
-              </p>
-              <div className="grid gap-4">
-                <div>
-                  <Label htmlFor="playlistNoteText">Note Text</Label>
-                  <Textarea
-                    id="playlistNoteText"
-                    value={playlistNoteText}
-                    onChange={(e) => setPlaylistNoteText(e.target.value)}
-                    placeholder="A short message or interlude (max 500 characters)"
-                    rows={3}
-                    maxLength={500}
-                  />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {playlistNoteText.length}/500 characters
-                  </p>
-                </div>
-                <div>
-                  <Label htmlFor="playlistNoteDuration">Duration (seconds)</Label>
-                  <Input
-                    id="playlistNoteDuration"
-                    type="number"
-                    value={playlistNoteDuration}
-                    onChange={(e) => setPlaylistNoteDuration(e.target.value)}
-                    placeholder="20 (default)"
-                  />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    How long to show the note before continuing. Defaults to 20 seconds.
-                  </p>
+                    <p className="mt-1.5 text-xs text-muted-foreground/90">
+                      Suggested: {autoSlug}
+                    </p>
+                  </div>
+                  {extensionsEnabled ? (
+                    <>
+                      <div>
+                        <Label htmlFor="summary">Summary</Label>
+                        <Textarea
+                          id="summary"
+                          value={summary}
+                          onChange={(e) => setSummary(e.target.value)}
+                          placeholder="Description of your playlist"
+                          rows={3}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="coverImage">Cover Image URL</Label>
+                        <Input
+                          id="coverImage"
+                          value={coverImage}
+                          onChange={(e) => setCoverImage(e.target.value)}
+                          placeholder="https://... or ipfs://..."
+                        />
+                      </div>
+                    </>
+                  ) : null}
                 </div>
               </div>
-            </div>
-            ) : null}
 
-            {/* Curators — playlists extension */}
-            {extensionsEnabled ? <CuratorList curators={curators} onChange={setCurators} /> : null}
-
-            {/* Default Settings */}
-            <div className="space-y-5">
-              <h3 className="section-label">Defaults</h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="scaling">Scaling</Label>
-                  <Select
-                    value={defaultScaling}
-                    onValueChange={(v: 'fit' | 'fill' | 'stretch' | 'auto') =>
-                      setDefaultScaling(v)
-                    }
-                  >
-                    <SelectTrigger id="scaling">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="fit">Fit</SelectItem>
-                      <SelectItem value="fill">Fill</SelectItem>
-                      <SelectItem value="stretch">Stretch</SelectItem>
-                      <SelectItem value="auto">Auto</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="license">License</Label>
-                  <Select
-                    value={defaultLicense}
-                    onValueChange={(v: 'open' | 'token' | 'subscription') =>
-                      setDefaultLicense(v)
-                    }
-                  >
-                    <SelectTrigger id="license">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="open">Open</SelectItem>
-                      <SelectItem value="token">Token</SelectItem>
-                      <SelectItem value="subscription">Subscription</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="duration">Duration (seconds)</Label>
-                  <Input
-                    id="duration"
-                    type="number"
-                    value={defaultDuration}
-                    onChange={(e) => setDefaultDuration(e.target.value)}
-                    placeholder="20"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="background">Background</Label>
-                  <Input
-                    id="background"
-                    value={defaultBackground}
-                    onChange={(e) => setDefaultBackground(e.target.value)}
-                    placeholder="#000000"
-                  />
-                </div>
-                <div className="flex items-center gap-2.5">
-                  <input
-                    type="checkbox"
-                    id="autoplay"
-                    checked={defaultAutoplay}
-                    onChange={(e) => setDefaultAutoplay(e.target.checked)}
-                    className="size-4 rounded border-border accent-foreground"
-                  />
-                  <Label htmlFor="autoplay">Autoplay</Label>
-                </div>
-                <div className="flex items-center gap-2.5">
-                  <input
-                    type="checkbox"
-                    id="loop"
-                    checked={defaultLoop}
-                    onChange={(e) => setDefaultLoop(e.target.checked)}
-                    className="size-4 rounded border-border accent-foreground"
-                  />
-                  <Label htmlFor="loop">Loop</Label>
-                </div>
-              </div>
-            </div>
-
-            {/* Playlist items — series load first, then manual entry */}
-            <div className="space-y-5">
-              <span className="section-label">Playlist items · {playlistItemExportCount(items)}</span>
-              <SeriesExpander currentItemCount={substantiveItemCount(items)} onAdd={handleSeriesAdd} />
-              <ManualItemsSection
-                items={items}
-                showIntermissionNote={extensionsEnabled}
-                onAddItem={handleAddItem}
-                onUpdateItem={handleUpdateItem}
-                onRemoveItem={handleRemoveItem}
-              />
-            </div>
-
-            {extensionsEnabled ? (
-            <div className="space-y-5">
-              <div className="flex items-center justify-between gap-4">
-                <span className="section-label">Dynamic Query (Optional)</span>
-                <div className="flex items-center gap-2.5">
-                  <input
-                    type="checkbox"
-                    id="enableDynamicQuery"
-                    checked={enableDynamicQuery}
-                    onChange={(e) => setEnableDynamicQuery(e.target.checked)}
-                    className="size-4 rounded border-border accent-foreground"
-                  />
-                  <Label htmlFor="enableDynamicQuery">Enable</Label>
-                </div>
-              </div>
-              {enableDynamicQuery && (
-                <div className="space-y-4 rounded-xl border border-border/50 bg-muted/30 p-5">
+              {/* Playlist Note — playlists extension */}
+              {extensionsEnabled ? (
+                <div className="space-y-5">
+                  <h3 className="section-label">
+                    Intermission Note (Optional)
+                  </h3>
                   <p className="text-sm text-muted-foreground">
-                    Configure dynamic item fetching from external indexers. When enabled, items can be empty.
+                    Optional intermission card displayed before playlist starts.
+                    Short artist-authored text.
                   </p>
                   <div className="grid gap-4">
                     <div>
-                      <Label htmlFor="dynamicProfile">Profile *</Label>
-                      <Select
-                        value={dynamicProfile}
-                        onValueChange={(v: 'https-json-v1' | 'graphql-v1') => setDynamicProfile(v)}
-                      >
-                        <SelectTrigger id="dynamicProfile">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="https-json-v1">https-json-v1</SelectItem>
-                          <SelectItem value="graphql-v1">graphql-v1</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="dynamicEndpoint">Endpoint URL *</Label>
-                      <Input
-                        id="dynamicEndpoint"
-                        value={dynamicEndpoint}
-                        onChange={(e) => setDynamicEndpoint(e.target.value)}
-                        placeholder="https://api.example.com/query"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="dynamicMethod">HTTP Method</Label>
-                      <Select
-                        value={dynamicMethod}
-                        onValueChange={(v: 'GET' | 'POST') => setDynamicMethod(v)}
-                      >
-                        <SelectTrigger id="dynamicMethod">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="GET">GET</SelectItem>
-                          <SelectItem value="POST">POST</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="dynamicHeaders">Headers (JSON)</Label>
+                      <Label htmlFor="playlistNoteText">Note Text</Label>
                       <Textarea
-                        id="dynamicHeaders"
-                        value={dynamicHeaders}
-                        onChange={(e) => setDynamicHeaders(e.target.value)}
-                        placeholder='{"Authorization": "Bearer token"}'
+                        id="playlistNoteText"
+                        value={playlistNoteText}
+                        onChange={(e) => setPlaylistNoteText(e.target.value)}
+                        placeholder="A short message or interlude (max 500 characters)"
                         rows={3}
-                        className="font-mono text-xs"
+                        maxLength={500}
                       />
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {playlistNoteText.length}/500 characters
+                      </p>
                     </div>
                     <div>
-                      <Label htmlFor="dynamicQuery">Query Payload</Label>
-                      <Textarea
-                        id="dynamicQuery"
-                        value={dynamicQuery}
-                        onChange={(e) => setDynamicQuery(e.target.value)}
-                        placeholder="GraphQL query or JSON body with {{template}} placeholders"
-                        rows={4}
-                        className="font-mono text-xs"
+                      <Label htmlFor="playlistNoteDuration">
+                        Duration (seconds)
+                      </Label>
+                      <Input
+                        id="playlistNoteDuration"
+                        type="number"
+                        value={playlistNoteDuration}
+                        onChange={(e) =>
+                          setPlaylistNoteDuration(e.target.value)
+                        }
+                        placeholder="20 (default)"
                       />
-                    </div>
-                    <div className="border-t border-border/30 pt-4">
-                      <h4 className="mb-3 text-sm font-medium">Response Mapping</h4>
-                      <div className="space-y-3">
-                        <div>
-                          <Label htmlFor="dynamicItemsPath">Items Path *</Label>
-                          <Input
-                            id="dynamicItemsPath"
-                            value={dynamicItemsPath}
-                            onChange={(e) => setDynamicItemsPath(e.target.value)}
-                            placeholder="data.works (dot notation)"
-                          />
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            JSON path to the array of items
-                          </p>
-                        </div>
-                        <div>
-                          <Label htmlFor="dynamicItemSchema">Item Schema</Label>
-                          <Input
-                            id="dynamicItemSchema"
-                            value={dynamicItemSchema}
-                            onChange={(e) => setDynamicItemSchema(e.target.value)}
-                            placeholder="dp1/1.1"
-                          />
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            DP-1 schema version (e.g., dp1/1.0, dp1/1.1)
-                          </p>
-                        </div>
-                        <div>
-                          <Label htmlFor="dynamicItemMap">Item Field Mapping (JSON)</Label>
-                          <Textarea
-                            id="dynamicItemMap"
-                            value={dynamicItemMap}
-                            onChange={(e) => setDynamicItemMap(e.target.value)}
-                            placeholder='{"id": "artwork_id", "title": "name", "source": "media_url"}'
-                            rows={3}
-                            className="font-mono text-xs"
-                          />
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            Optional: Map response fields to DP-1 item schema
-                          </p>
-                        </div>
-                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        How long to show the note before continuing. Defaults to
+                        20 seconds.
+                      </p>
                     </div>
                   </div>
                 </div>
-              )}
-            </div>
-            ) : null}
+              ) : null}
 
-            {/* Actions */}
-            <div className="flex flex-col-reverse gap-3 border-t border-border/50 pt-8 sm:flex-row sm:justify-end">
-              <Button variant="outline" className="rounded-full" onClick={handleGenerateJSON}>
-                Preview JSON
-              </Button>
-              <Button
-                className="rounded-full px-8"
-                onClick={handlePublish}
-                disabled={isPublishing}
-              >
-                {isPublishing
-                  ? isEdit
-                    ? 'Saving…'
-                    : 'Publishing…'
-                  : isEdit
-                    ? 'Sign & update'
-                    : 'Sign & publish'}
-              </Button>
-            </div>
-          </TabsContent>
+              {/* Curators — playlists extension */}
+              {extensionsEnabled ? (
+                <CuratorList curators={curators} onChange={setCurators} />
+              ) : null}
 
-          <TabsContent value="json" className="mt-8">
-            <div className="space-y-6">
-              <JsonFileDropZone
-                value={jsonText}
-                onChange={handleJsonTextChange}
-                rows={20}
-              />
-              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              {/* Default Settings */}
+              <div className="space-y-5">
+                <h3 className="section-label">Defaults</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="scaling">Scaling</Label>
+                    <Select
+                      value={defaultScaling}
+                      onValueChange={(v: 'fit' | 'fill' | 'stretch' | 'auto') =>
+                        setDefaultScaling(v)
+                      }
+                    >
+                      <SelectTrigger id="scaling">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="fit">Fit</SelectItem>
+                        <SelectItem value="fill">Fill</SelectItem>
+                        <SelectItem value="stretch">Stretch</SelectItem>
+                        <SelectItem value="auto">Auto</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="license">License</Label>
+                    <Select
+                      value={defaultLicense}
+                      onValueChange={(v: 'open' | 'token' | 'subscription') =>
+                        setDefaultLicense(v)
+                      }
+                    >
+                      <SelectTrigger id="license">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="open">Open</SelectItem>
+                        <SelectItem value="token">Token</SelectItem>
+                        <SelectItem value="subscription">
+                          Subscription
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="duration">Duration (seconds)</Label>
+                    <Input
+                      id="duration"
+                      type="number"
+                      value={defaultDuration}
+                      onChange={(e) => setDefaultDuration(e.target.value)}
+                      placeholder="20"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="background">Background</Label>
+                    <Input
+                      id="background"
+                      value={defaultBackground}
+                      onChange={(e) => setDefaultBackground(e.target.value)}
+                      placeholder="#000000"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <input
+                      type="checkbox"
+                      id="autoplay"
+                      checked={defaultAutoplay}
+                      onChange={(e) => setDefaultAutoplay(e.target.checked)}
+                      className="size-4 rounded border-border accent-foreground"
+                    />
+                    <Label htmlFor="autoplay">Autoplay</Label>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <input
+                      type="checkbox"
+                      id="loop"
+                      checked={defaultLoop}
+                      onChange={(e) => setDefaultLoop(e.target.checked)}
+                      className="size-4 rounded border-border accent-foreground"
+                    />
+                    <Label htmlFor="loop">Loop</Label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Playlist items — series load first, then manual entry */}
+              <div className="space-y-5">
+                <span className="section-label">
+                  Playlist items · {playlistItemExportCount(items)}
+                </span>
+                <SeriesExpander
+                  currentItemCount={substantiveItemCount(items)}
+                  onAdd={handleSeriesAdd}
+                />
+                <ManualItemsSection
+                  items={items}
+                  showIntermissionNote={extensionsEnabled}
+                  onAddItem={handleAddItem}
+                  onUpdateItem={handleUpdateItem}
+                  onRemoveItem={handleRemoveItem}
+                />
+              </div>
+
+              {extensionsEnabled ? (
+                <div className="space-y-5">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="section-label">
+                      Dynamic Query (Optional)
+                    </span>
+                    <div className="flex items-center gap-2.5">
+                      <input
+                        type="checkbox"
+                        id="enableDynamicQuery"
+                        checked={enableDynamicQuery}
+                        onChange={(e) =>
+                          setEnableDynamicQuery(e.target.checked)
+                        }
+                        className="size-4 rounded border-border accent-foreground"
+                      />
+                      <Label htmlFor="enableDynamicQuery">Enable</Label>
+                    </div>
+                  </div>
+                  {enableDynamicQuery && (
+                    <div className="space-y-4 rounded-xl border border-border/50 bg-muted/30 p-5">
+                      <p className="text-sm text-muted-foreground">
+                        Configure dynamic item fetching from external indexers.
+                        When enabled, items can be empty.
+                      </p>
+                      <div className="grid gap-4">
+                        <div>
+                          <Label htmlFor="dynamicProfile">Profile *</Label>
+                          <Select
+                            value={dynamicProfile}
+                            onValueChange={(
+                              v: 'https-json-v1' | 'graphql-v1'
+                            ) => setDynamicProfile(v)}
+                          >
+                            <SelectTrigger id="dynamicProfile">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="https-json-v1">
+                                https-json-v1
+                              </SelectItem>
+                              <SelectItem value="graphql-v1">
+                                graphql-v1
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label htmlFor="dynamicEndpoint">
+                            Endpoint URL *
+                          </Label>
+                          <Input
+                            id="dynamicEndpoint"
+                            value={dynamicEndpoint}
+                            onChange={(e) => setDynamicEndpoint(e.target.value)}
+                            placeholder="https://api.example.com/query"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="dynamicMethod">HTTP Method</Label>
+                          <Select
+                            value={dynamicMethod}
+                            onValueChange={(v: 'GET' | 'POST') =>
+                              setDynamicMethod(v)
+                            }
+                          >
+                            <SelectTrigger id="dynamicMethod">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="GET">GET</SelectItem>
+                              <SelectItem value="POST">POST</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label htmlFor="dynamicHeaders">Headers (JSON)</Label>
+                          <Textarea
+                            id="dynamicHeaders"
+                            value={dynamicHeaders}
+                            onChange={(e) => setDynamicHeaders(e.target.value)}
+                            placeholder='{"Authorization": "Bearer token"}'
+                            rows={3}
+                            className="font-mono text-xs"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="dynamicQuery">Query Payload</Label>
+                          <Textarea
+                            id="dynamicQuery"
+                            value={dynamicQuery}
+                            onChange={(e) => setDynamicQuery(e.target.value)}
+                            placeholder="GraphQL query or JSON body with {{template}} placeholders"
+                            rows={4}
+                            className="font-mono text-xs"
+                          />
+                        </div>
+                        <div className="border-t border-border/30 pt-4">
+                          <h4 className="mb-3 text-sm font-medium">
+                            Response Mapping
+                          </h4>
+                          <div className="space-y-3">
+                            <div>
+                              <Label htmlFor="dynamicItemsPath">
+                                Items Path *
+                              </Label>
+                              <Input
+                                id="dynamicItemsPath"
+                                value={dynamicItemsPath}
+                                onChange={(e) =>
+                                  setDynamicItemsPath(e.target.value)
+                                }
+                                placeholder="data.works (dot notation)"
+                              />
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                JSON path to the array of items
+                              </p>
+                            </div>
+                            <div>
+                              <Label htmlFor="dynamicItemSchema">
+                                Item Schema
+                              </Label>
+                              <Input
+                                id="dynamicItemSchema"
+                                value={dynamicItemSchema}
+                                onChange={(e) =>
+                                  setDynamicItemSchema(e.target.value)
+                                }
+                                placeholder="dp1/1.1"
+                              />
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                DP-1 schema version (e.g., dp1/1.0, dp1/1.1)
+                              </p>
+                            </div>
+                            <div>
+                              <Label htmlFor="dynamicItemMap">
+                                Item Field Mapping (JSON)
+                              </Label>
+                              <Textarea
+                                id="dynamicItemMap"
+                                value={dynamicItemMap}
+                                onChange={(e) =>
+                                  setDynamicItemMap(e.target.value)
+                                }
+                                placeholder='{"id": "artwork_id", "title": "name", "source": "media_url"}'
+                                rows={3}
+                                className="font-mono text-xs"
+                              />
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Optional: Map response fields to DP-1 item
+                                schema
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              {/* Actions */}
+              <div className="flex flex-col-reverse gap-3 border-t border-border/50 pt-8 sm:flex-row sm:justify-end">
                 <Button
                   variant="outline"
                   className="rounded-full"
-                  onClick={() => setJsonMode('form')}
+                  onClick={handleGenerateJSON}
                 >
-                  Back to form
+                  Preview JSON
                 </Button>
                 <Button
                   className="rounded-full px-8"
@@ -1391,11 +1590,42 @@ export default function PlaylistForm({
                       : 'Sign & publish'}
                 </Button>
               </div>
-            </div>
-          </TabsContent>
-        </Tabs>
+            </TabsContent>
+
+            <TabsContent value="json" className="mt-8">
+              <div className="space-y-6">
+                <JsonFileDropZone
+                  value={jsonText}
+                  onChange={handleJsonTextChange}
+                  rows={20}
+                />
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                  <Button
+                    variant="outline"
+                    className="rounded-full"
+                    onClick={() => setJsonMode('form')}
+                  >
+                    Back to form
+                  </Button>
+                  <Button
+                    className="rounded-full px-8"
+                    onClick={handlePublish}
+                    disabled={isPublishing}
+                  >
+                    {isPublishing
+                      ? isEdit
+                        ? 'Saving…'
+                        : 'Publishing…'
+                      : isEdit
+                        ? 'Sign & update'
+                        : 'Sign & publish'}
+                  </Button>
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
         )}
       </CardContent>
     </Card>
-  )
+  );
 }

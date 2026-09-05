@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { buildReplaceIntent } from './replaceIntent'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { buildReplaceIntent, INTENT_REFRESH_AFTER_MS } from './replaceIntent'
 import { payloadHashString } from './signing'
 import type { WalletClient } from 'viem'
 
@@ -122,5 +122,83 @@ describe('buildReplaceIntent', () => {
         role: 'curator',
       })
     ).rejects.toThrow(/id and slug/i)
+  })
+})
+
+/**
+ * `created` must be stamped before signing, because the signature covers it. That puts a human-paced
+ * wallet confirmation inside the freshness window, so an intent can be minutes old before it is even
+ * signed — and the feed judges freshness on arrival.
+ */
+describe('buildReplaceIntent — slow wallet confirmation', () => {
+  /** A wallet that advances the clock by `delayMs` before returning, as a real confirmation would. */
+  function slowWallet(delayMs: number) {
+    let calls = 0
+    const client = {
+      account: { address: ADDRESS },
+      signMessage: vi.fn(async () => {
+        calls += 1
+        vi.setSystemTime(new Date(Date.now() + delayMs))
+        return `0x${'ab'.repeat(65)}` as const
+      }),
+    } as unknown as WalletClient
+    return { client, prompts: () => calls }
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-20T08:00:00.000Z'))
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('re-stamps and re-signs when the confirmation eats too much of the window', async () => {
+    const { client, prompts } = slowWallet(INTENT_REFRESH_AFTER_MS + 30_000)
+    const onIntentRefresh = vi.fn()
+
+    const intent = await buildReplaceIntent({
+      type: 'playlist',
+      document: DOCUMENT,
+      walletClient: client,
+      role: 'curator',
+      onIntentRefresh,
+    })
+
+    expect(prompts()).toBe(2)
+    expect(onIntentRefresh).toHaveBeenCalledTimes(1)
+    // The returned intent carries the *second* timestamp, so what reaches the feed is the fresh one.
+    const age = Date.now() - Date.parse(intent.created)
+    expect(age).toBeLessThanOrEqual(INTENT_REFRESH_AFTER_MS + 30_000)
+    expect(intent.signatures).toHaveLength(1)
+  })
+
+  it('does not prompt twice when the confirmation is prompt', async () => {
+    const { client, prompts } = slowWallet(1_000)
+    const onIntentRefresh = vi.fn()
+
+    await buildReplaceIntent({
+      type: 'playlist',
+      document: DOCUMENT,
+      walletClient: client,
+      role: 'curator',
+      onIntentRefresh,
+    })
+
+    expect(prompts()).toBe(1)
+    expect(onIntentRefresh).not.toHaveBeenCalled()
+  })
+
+  // Retrying forever would be worse than failing: a user who is slow once is likely slow twice, and an
+  // endless sequence of wallet prompts is indistinguishable from an attack.
+  it('retries at most once even if the second confirmation is also slow', async () => {
+    const { client, prompts } = slowWallet(INTENT_REFRESH_AFTER_MS + 30_000)
+
+    await buildReplaceIntent({
+      type: 'channel',
+      document: DOCUMENT,
+      walletClient: client,
+      role: 'publisher',
+    })
+
+    expect(prompts()).toBe(2)
   })
 })

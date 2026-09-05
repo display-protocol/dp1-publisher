@@ -253,7 +253,7 @@ export default function PlaylistForm({
   /** After a successful create publish, hold the feed URL + title so the
    * post-publish panel can replace the form until the user picks a next step.
    * `mode='update'` means the publish detected an existing playlist with the
-   * same id and replaced it via PATCH; `mode='create'` is a fresh POST.
+   * same id and replaced it via PUT; `mode='create'` is a fresh POST.
    * `receipts` captures the prepare-pipeline notes (wallet identity replacement,
    * curator injection, etc.) so the user has a permanent record. */
   const [publishedDoc, setPublishedDoc] = useState<{
@@ -741,16 +741,16 @@ export default function PlaylistForm({
     }
 
     setIsPublishing(true)
-    // Tracks whether the operation we ultimately attempt is an update (PATCH).
+    // Tracks whether the operation we ultimately attempt is a replace (PUT).
     // Both explicit edit-mode and auto-overwrite count; used so the catch
     // surfaces the "different wallet" message instead of the create variant.
     let attemptedUpdate = isEdit
     try {
       // Step 2: pre-flight overwrite detection. On create publishes, look up
-      // the document's id on the feed; if it already exists, switch to PATCH
+      // the document's id on the feed; if it already exists, switch to a replace
       // so the user transparently overwrites their own prior publish (same
       // wallet → feed accepts). A different wallet's signature will fail at
-      // PATCH and surface a friendly "wrong wallet" error.
+      // the replace and surface a friendly "wrong wallet" error.
       const targetId = rawDocument.id
       let overwriteBase: Playlist | undefined
       if (!isEdit && targetId) {
@@ -801,7 +801,7 @@ export default function PlaylistForm({
       }
       prepared.toasts.forEach((t) => toast(t))
 
-      // Step 4: sign and POST/PATCH.
+      // Step 4: sign and POST (create) or PUT (replace).
       const signature = await signDocument(prepared.signedBytes, walletClient, 'curator')
       const body = { ...prepared.wireBody, signatures: [signature] }
 
@@ -819,7 +819,7 @@ export default function PlaylistForm({
           ),
         })
       } else if (overwriteBase && targetId) {
-        // Overwrite-on-create: feed already has this id, PATCH instead.
+        // Overwrite-on-create: feed already has this id, so replace it instead.
         const updated = await replacePlaylist(targetId, body, await buildReplaceIntent({ type: 'playlist', document: body, walletClient, role: 'curator' }))
         recordPublishedPlaylist(address, updated)
         onPublished?.()

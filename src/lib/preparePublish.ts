@@ -50,13 +50,15 @@ export interface PreparedDocument<T> {
    */
   signedBytes: Record<string, unknown>
   /**
-   * What to POST/PATCH (caller adds `signatures`).
-   *   - CREATE: equals `signedBytes` exactly — the POST body matches the
-   *     bytes the feed will hash to verify the signature.
-   *   - EDIT (PATCH): `signedBytes` minus `id` (URL path) and `created`
-   *     (immutable). These are the only documented PATCH omissions.
-   * Derived from `signedBytes`, so it cannot drift from what was signed
-   * except in the documented ways above.
+   * What to send (caller adds `signatures`). Equals `signedBytes` exactly, on create and on edit alike,
+   * so the body always matches the bytes the feed hashes to verify the signature.
+   *
+   * Edit used to omit `id` and `created`, which was right for PATCH: the id was in the URL and a partial
+   * update never restated an immutable field. A replace is a whole document, and under PUT those
+   * omissions are wrong twice over — the feed validates the submitted `id`, `slug` and `created` against
+   * the stored resource, and both fields sit inside the signed payload, so dropping them from the wire
+   * would leave the delivered bytes different from the signed ones and every signature would fail to
+   * verify against what was actually sent.
    */
   wireBody: Record<string, unknown>
   /** Informational toasts the caller should show (e.g., "Wallet added as curator"). */
@@ -78,7 +80,7 @@ export interface PreparePlaylistArgs {
   rawDocument: Playlist
   /** Connected wallet's DID (e.g., did:pkh:eip155:1:0x…). */
   walletDID: string
-  /** For edit/PATCH; omit for create. */
+  /** The stored document to merge onto, for an edit/replace; omit for create. */
   base?: Playlist
   /** Drives extension-field stripping and curator auto-inject behavior. */
   extensionsEnabled: boolean
@@ -157,9 +159,8 @@ export function preparePlaylistForPublish(
   if (validationErrors.length) return { validationErrors }
 
   // Step 5: canonicalize ONCE. `playlistUnsignedPayloadForSigning` is the
-  // single source of truth for the exact bytes the feed will hash. wireBody
-  // is derived from it, so it can't drift from what was signed except in the
-  // intentional PATCH omissions below.
+  // single source of truth for the exact bytes the feed will hash. wireBody is that same object, so it
+  // cannot drift from what was signed.
   const signedBytes = playlistUnsignedPayloadForSigning(canonical)
 
   // The signer defaults the slug (generateSlug) when the document lacks one —
@@ -238,9 +239,7 @@ export function prepareChannelForPublish(
   // Step 4: canonicalize ONCE. `channelUnsignedPayloadForSigning` is the
   // single source of truth for the exact bytes the feed will hash (slug
   // auto-generation, default version, entity URL normalization, blank
-  // stripping all live there). wireBody is derived from it, so it cannot
-  // drift from what was signed except in the intentional PATCH omissions
-  // below.
+  // stripping all live there). wireBody is that same object, so it cannot drift from what was signed.
   let signedBytes: Record<string, unknown>
   try {
     signedBytes = channelUnsignedPayloadForSigning(merged)

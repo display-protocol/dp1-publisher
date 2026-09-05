@@ -8,7 +8,7 @@
  * rewritten payload. That sequence is unsafe: it produces a payload the user
  * is signing under false pretenses (the on-screen flow looks like a
  * silent overwrite, but the bytes attest to a different identity). The
- * server would presumably reject the resulting PATCH, but we should never
+ * server would presumably reject the resulting replace, but we should never
  * ask the user to sign in the first place.
  *
  * The gate is intentionally strict: the connected wallet must have already

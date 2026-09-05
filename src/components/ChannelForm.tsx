@@ -614,13 +614,13 @@ export default function ChannelForm({
     }
 
     setIsPublishing(true)
-    // See PlaylistForm: tracks whether we actually attempted a PATCH so the
+    // See PlaylistForm: tracks whether we actually attempted a replace so the
     // catch can show the overwrite-specific message on wrong-wallet failures.
     let attemptedUpdate = isEdit
     try {
       // Step 2: pre-flight overwrite detection. See PlaylistForm for the
-      // rationale — same wallet re-publishing transparently PATCHes; different
-      // wallet falls through to a friendly "wrong wallet" error from PATCH.
+      // rationale — same wallet re-publishing transparently replaces; different
+      // wallet falls through to a friendly "wrong wallet" error from the replace.
       const targetId = rawDocument.id
       let overwriteBase: Channel | undefined
       if (!isEdit && targetId) {
@@ -664,7 +664,7 @@ export default function ChannelForm({
       }
       prepared.toasts.forEach((t) => toast(t))
 
-      // Step 4: sign and POST/PATCH.
+      // Step 4: sign and POST (create) or PUT (replace).
       const signature = await signDocument(prepared.signedBytes, walletClient, 'publisher')
       const body = { ...prepared.wireBody, signatures: [signature] }
 

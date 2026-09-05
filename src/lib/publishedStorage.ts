@@ -1,7 +1,8 @@
 /**
  * Local registry of playlists and channels published from this browser,
  * keyed by wallet address. Rows are lightweight list metadata only (id, slug, title, created).
- * Editing always refetches the full document via GET /api/v1/... — never use these records as the merge base for PATCH.
+ * Editing always refetches the full document via GET /api/v1/... — never use these records as the merge
+ * base for a replace: a replace sends the whole document, so a stale base would silently drop fields.
  */
 
 import { getAddress } from 'viem'

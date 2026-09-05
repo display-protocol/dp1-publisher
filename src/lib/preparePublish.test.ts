@@ -289,7 +289,11 @@ describe('preparePlaylistForPublish — create', () => {
     expect(r.wireBody).toEqual(r.signedBytes)
   })
 
-  it('EDIT wireBody equals signedBytes minus id+created (only documented omissions)', () => {
+  // Under PATCH this omitted id and created: the id was in the URL and a partial update never restated
+  // an immutable field. PUT replaces the whole document, and both are inside the signed payload, so
+  // omitting either would both fail the feed's identity check and leave the delivered bytes different
+  // from the signed ones.
+  it('EDIT wireBody equals signedBytes exactly, including id and created', () => {
     const existing: Playlist = {
       ...basePlaylist,
       id: 'pl-abc-123',
@@ -303,8 +307,9 @@ describe('preparePlaylistForPublish — create', () => {
     })
     ok<Playlist>(r)
     expect(r.signedBytes.id).toBe('pl-abc-123')
-    const { id: _id, created: _c, ...signedMinusOmissions } = r.signedBytes
-    expect(r.wireBody).toEqual(signedMinusOmissions)
+    expect(r.wireBody).toEqual(r.signedBytes)
+    expect(r.wireBody.id).toBe('pl-abc-123')
+    expect(r.wireBody.created).toBe(r.signedBytes.created)
   })
 
   it('drops unknown top-level fields imported from JSON (feed-contract whitelist)', () => {
@@ -390,9 +395,8 @@ describe('preparePlaylistForPublish — edit', () => {
     // Wallet appended even though merged inherited did:key curator from base.
     expect(r.signedPayload.curators?.some((c) => c.key === WALLET)).toBe(true)
     expect(r.signedPayload.curators?.some((c) => c.key === DID_KEY)).toBe(true)
-    // wireBody equals signedBytes minus PATCH omissions.
-    const { id: _id, created: _c, ...signedMinusOmissions } = r.signedBytes
-    expect(r.wireBody).toEqual(signedMinusOmissions)
+    // wireBody is exactly what was signed — a replace sends the whole document.
+    expect(r.wireBody).toEqual(r.signedBytes)
   })
 
   it('idempotent when the merged document already declares the wallet', () => {
@@ -536,11 +540,10 @@ describe('prepareChannelForPublish — edit (round-6 regression guards)', () => 
     })
     ok<Channel>(r)
     expect(r.signedPayload.publisher?.key).toBe(WALLET)
-    // Edit-mode invariant: wire body equals signed bytes minus the documented
-    // PATCH omissions. Publisher specifically must match exactly (round-6).
+    // Edit-mode invariant: the wire body is exactly the signed bytes. Publisher specifically must match
+    // (round-6 regression: signed payload and update body were built from different sources).
     expect(r.wireBody.publisher).toEqual(r.signedBytes.publisher)
-    const { id: _id, created: _c, ...signedMinusOmissions } = r.signedBytes
-    expect(r.wireBody).toEqual(signedMinusOmissions)
+    expect(r.wireBody).toEqual(r.signedBytes)
     expect(r.toasts.some((t) => /publisher/i.test(t.title))).toBe(true)
   })
 
@@ -584,7 +587,8 @@ describe('prepareChannelForPublish — edit (round-6 regression guards)', () => 
     expect(r.wireBody).toEqual(r.signedBytes)
   })
 
-  it('EDIT wireBody equals signedBytes minus id+created (only documented omissions)', () => {
+  // See the playlist counterpart: PUT sends the whole signed document, id and created included.
+  it('EDIT wireBody equals signedBytes exactly, including id and created', () => {
     const existing: Channel = {
       ...baseChannel,
       id: 'ch-xyz-456',
@@ -597,8 +601,9 @@ describe('prepareChannelForPublish — edit (round-6 regression guards)', () => 
     })
     ok<Channel>(r)
     expect(r.signedBytes.id).toBe('ch-xyz-456')
-    const { id: _id, created: _c, ...signedMinusOmissions } = r.signedBytes
-    expect(r.wireBody).toEqual(signedMinusOmissions)
+    expect(r.wireBody).toEqual(r.signedBytes)
+    expect(r.wireBody.id).toBe('ch-xyz-456')
+    expect(r.wireBody.created).toBe(r.signedBytes.created)
   })
 
   // Channel-specific cases the reviewer explicitly named. Each one was a
@@ -743,3 +748,75 @@ describe('prepareChannelForPublish — edit (round-6 regression guards)', () => 
 })
 
 
+
+/**
+ * Core mode plus replace is the combination that only became dangerous when updates moved from PATCH to
+ * PUT. Stripping shapes a create; on a replace it erases, because the whole document is sent. `curators`
+ * is the sharpest case — it is the feed's owner set, a replace may not change it, and the wallet is only
+ * re-added when extensions are on, so a stripped replace carries no owner at all.
+ */
+describe('core mode never silently strips a stored document on replace', () => {
+  const withExtensions: Playlist = {
+    ...basePlaylist,
+    id: 'pl-ext-1',
+    created: '2026-05-20T08:30:00Z',
+    curators: [{ name: 'NODE', key: DID_KEY, url: '' }],
+    summary: 'a summary the user cannot see in core mode',
+  }
+
+  it('refuses the replace and names what would be lost', () => {
+    const r = preparePlaylistForPublish({
+      rawDocument: { ...basePlaylist, title: 'edited in core mode' },
+      walletDID: WALLET,
+      base: withExtensions,
+      extensionsEnabled: false,
+    })
+    expect('validationErrors' in r).toBe(true)
+    const [message] = (r as { validationErrors: string[] }).validationErrors
+    expect(message).toContain('curators')
+    expect(message).toContain('summary')
+    expect(message).toMatch(/enable extensions/i)
+  })
+
+  it('refuses on item-level extension data too', () => {
+    const base: Playlist = {
+      ...basePlaylist,
+      id: 'pl-ext-2',
+      created: '2026-05-20T08:30:00Z',
+      items: basePlaylist.items.map((i) => ({ ...i, displayAt: '2026-07-21T00:00:00' })),
+    }
+    const r = preparePlaylistForPublish({
+      rawDocument: { ...basePlaylist, title: 'edited' },
+      walletDID: WALLET,
+      base,
+      extensionsEnabled: false,
+    })
+    expect('validationErrors' in r).toBe(true)
+    expect((r as { validationErrors: string[] }).validationErrors[0]).toContain('items[].displayAt')
+  })
+
+  // A create has nothing stored to erase, so core mode must still shape the payload rather than refuse.
+  it('still strips on create, where there is nothing to lose', () => {
+    const r = preparePlaylistForPublish({
+      rawDocument: { ...basePlaylist, summary: 'dropped', curators: [{ name: 'N', key: DID_KEY }] },
+      walletDID: WALLET,
+      extensionsEnabled: false,
+    })
+    ok<Playlist>(r)
+    expect(r.wireBody.summary).toBeUndefined()
+    expect(r.wireBody.curators).toBeUndefined()
+  })
+
+  // A stored document with no extension data is safe to replace in core mode.
+  it('allows the replace when the stored document carries no extension fields', () => {
+    const plain: Playlist = { ...basePlaylist, id: 'pl-plain', created: '2026-05-20T08:30:00Z' }
+    const r = preparePlaylistForPublish({
+      rawDocument: { ...basePlaylist, title: 'edited' },
+      walletDID: WALLET,
+      base: plain,
+      extensionsEnabled: false,
+    })
+    ok<Playlist>(r)
+    expect(r.wireBody).toEqual(r.signedBytes)
+  })
+})

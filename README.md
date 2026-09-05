@@ -20,7 +20,7 @@ Authoritative HTTP contract lives in **[dp1-feed-v2](https://github.com/display-
 - **Playlist publishing**: Forms or JSON editor; curator keys; playlists extension (`note`, dynamic query paths) follow feed policy
 - **Playlist groups (“exhibitions”)**: Compose and publish grouped playlists
 - **Channels**: Visible when deployment reports `extensionsEnabled` (or forced via env)
-- **PATCH updates**: Publish view lists prior work per wallet; edits refetch authoritative documents via GET before merge/sign
+- **Replace updates**: Publish view lists prior work per wallet; edits refetch authoritative documents via GET before merge/sign
 - **URI checks**: Playlist item URIs validated for HTTPS/IPFS reachability UX (optional dev overrides)
 - **DP-1 signing**: Strip signatures → JCS (RFC 8785) → SHA-256 over canonical bytes + `\n` → EIP-191 personal sign (`did:pkh` identifiers)
 
@@ -86,7 +86,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for environment nuances and feed-local deve
 1. **Connect wallet**
 2. **Publish** tabs: Playlist, Group (and Channel when extensions are on)—use forms or paste JSON where offered
 3. **Sign & publish** submits `POST /api/v1/...` with non-empty signatures
-4. **Published**: local per-wallet registry (browser `localStorage`) for shortcuts; edits always reload from GET before PATCH + re-sign
+4. **Published**: local per-wallet registry (browser `localStorage`) for shortcuts; edits always reload from GET before replace + re-sign
 
 ### Extensions
 
@@ -110,7 +110,7 @@ Feeds derive slug from optional client slug or title plus short ID on create; pu
 
 ## Endpoint subset (SPA)
 
-Creates and PATCH updates use **`/api/v1/playlists`**, **`playlist-groups`**, **`channels`**. Reads use GET/list for edit flows.
+Creates use **`POST /api/v1/playlists`**, **`playlist-groups`**, **`channels`**; updates use **`PUT .../{id}`** with a `{ document, authorization }` envelope, where the authorization is a signed mutation-intent. Reads use GET/list for edit flows.
 
 Full HTTP contract: **[dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2)** [`api/openapi.yaml`](https://github.com/display-protocol/dp1-feed-v2/blob/main/api/openapi.yaml) and [`docs/api_design.md`](https://github.com/display-protocol/dp1-feed-v2/blob/main/docs/api_design.md). Feed calls from this SPA are centralized in [`src/lib/api.ts`](src/lib/api.ts).
 

@@ -1,39 +1,40 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useAccount, useWalletClient } from 'wagmi'
-import { getAddress } from 'viem'
-import { ArrowLeft, PenLine, ShieldAlert } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useAccount, useWalletClient } from 'wagmi';
+import { getAddress } from 'viem';
+import { ArrowLeft, PenLine, ShieldAlert } from 'lucide-react';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Toaster } from '@/components/ui/toaster'
-import { useToast } from '@/hooks/use-toast'
-import { useDp1Extensions } from '@/context/Dp1ExtensionsContext'
-import JsonFileDropZone from './JsonFileDropZone'
-import WalletConnect from './WalletConnect'
-import PostPublishPanel, { type PostPublishMode } from './PostPublishPanel'
+} from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Toaster } from '@/components/ui/toaster';
+import { useToast } from '@/hooks/use-toast';
+import { useDp1Extensions } from '@/context/Dp1ExtensionsContext';
+import JsonFileDropZone from './JsonFileDropZone';
+import WalletConnect from './WalletConnect';
+import PostPublishPanel, { type PostPublishMode } from './PostPublishPanel';
 import {
   describeReviewDocument,
   hasUnnamedWalletEntity,
   parseReviewDocument,
   type ReviewedDp1Document,
-} from '@/lib/reviewDocument'
+} from '@/lib/reviewDocument';
 import {
   prepareChannelForPublish,
   preparePlaylistForPublish,
   type PrepareResult,
   type ToastInput,
-} from '@/lib/preparePublish'
-import { ethereumAddressToDIDPKH, signDocument } from '@/lib/signing'
+} from '@/lib/preparePublish';
+import { ethereumAddressToDIDPKH, signDocument } from '@/lib/signing';
+import { buildReplaceIntent } from '@/lib/replaceIntent';
 import {
   isWalletAuthorizedToOverwrite,
   wrongWalletForOverwriteMessage,
-} from '@/lib/overwriteAuth'
+} from '@/lib/overwriteAuth';
 import {
   FeedAPIError,
   feedChannelResourceUrl,
@@ -41,16 +42,16 @@ import {
   friendlyPublishError,
   getChannel,
   getPlaylist,
-  patchChannel,
-  patchPlaylist,
+  replaceChannel,
+  replacePlaylist,
   publishChannel,
   publishPlaylist,
-} from '@/lib/api'
+} from '@/lib/api';
 import {
   recordPublishedChannel,
   recordPublishedPlaylist,
-} from '@/lib/publishedStorage'
-import type { Channel, Playlist } from '@/types/dp1'
+} from '@/lib/publishedStorage';
+import type { Channel, Playlist } from '@/types/dp1';
 
 type PreparedState =
   | { status: 'idle' }
@@ -58,7 +59,7 @@ type PreparedState =
   /** Signing must not proceed (wrong wallet for overwrite, validation failure). */
   | { status: 'blocked'; message: string }
   | {
-      status: 'ready'
+      status: 'ready';
       /**
        * The post-pipeline document (merged with the feed base on updates,
        * extension-stripped, wallet identity ensured) — what the signature
@@ -67,12 +68,12 @@ type PreparedState =
        * omits (dynamicQuery, curators, …), and a summary of the pasted text
        * would misstate what is being attested.
        */
-      signed: ReviewedDp1Document
-      signedBytes: Record<string, unknown>
-      wireBody: Record<string, unknown>
-      mode: PostPublishMode
+      signed: ReviewedDp1Document;
+      signedBytes: Record<string, unknown>;
+      wireBody: Record<string, unknown>;
+      mode: PostPublishMode;
       /** What the pipeline adjusted beyond the pasted document (identity injection etc.). */
-      receipts: ToastInput[]
+      receipts: ToastInput[];
       /**
        * The exact editor text these bytes were derived from. The page promises
        * that you sign what you read, and everything upstream of this state is
@@ -83,17 +84,17 @@ type PreparedState =
        * signs what is no longer on screen. Compare this against the live
        * editor text rather than trusting timing.
        */
-      sourceText: string
+      sourceText: string;
       /** The attribution name these bytes were derived from — same gate as `sourceText`. */
-      sourceName: string
-    }
+      sourceName: string;
+    };
 
 interface PublishedDoc {
-  kind: ReviewedDp1Document['kind']
-  feedUrl: string
-  title: string
-  mode: PostPublishMode
-  receipts: ToastInput[]
+  kind: ReviewedDp1Document['kind'];
+  feedUrl: string;
+  title: string;
+  mode: PostPublishMode;
+  receipts: ToastInput[];
 }
 
 /**
@@ -105,23 +106,23 @@ interface PublishedDoc {
 async function preflightExisting(
   reviewed: ReviewedDp1Document
 ): Promise<Playlist | Channel | undefined> {
-  const id = reviewed.document.id
-  if (!id) return undefined
+  const id = reviewed.document.id;
+  if (!id) return undefined;
   try {
-    if (reviewed.kind === 'playlist') return await getPlaylist(id)
-    return await getChannel(id)
+    if (reviewed.kind === 'playlist') return await getPlaylist(id);
+    return await getChannel(id);
   } catch (e) {
-    if (e instanceof FeedAPIError && e.status === 404) return undefined
-    return undefined
+    if (e instanceof FeedAPIError && e.status === 404) return undefined;
+    return undefined;
   }
 }
 
 type PreparedOk = {
-  signed: ReviewedDp1Document
-  signedBytes: Record<string, unknown>
-  wireBody: Record<string, unknown>
-  toasts: ToastInput[]
-}
+  signed: ReviewedDp1Document;
+  signedBytes: Record<string, unknown>;
+  wireBody: Record<string, unknown>;
+  toasts: ToastInput[];
+};
 
 /**
  * Kind-dispatch into the shared publish pipeline. Returns the post-pipeline
@@ -146,7 +147,7 @@ function prepareReviewed(
           signedBytes: r.signedBytes,
           wireBody: r.wireBody,
           toasts: r.toasts,
-        }
+        };
 
   if (reviewed.kind === 'playlist') {
     return ok(
@@ -158,7 +159,7 @@ function prepareReviewed(
         walletName,
       }),
       (p) => ({ kind: 'playlist', document: p })
-    )
+    );
   }
   return ok(
     prepareChannelForPublish({
@@ -168,13 +169,13 @@ function prepareReviewed(
       walletName,
     }),
     (c) => ({ kind: 'channel', document: c })
-  )
+  );
 }
 
 const OVERWRITE_NOUN = {
   playlist: 'playlist',
   channel: 'channel',
-} as const
+} as const;
 
 /**
  * Review-and-sign page (`#/sign`): paste or drop an already-composed DP-1
@@ -186,66 +187,67 @@ const OVERWRITE_NOUN = {
  * The forms remain untouched alongside this page.
  */
 /** Last attribution name that actually published, recalled across visits. */
-const ATTRIBUTION_NAME_STORAGE_KEY = 'dp1-publisher.attribution-name'
+const ATTRIBUTION_NAME_STORAGE_KEY = 'dp1-publisher.attribution-name';
 
 export default function ReviewAndSign() {
-  const { isConnected, address } = useAccount()
-  const { data: walletClient } = useWalletClient()
-  const { extensionsEnabled, extensionsLoading } = useDp1Extensions()
-  const { toast } = useToast()
+  const { isConnected, address } = useAccount();
+  const { data: walletClient } = useWalletClient();
+  const { extensionsEnabled, extensionsLoading } = useDp1Extensions();
+  const { toast } = useToast();
 
-  const [jsonText, setJsonText] = useState('')
+  const [jsonText, setJsonText] = useState('');
   // Prefilled from the last successful publish: the attribution name is
   // near-constant per person, and an easy-to-skip empty field here signs an
   // unnamed identity into the document (see hasUnnamedWalletEntity).
   const [signerName, setSignerName] = useState(() => {
     try {
-      return window.localStorage.getItem(ATTRIBUTION_NAME_STORAGE_KEY) ?? ''
+      return window.localStorage.getItem(ATTRIBUTION_NAME_STORAGE_KEY) ?? '';
     } catch {
-      return ''
+      return '';
     }
-  })
-  const [prepared, setPrepared] = useState<PreparedState>({ status: 'idle' })
-  const [isPublishing, setIsPublishing] = useState(false)
-  const [publishedDoc, setPublishedDoc] = useState<PublishedDoc | null>(null)
+  });
+  const [prepared, setPrepared] = useState<PreparedState>({ status: 'idle' });
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishedDoc, setPublishedDoc] = useState<PublishedDoc | null>(null);
   /** Stale-async guard: only the latest preflight/prepare run may set state. */
-  const prepareTokenRef = useRef(0)
+  const prepareTokenRef = useRef(0);
 
   // Debounced copy of the editor text. Parsing regenerates fallback uuids and
   // the prepare effect hits the feed with a GET — neither should run per
   // keystroke, only when the user pauses.
-  const [settledJsonText, setSettledJsonText] = useState('')
+  const [settledJsonText, setSettledJsonText] = useState('');
   useEffect(() => {
-    const t = window.setTimeout(() => setSettledJsonText(jsonText), 400)
-    return () => window.clearTimeout(t)
-  }, [jsonText])
+    const t = window.setTimeout(() => setSettledJsonText(jsonText), 400);
+    return () => window.clearTimeout(t);
+  }, [jsonText]);
 
   // The attribution name lands inside the signed bytes, so it rides the same
   // debounce → prepare → staleness gate as the document text.
-  const [settledSignerName, setSettledSignerName] = useState('')
+  const [settledSignerName, setSettledSignerName] = useState('');
   useEffect(() => {
-    const t = window.setTimeout(() => setSettledSignerName(signerName), 400)
-    return () => window.clearTimeout(t)
-  }, [signerName])
+    const t = window.setTimeout(() => setSettledSignerName(signerName), 400);
+    return () => window.clearTimeout(t);
+  }, [signerName]);
 
   const parseResult = useMemo(() => {
-    const trimmed = settledJsonText.trim()
-    if (!trimmed) return null
-    return parseReviewDocument(trimmed, { extensionsEnabled })
-  }, [settledJsonText, extensionsEnabled])
+    const trimmed = settledJsonText.trim();
+    if (!trimmed) return null;
+    return parseReviewDocument(trimmed, { extensionsEnabled });
+  }, [settledJsonText, extensionsEnabled]);
 
-  const reviewed = parseResult && 'doc' in parseResult ? parseResult.doc : null
+  const reviewed = parseResult && 'doc' in parseResult ? parseResult.doc : null;
 
   // True while the editor holds text the pipeline has not caught up with. Both
   // `reviewed` and `prepared` are derived from `settledJsonText`, so during
   // this window every rendered summary describes the *previous* document.
-  const settling = jsonText !== settledJsonText || signerName !== settledSignerName
+  const settling =
+    jsonText !== settledJsonText || signerName !== settledSignerName;
 
   // Signing is allowed only against the text on screen. See `sourceText`.
   const signable =
     prepared.status === 'ready' &&
     prepared.sourceText === jsonText &&
-    prepared.sourceName === signerName
+    prepared.sourceName === signerName;
 
   // Non-blocking nudge: the prepared bytes would sign the connected wallet
   // in as an entity with an empty display name and the attribution field is
@@ -255,47 +257,58 @@ export default function ReviewAndSign() {
     signable &&
     !signerName.trim() &&
     !!address &&
-    hasUnnamedWalletEntity(prepared.signed, ethereumAddressToDIDPKH(getAddress(address)))
+    hasUnnamedWalletEntity(
+      prepared.signed,
+      ethereumAddressToDIDPKH(getAddress(address))
+    );
 
   // Once the pipeline has run, summarize what will actually be signed (merged
   // base + injected identity); before that, preview the parsed paste. While
   // settling, show nothing rather than a summary of superseded text.
-  const summarySource = settling ? null : signable ? prepared.signed : reviewed
+  const summarySource = settling ? null : signable ? prepared.signed : reviewed;
   const summary = useMemo(
     () => (summarySource ? describeReviewDocument(summarySource) : null),
     [summarySource]
-  )
+  );
 
   // Preflight + prepare as soon as we have both a valid document and a wallet.
   // This is what makes the page a *review* surface: identity injection and
   // create-vs-overwrite mode are computed and shown before the user is asked
   // to sign, instead of flashing past in toasts afterwards.
   useEffect(() => {
-    const token = ++prepareTokenRef.current
+    const token = ++prepareTokenRef.current;
     if (!reviewed || !address) {
-      setPrepared({ status: 'idle' })
-      return
+      setPrepared({ status: 'idle' });
+      return;
     }
-    setPrepared({ status: 'preparing' })
-    ;(async () => {
-      const walletDID = ethereumAddressToDIDPKH(getAddress(address))
-      const base = await preflightExisting(reviewed)
-      if (token !== prepareTokenRef.current) return
+    setPrepared({ status: 'preparing' });
+    (async () => {
+      const walletDID = ethereumAddressToDIDPKH(getAddress(address));
+      const base = await preflightExisting(reviewed);
+      if (token !== prepareTokenRef.current) return;
       if (base) {
-        const role = reviewed.kind === 'channel' ? 'publisher' : 'curator'
+        const role = reviewed.kind === 'channel' ? 'publisher' : 'curator';
         if (!isWalletAuthorizedToOverwrite(base, role, walletDID)) {
           setPrepared({
             status: 'blocked',
-            message: wrongWalletForOverwriteMessage(OVERWRITE_NOUN[reviewed.kind]),
-          })
-          return
+            message: wrongWalletForOverwriteMessage(
+              OVERWRITE_NOUN[reviewed.kind]
+            ),
+          });
+          return;
         }
       }
-      const prep = prepareReviewed(reviewed, walletDID, base, extensionsEnabled, settledSignerName)
-      if (token !== prepareTokenRef.current) return
+      const prep = prepareReviewed(
+        reviewed,
+        walletDID,
+        base,
+        extensionsEnabled,
+        settledSignerName
+      );
+      if (token !== prepareTokenRef.current) return;
       if ('validationErrors' in prep) {
-        setPrepared({ status: 'blocked', message: prep.validationErrors[0] })
-        return
+        setPrepared({ status: 'blocked', message: prep.validationErrors[0] });
+        return;
       }
       setPrepared({
         status: 'ready',
@@ -308,45 +321,90 @@ export default function ReviewAndSign() {
         // these bytes attest to.
         sourceText: settledJsonText,
         sourceName: settledSignerName,
-      })
-    })()
-  }, [reviewed, settledJsonText, settledSignerName, address, extensionsEnabled])
+      });
+    })();
+  }, [
+    reviewed,
+    settledJsonText,
+    settledSignerName,
+    address,
+    extensionsEnabled,
+  ]);
 
   const handleSignAndPublish = async () => {
-    if (!walletClient || !address || prepared.status !== 'ready') return
+    if (!walletClient || !address || prepared.status !== 'ready') return;
     // Refuse to sign bytes the editor has already moved past. The button is
     // disabled in this state, so reaching here means the text changed between
     // render and click; failing closed is the only safe answer on a page whose
     // promise is that the signature covers what was read.
-    if (prepared.sourceText !== jsonText || prepared.sourceName !== signerName) return
+    if (prepared.sourceText !== jsonText || prepared.sourceName !== signerName)
+      return;
     // Everything below reads from `prepared` only — the signed pair
     // (bytes ↔ document identity) stays atomic even if the editor text
     // changes mid-flight.
-    const signed = prepared.signed
-    setIsPublishing(true)
+    const signed = prepared.signed;
+    setIsPublishing(true);
     try {
-      const role = signed.kind === 'channel' ? 'publisher' : 'curator'
-      const signature = await signDocument(prepared.signedBytes, walletClient, role)
-      const body = { ...prepared.wireBody, signatures: [signature] }
-      const isUpdate = prepared.mode === 'update'
-      const id = signed.document.id ?? ''
+      const role = signed.kind === 'channel' ? 'publisher' : 'curator';
+      const signature = await signDocument(
+        prepared.signedBytes,
+        walletClient,
+        role
+      );
+      const body = { ...prepared.wireBody, signatures: [signature] };
+      const isUpdate = prepared.mode === 'update';
+      const id = signed.document.id ?? '';
 
-      let feedUrl: string
-      let title: string
+      let feedUrl: string;
+      let title: string;
       if (signed.kind === 'playlist') {
         const result = isUpdate
-          ? await patchPlaylist(id, body)
-          : await publishPlaylist(body as unknown as Playlist)
-        recordPublishedPlaylist(address, result)
-        feedUrl = feedPlaylistResourceUrl(result.slug?.trim() || result.id || '')
-        title = result.title?.trim() || 'Untitled playlist'
+          ? await replacePlaylist(
+              id,
+              body,
+              await buildReplaceIntent({
+                type: 'playlist',
+                document: body,
+                walletClient,
+                role: 'curator',
+                onIntentRefresh: () =>
+                  toast({
+                    title: 'Confirm once more',
+                    description:
+                      'The authorization aged out while waiting for your wallet, so it has been refreshed. Your document signature is unchanged.',
+                  }),
+              })
+            )
+          : await publishPlaylist(body as unknown as Playlist);
+        recordPublishedPlaylist(address, result);
+        feedUrl = feedPlaylistResourceUrl(
+          result.slug?.trim() || result.id || ''
+        );
+        title = result.title?.trim() || 'Untitled playlist';
       } else {
         const result = isUpdate
-          ? await patchChannel(id, body)
-          : await publishChannel(body as unknown as Channel)
-        recordPublishedChannel(address, result)
-        feedUrl = feedChannelResourceUrl(result.slug?.trim() || result.id || '')
-        title = result.title?.trim() || 'Untitled channel'
+          ? await replaceChannel(
+              id,
+              body,
+              await buildReplaceIntent({
+                type: 'channel',
+                document: body,
+                walletClient,
+                role: 'publisher',
+                onIntentRefresh: () =>
+                  toast({
+                    title: 'Confirm once more',
+                    description:
+                      'The authorization aged out while waiting for your wallet, so it has been refreshed. Your document signature is unchanged.',
+                  }),
+              })
+            )
+          : await publishChannel(body as unknown as Channel);
+        recordPublishedChannel(address, result);
+        feedUrl = feedChannelResourceUrl(
+          result.slug?.trim() || result.id || ''
+        );
+        title = result.title?.trim() || 'Untitled channel';
       }
 
       setPublishedDoc({
@@ -355,32 +413,35 @@ export default function ReviewAndSign() {
         title,
         mode: prepared.mode,
         receipts: prepared.receipts,
-      })
+      });
       // Remember only names that published: a value abandoned mid-edit never
       // becomes the prefill. Clearing the field and publishing forgets it.
       try {
-        window.localStorage.setItem(ATTRIBUTION_NAME_STORAGE_KEY, signerName.trim())
+        window.localStorage.setItem(
+          ATTRIBUTION_NAME_STORAGE_KEY,
+          signerName.trim()
+        );
       } catch {
         // Storage unavailable (private mode etc.) — recall is best-effort.
       }
     } catch (error) {
-      console.error('Sign-and-publish failed:', error)
+      console.error('Sign-and-publish failed:', error);
       toast({
         title: prepared.mode === 'update' ? 'Update failed' : 'Publish failed',
         description: friendlyPublishError(error, signed.kind, prepared.mode),
         variant: 'destructive',
-      })
+      });
     } finally {
-      setIsPublishing(false)
+      setIsPublishing(false);
     }
-  }
+  };
 
   const resetForAnother = () => {
-    setJsonText('')
-    setSettledJsonText('')
-    setPublishedDoc(null)
-    setPrepared({ status: 'idle' })
-  }
+    setJsonText('');
+    setSettledJsonText('');
+    setPublishedDoc(null);
+    setPrepared({ status: 'idle' });
+  };
 
   return (
     <>
@@ -404,7 +465,9 @@ export default function ReviewAndSign() {
                 Back to the composer dashboard
               </a>
               {extensionsLoading ? (
-                <p className="text-xs text-muted-foreground">Checking feed extension settings…</p>
+                <p className="text-xs text-muted-foreground">
+                  Checking feed extension settings…
+                </p>
               ) : null}
             </div>
           </div>
@@ -427,7 +490,7 @@ export default function ReviewAndSign() {
             }))}
             onPublishAnother={resetForAnother}
             onViewPublished={() => {
-              window.location.hash = '#/'
+              window.location.hash = '#/';
             }}
           />
         ) : (
@@ -444,13 +507,18 @@ export default function ReviewAndSign() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <JsonFileDropZone value={jsonText} onChange={setJsonText} rows={10} />
+                <JsonFileDropZone
+                  value={jsonText}
+                  onChange={setJsonText}
+                  rows={10}
+                />
                 <div className="mt-4 space-y-1.5">
                   <label
                     htmlFor="signer-attribution-name"
                     className="text-sm font-medium text-foreground"
                   >
-                    Attribution name <span className="text-muted-foreground">(optional)</span>
+                    Attribution name{' '}
+                    <span className="text-muted-foreground">(optional)</span>
                   </label>
                   <Input
                     id="signer-attribution-name"
@@ -468,9 +536,13 @@ export default function ReviewAndSign() {
                       className="flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-500"
                       data-testid="unnamed-identity-hint"
                     >
-                      <ShieldAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                      <ShieldAlert
+                        className="mt-0.5 size-3.5 shrink-0"
+                        aria-hidden
+                      />
                       This will publish your wallet as an unnamed{' '}
-                      {prepared.status === 'ready' && prepared.signed.kind === 'channel'
+                      {prepared.status === 'ready' &&
+                      prepared.signed.kind === 'channel'
                         ? 'publisher'
                         : 'curator'}
                       . Valid, but add a name above if you want to be credited.
@@ -479,7 +551,10 @@ export default function ReviewAndSign() {
                 </div>
                 {parseResult && 'error' in parseResult ? (
                   <p className="mt-3 flex items-start gap-2 text-sm text-destructive">
-                    <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                    <ShieldAlert
+                      className="mt-0.5 size-4 shrink-0"
+                      aria-hidden
+                    />
                     {parseResult.error}
                   </p>
                 ) : null}
@@ -507,7 +582,10 @@ export default function ReviewAndSign() {
                   {summary.identity.length > 0 ? (
                     <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2">
                       {summary.identity.map((line) => (
-                        <p key={line} className="font-mono text-xs text-muted-foreground">
+                        <p
+                          key={line}
+                          className="font-mono text-xs text-muted-foreground"
+                        >
                           {line}
                         </p>
                       ))}
@@ -571,11 +649,15 @@ export default function ReviewAndSign() {
                     </p>
                   ) : prepared.status === 'preparing' ? (
                     <p className="text-sm text-muted-foreground">
-                      Checking the feed and preparing the exact bytes you will sign…
+                      Checking the feed and preparing the exact bytes you will
+                      sign…
                     </p>
                   ) : prepared.status === 'blocked' ? (
                     <p className="flex items-start gap-2 text-sm text-destructive">
-                      <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                      <ShieldAlert
+                        className="mt-0.5 size-4 shrink-0"
+                        aria-hidden
+                      />
                       {prepared.message}
                     </p>
                   ) : signable && prepared.status === 'ready' ? (
@@ -595,7 +677,9 @@ export default function ReviewAndSign() {
                           <ul className="space-y-3">
                             {prepared.receipts.map((r, i) => (
                               <li key={i} className="space-y-0.5">
-                                <p className="text-sm font-medium text-foreground">{r.title}</p>
+                                <p className="text-sm font-medium text-foreground">
+                                  {r.title}
+                                </p>
                                 <p className="text-xs leading-relaxed text-muted-foreground">
                                   {r.description}
                                 </p>
@@ -627,5 +711,5 @@ export default function ReviewAndSign() {
       </div>
       <Toaster />
     </>
-  )
+  );
 }

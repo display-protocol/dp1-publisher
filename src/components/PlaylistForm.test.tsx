@@ -73,6 +73,13 @@ function fillFormAndPublish(title: string, source: string) {
   fireEvent.click(screen.getByRole('button', { name: /Sign & publish/i }))
 }
 
+/** Edit mode labels the submit button differently from create mode. */
+function fillFormAndUpdate(title: string, source: string) {
+  fireEvent.change(screen.getByLabelText(/Title \*/i), { target: { value: title } })
+  fireEvent.change(screen.getByLabelText(/Source URI \*/i), { target: { value: source } })
+  fireEvent.click(screen.getByRole('button', { name: /Sign & update/i }))
+}
+
 describe('PlaylistForm — publish flow', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -331,5 +338,91 @@ describe('PlaylistForm — publish flow', () => {
       ).toBe(true)
     })
     expect(mockedApi.publishPlaylist).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * The core-mode guard has to see the document the feed actually holds.
+ *
+ * Edit loading keeps a stripped copy to populate the form, and that copy was also passed as the replace
+ * base — so the guard asked "does the stored document carry extension data?" of a value those fields had
+ * already been removed from. It always answered no, and the replace proceeded to erase them. The raw GET
+ * response is now retained separately for exactly this check.
+ *
+ * Asserting "blocked" means asserting nothing happened: no signature prompt, no request. A test that only
+ * checked for a toast would still pass if the document were signed and sent first.
+ */
+describe('PlaylistForm — core mode must not silently replace an extension-bearing playlist', () => {
+  const STORED_WITH_EXTENSIONS = {
+    dpVersion: '1.1.0',
+    id: 'ext-bearing-id',
+    slug: 'ext-bearing',
+    title: 'Has extension data',
+    created: '2025-01-01T00:00:00Z',
+    items: [],
+    curators: [{ name: 'NODE', key: 'did:key:z6MkOther', url: '' }],
+    summary: 'only visible when extensions are on',
+    signatures: [
+      {
+        alg: 'eip191',
+        kid: TEST_WALLET_DID,
+        ts: '2025-01-01T00:00:00Z',
+        payload_hash: 'sha256:prior',
+        role: 'curator',
+        sig: 'prior-sig',
+      },
+    ],
+  }
+
+  it('blocks before signing or sending', async () => {
+    mockedApi.getPlaylist.mockResolvedValue(STORED_WITH_EXTENSIONS)
+    const signingModule = await import('@/lib/signing')
+    const signSpy = signingModule.signDocument as unknown as ReturnType<typeof vi.fn>
+    signSpy.mockClear()
+
+    render(<PlaylistForm extensionsEnabled={false} editId="ext-bearing-id" />)
+    await waitFor(() => expect(mockedApi.getPlaylist).toHaveBeenCalled())
+
+    fillFormAndUpdate('Edited in core mode', 'https://example.com/a.mp4')
+
+    await waitFor(() => {
+      const blocked = toastMock.mock.calls.filter(([arg]) =>
+        /extension fields/i.test(String(arg?.description ?? ''))
+      )
+      expect(blocked.length).toBeGreaterThan(0)
+    })
+
+    // The point of the guard: the wallet is never asked to sign, and nothing reaches the feed.
+    expect(signSpy).not.toHaveBeenCalled()
+    expect(mockedApi.replacePlaylist).not.toHaveBeenCalled()
+
+    // The message must name what is at stake rather than being generic.
+    const [blockedCall] = toastMock.mock.calls.filter(([arg]) =>
+      /extension fields/i.test(String(arg?.description ?? ''))
+    )
+    expect(String(blockedCall[0].description)).toContain('curators')
+  })
+
+  it('allows the replace when the stored document carries no extension data', async () => {
+    mockedApi.getPlaylist.mockResolvedValue({
+      ...STORED_WITH_EXTENSIONS,
+      curators: undefined,
+      summary: undefined,
+    })
+    mockedApi.replacePlaylist.mockResolvedValue({
+      ...STORED_WITH_EXTENSIONS,
+      curators: undefined,
+      summary: undefined,
+      title: 'Edited in core mode',
+    })
+
+    render(<PlaylistForm extensionsEnabled={false} editId="ext-bearing-id" />)
+    await waitFor(() => expect(mockedApi.getPlaylist).toHaveBeenCalled())
+
+    fillFormAndUpdate('Edited in core mode', 'https://example.com/a.mp4')
+
+    await waitFor(() => {
+      expect(mockedApi.replacePlaylist).toHaveBeenCalledTimes(1)
+    })
   })
 })

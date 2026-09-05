@@ -202,6 +202,15 @@ export default function PlaylistForm({
   const { toast } = useToast()
 
   const loadedRef = useRef<Playlist | null>(null)
+  /**
+   * The stored document exactly as the feed returned it, before any core-mode stripping.
+   *
+   * This is what a replace must be checked against. `loadedRef` holds the stripped copy that populates
+   * the form, and passing that as the replace base hid the very fields the core-mode guard exists to
+   * catch: the guard asked "does the stored document carry extension data?" of a value those fields had
+   * already been removed from, so it always answered no and the replace went ahead and erased them.
+   */
+  const storedBaseRef = useRef<Playlist | null>(null)
   const newPlaylistCreatedRef = useRef<string>(new Date().toISOString())
   const [id, setId] = useState(() => uuidv4())
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -268,6 +277,7 @@ export default function PlaylistForm({
   useEffect(() => {
     if (!editId || !address) {
       loadedRef.current = null
+      storedBaseRef.current = null
       return
     }
     let cancelled = false
@@ -278,6 +288,8 @@ export default function PlaylistForm({
       .then((p) => {
         if (cancelled) return
         const pDoc = extensionsEnabled ? p : stripPlaylistExtensionFields(p)
+        // Raw for the replace check, stripped for the form.
+        storedBaseRef.current = p
         loadedRef.current = pDoc
         setId(pDoc.id || uuidv4())
         setTitle(pDoc.title)
@@ -333,6 +345,7 @@ export default function PlaylistForm({
         if (!cancelled) {
           setLoadError(e instanceof Error ? e.message : 'Failed to load playlist')
           loadedRef.current = null
+          storedBaseRef.current = null
         }
       })
       .finally(() => {
@@ -788,7 +801,7 @@ export default function PlaylistForm({
       const prepared = preparePlaylistForPublish({
         rawDocument,
         walletDID,
-        base: isEdit ? loadedRef.current ?? undefined : overwriteBase,
+        base: isEdit ? storedBaseRef.current ?? undefined : overwriteBase,
         extensionsEnabled,
       })
       if ('validationErrors' in prepared) {
@@ -809,7 +822,8 @@ export default function PlaylistForm({
         const updated = await replacePlaylist(editId, body, await buildReplaceIntent({ type: 'playlist', document: body, walletClient, role: 'curator' }))
         recordPublishedPlaylist(address, updated)
         onPublished?.()
-        loadedRef.current = updated
+        storedBaseRef.current = updated
+        loadedRef.current = extensionsEnabled ? updated : stripPlaylistExtensionFields(updated)
         toast({
           title: 'Updated',
           description: (

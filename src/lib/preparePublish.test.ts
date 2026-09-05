@@ -289,7 +289,11 @@ describe('preparePlaylistForPublish — create', () => {
     expect(r.wireBody).toEqual(r.signedBytes)
   })
 
-  it('EDIT wireBody equals signedBytes minus id+created (only documented omissions)', () => {
+  // Under PATCH this omitted id and created: the id was in the URL and a partial update never restated
+  // an immutable field. PUT replaces the whole document, and both are inside the signed payload, so
+  // omitting either would both fail the feed's identity check and leave the delivered bytes different
+  // from the signed ones.
+  it('EDIT wireBody equals signedBytes exactly, including id and created', () => {
     const existing: Playlist = {
       ...basePlaylist,
       id: 'pl-abc-123',
@@ -303,8 +307,9 @@ describe('preparePlaylistForPublish — create', () => {
     })
     ok<Playlist>(r)
     expect(r.signedBytes.id).toBe('pl-abc-123')
-    const { id: _id, created: _c, ...signedMinusOmissions } = r.signedBytes
-    expect(r.wireBody).toEqual(signedMinusOmissions)
+    expect(r.wireBody).toEqual(r.signedBytes)
+    expect(r.wireBody.id).toBe('pl-abc-123')
+    expect(r.wireBody.created).toBe(r.signedBytes.created)
   })
 
   it('drops unknown top-level fields imported from JSON (feed-contract whitelist)', () => {
@@ -390,9 +395,8 @@ describe('preparePlaylistForPublish — edit', () => {
     // Wallet appended even though merged inherited did:key curator from base.
     expect(r.signedPayload.curators?.some((c) => c.key === WALLET)).toBe(true)
     expect(r.signedPayload.curators?.some((c) => c.key === DID_KEY)).toBe(true)
-    // wireBody equals signedBytes minus PATCH omissions.
-    const { id: _id, created: _c, ...signedMinusOmissions } = r.signedBytes
-    expect(r.wireBody).toEqual(signedMinusOmissions)
+    // wireBody is exactly what was signed — a replace sends the whole document.
+    expect(r.wireBody).toEqual(r.signedBytes)
   })
 
   it('idempotent when the merged document already declares the wallet', () => {
@@ -536,11 +540,10 @@ describe('prepareChannelForPublish — edit (round-6 regression guards)', () => 
     })
     ok<Channel>(r)
     expect(r.signedPayload.publisher?.key).toBe(WALLET)
-    // Edit-mode invariant: wire body equals signed bytes minus the documented
-    // PATCH omissions. Publisher specifically must match exactly (round-6).
+    // Edit-mode invariant: the wire body is exactly the signed bytes. Publisher specifically must match
+    // (round-6 regression: signed payload and update body were built from different sources).
     expect(r.wireBody.publisher).toEqual(r.signedBytes.publisher)
-    const { id: _id, created: _c, ...signedMinusOmissions } = r.signedBytes
-    expect(r.wireBody).toEqual(signedMinusOmissions)
+    expect(r.wireBody).toEqual(r.signedBytes)
     expect(r.toasts.some((t) => /publisher/i.test(t.title))).toBe(true)
   })
 
@@ -584,7 +587,8 @@ describe('prepareChannelForPublish — edit (round-6 regression guards)', () => 
     expect(r.wireBody).toEqual(r.signedBytes)
   })
 
-  it('EDIT wireBody equals signedBytes minus id+created (only documented omissions)', () => {
+  // See the playlist counterpart: PUT sends the whole signed document, id and created included.
+  it('EDIT wireBody equals signedBytes exactly, including id and created', () => {
     const existing: Channel = {
       ...baseChannel,
       id: 'ch-xyz-456',
@@ -597,8 +601,9 @@ describe('prepareChannelForPublish — edit (round-6 regression guards)', () => 
     })
     ok<Channel>(r)
     expect(r.signedBytes.id).toBe('ch-xyz-456')
-    const { id: _id, created: _c, ...signedMinusOmissions } = r.signedBytes
-    expect(r.wireBody).toEqual(signedMinusOmissions)
+    expect(r.wireBody).toEqual(r.signedBytes)
+    expect(r.wireBody.id).toBe('ch-xyz-456')
+    expect(r.wireBody.created).toBe(r.signedBytes.created)
   })
 
   // Channel-specific cases the reviewer explicitly named. Each one was a

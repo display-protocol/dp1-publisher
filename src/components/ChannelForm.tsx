@@ -17,6 +17,7 @@ import { useToast } from '@/hooks/use-toast'
 import { generateChannelSlug } from '@/lib/utils'
 import { ethereumAddressToDIDPKH } from '@/lib/signing'
 import { signDocument, stripSignatureFields } from '@/lib/signing'
+import { buildReplaceIntent } from '@/lib/replaceIntent'
 import { channelUnsignedPayloadForSigning } from '@/lib/channelSignPayload'
 import { mergeChannelForPatch } from '@/lib/dp1Merge'
 import {
@@ -30,7 +31,7 @@ import {
   feedPlaylistResourceUrl,
   friendlyPublishError,
   getChannel,
-  patchChannel,
+  replaceChannel,
   publishChannel,
   validatePlaylistURI,
   isDebugMode,
@@ -668,7 +669,7 @@ export default function ChannelForm({
       const body = { ...prepared.wireBody, signatures: [signature] }
 
       if (isEdit && editId) {
-        const updated = await patchChannel(editId, body)
+        const updated = await replaceChannel(editId, body, await buildReplaceIntent({ type: 'channel', document: body, walletClient, role: 'publisher' }))
         recordPublishedChannel(address, updated)
         onPublished?.()
         loadedRef.current = updated
@@ -682,7 +683,7 @@ export default function ChannelForm({
           ),
         })
       } else if (overwriteBase && targetId) {
-        const updated = await patchChannel(targetId, body)
+        const updated = await replaceChannel(targetId, body, await buildReplaceIntent({ type: 'channel', document: body, walletClient, role: 'publisher' }))
         recordPublishedChannel(address, updated)
         onPublished?.()
         const feedUrl = feedChannelResourceUrl(

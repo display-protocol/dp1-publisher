@@ -46,21 +46,21 @@ vi.mock('@/lib/signing', async () => {
 })
 
 // api: keep helpers + FeedAPIError real (used by friendlyPublishError, URLs);
-// stub the network calls (publish/getPlaylist/patchPlaylist).
+// stub the network calls (publish/getPlaylist/replacePlaylist).
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof apiModule>('@/lib/api')
   return {
     ...actual,
     publishPlaylist: vi.fn(),
     getPlaylist: vi.fn(),
-    patchPlaylist: vi.fn(),
+    replacePlaylist: vi.fn(),
   }
 })
 
 const mockedApi = apiModule as typeof apiModule & {
   publishPlaylist: ReturnType<typeof vi.fn>
   getPlaylist: ReturnType<typeof vi.fn>
-  patchPlaylist: ReturnType<typeof vi.fn>
+  replacePlaylist: ReturnType<typeof vi.fn>
 }
 
 function fillFormAndPublish(title: string, source: string) {
@@ -79,7 +79,7 @@ describe('PlaylistForm — publish flow', () => {
     toastMock.mockClear()
     mockedApi.publishPlaylist.mockReset()
     mockedApi.getPlaylist.mockReset()
-    mockedApi.patchPlaylist.mockReset()
+    mockedApi.replacePlaylist.mockReset()
   })
 
   it('regenerates id after a successful create, so "Publish another" POSTs a fresh document', async () => {
@@ -119,13 +119,13 @@ describe('PlaylistForm — publish flow', () => {
     const secondId = secondCallBody.id
     expect(secondId).not.toBe(firstId)
 
-    // And critically — patchPlaylist must NOT have been used. If id had
+    // And critically — replacePlaylist must NOT have been used. If id had
     // been reused, preflight would have found the prior doc (mocked above
     // with .mockRejectedValue 404) and we'd still POST, BUT in the real
     // wild the prior id would resolve and silently overwrite. The
     // not-equal id assertion above is the load-bearing check; this just
     // documents that the create path stays a POST.
-    expect(mockedApi.patchPlaylist).not.toHaveBeenCalled()
+    expect(mockedApi.replacePlaylist).not.toHaveBeenCalled()
   })
 
   it('refuses to sign or PATCH when preflight returns a doc signed by a different wallet', async () => {
@@ -167,7 +167,7 @@ describe('PlaylistForm — publish flow', () => {
 
     // Critically: neither signing nor the PATCH endpoint may have been called.
     expect(signSpy).not.toHaveBeenCalled()
-    expect(mockedApi.patchPlaylist).not.toHaveBeenCalled()
+    expect(mockedApi.replacePlaylist).not.toHaveBeenCalled()
     expect(mockedApi.publishPlaylist).not.toHaveBeenCalled()
   })
 
@@ -195,7 +195,7 @@ describe('PlaylistForm — publish flow', () => {
       ],
     })
     // PATCH rejected as wrong wallet (401).
-    mockedApi.patchPlaylist.mockRejectedValue(
+    mockedApi.replacePlaylist.mockRejectedValue(
       new apiModule.FeedAPIError('signature rejected', 401, 'unauthorized'),
     )
 
@@ -203,7 +203,7 @@ describe('PlaylistForm — publish flow', () => {
     fillFormAndPublish('Whatever', 'https://example.com/a.mp4')
 
     await waitFor(() => {
-      expect(mockedApi.patchPlaylist).toHaveBeenCalledTimes(1)
+      expect(mockedApi.replacePlaylist).toHaveBeenCalledTimes(1)
     })
 
     // The catch must classify this as an update failure → the toast

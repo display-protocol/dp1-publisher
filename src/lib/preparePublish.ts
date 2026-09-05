@@ -8,7 +8,7 @@
  *   ensure signer identity → validate → canonicalize once → derive wireBody from signedBytes
  *
  * Splitting this across 4 call sites was the source of the round-6 channel-edit
- * drift bug: signed payload built from `merged.publisher`, but the PATCH body
+ * drift bug: signed payload built from `merged.publisher`, but the update body
  * built from `patchFields.publisher`. By computing **signedPayload and wireBody
  * together** here, that class of bug becomes impossible by construction —
  * callers cannot independently shape one without the other.
@@ -178,12 +178,6 @@ export function preparePlaylistForPublish(
   }
 
   const wireBody: Record<string, unknown> = { ...signedBytes }
-  if (base !== undefined) {
-    // PATCH: id is in the URL path, created is immutable.
-    delete wireBody.id
-    delete wireBody.created
-  }
-
   return { signedPayload: canonical, signedBytes, wireBody, toasts }
 }
 
@@ -258,12 +252,6 @@ export function prepareChannelForPublish(
     }
   }
   const wireBody: Record<string, unknown> = { ...signedBytes }
-  if (base !== undefined) {
-    // PATCH: id is in the URL path, created is immutable.
-    delete wireBody.id
-    delete wireBody.created
-  }
-
   return { signedPayload: merged, signedBytes, wireBody, toasts }
 }
 

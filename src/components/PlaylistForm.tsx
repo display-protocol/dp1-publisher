@@ -19,13 +19,14 @@ import { useToast } from '@/hooks/use-toast'
 import { generateSlug } from '@/lib/utils'
 import { ethereumAddressToDIDPKH } from '@/lib/signing'
 import { signDocument } from '@/lib/signing'
+import { buildReplaceIntent } from '@/lib/replaceIntent'
 import { playlistUnsignedPayloadForSigning } from '@/lib/playlistSignPayload'
 import {
   FeedAPIError,
   feedPlaylistResourceUrl,
   friendlyPublishError,
   getPlaylist,
-  patchPlaylist,
+  replacePlaylist,
   publishPlaylist,
   validatePlaylistURI,
 } from '@/lib/api'
@@ -805,7 +806,7 @@ export default function PlaylistForm({
       const body = { ...prepared.wireBody, signatures: [signature] }
 
       if (isEdit && editId) {
-        const updated = await patchPlaylist(editId, body)
+        const updated = await replacePlaylist(editId, body, await buildReplaceIntent({ type: 'playlist', document: body, walletClient, role: 'curator' }))
         recordPublishedPlaylist(address, updated)
         onPublished?.()
         loadedRef.current = updated
@@ -819,7 +820,7 @@ export default function PlaylistForm({
         })
       } else if (overwriteBase && targetId) {
         // Overwrite-on-create: feed already has this id, PATCH instead.
-        const updated = await patchPlaylist(targetId, body)
+        const updated = await replacePlaylist(targetId, body, await buildReplaceIntent({ type: 'playlist', document: body, walletClient, role: 'curator' }))
         recordPublishedPlaylist(address, updated)
         onPublished?.()
         const feedUrl = feedPlaylistResourceUrl(

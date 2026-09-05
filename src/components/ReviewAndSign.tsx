@@ -30,6 +30,7 @@ import {
   type ToastInput,
 } from '@/lib/preparePublish'
 import { ethereumAddressToDIDPKH, signDocument } from '@/lib/signing'
+import { buildReplaceIntent } from '@/lib/replaceIntent'
 import {
   isWalletAuthorizedToOverwrite,
   wrongWalletForOverwriteMessage,
@@ -41,8 +42,8 @@ import {
   friendlyPublishError,
   getChannel,
   getPlaylist,
-  patchChannel,
-  patchPlaylist,
+  replaceChannel,
+  replacePlaylist,
   publishChannel,
   publishPlaylist,
 } from '@/lib/api'
@@ -335,14 +336,14 @@ export default function ReviewAndSign() {
       let title: string
       if (signed.kind === 'playlist') {
         const result = isUpdate
-          ? await patchPlaylist(id, body)
+          ? await replacePlaylist(id, body, await buildReplaceIntent({ type: 'playlist', document: body, walletClient, role: 'curator' }))
           : await publishPlaylist(body as unknown as Playlist)
         recordPublishedPlaylist(address, result)
         feedUrl = feedPlaylistResourceUrl(result.slug?.trim() || result.id || '')
         title = result.title?.trim() || 'Untitled playlist'
       } else {
         const result = isUpdate
-          ? await patchChannel(id, body)
+          ? await replaceChannel(id, body, await buildReplaceIntent({ type: 'channel', document: body, walletClient, role: 'publisher' }))
           : await publishChannel(body as unknown as Channel)
         recordPublishedChannel(address, result)
         feedUrl = feedChannelResourceUrl(result.slug?.trim() || result.id || '')

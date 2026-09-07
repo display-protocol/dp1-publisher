@@ -466,6 +466,20 @@ describe('friendlyPublishError', () => {
       expect(msg).toMatch(/signing failed/i)
     })
 
+    it('keeps the detail when a reworded refusal reuses the not-an-owner prefix', () => {
+      // The feed builds detailed refusals by suffixing the bare not-an-owner sentence, so a substring
+      // test for "not signed by an owner" would treat this as already paraphrased and drop the suffix —
+      // silently restoring the wrong-wallet advice for the case that most needs the detail. Wording here
+      // is deliberately one the `non-owner role` matcher does not catch.
+      const err = new FeedAPIError(
+        'request is not signed by an owner of the resource: owner signed with role "agent"; curator role required',
+        403,
+        'forbidden'
+      )
+      const msg = friendlyPublishError(err, 'playlist', 'update')
+      expect(msg).toMatch(/owner signed with role "agent"; curator role required/)
+    })
+
     it('still reports a plain not-an-owner 403 as the wrong wallet', () => {
       // The one case the old copy was right about: no owner key signed at all.
       const err = new FeedAPIError(

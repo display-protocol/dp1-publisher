@@ -81,6 +81,19 @@ export class FeedAPIError extends Error {
  * Use for publish/update toasts so the surface never shows raw Postgres or
  * protocol-level signature complaints.
  */
+/**
+ * The feed's bare "not an owner" refusal, which the wrong-wallet copy already paraphrases in full.
+ *
+ * Detailed refusals are this sentence plus a `: <detail>` suffix, so only an exact match may be treated
+ * as paraphrased — see friendlyPublishError.
+ */
+const PLAIN_NOT_OWNER_REASON = 'request is not signed by an owner of the resource'
+
+/** Normalizes a feed message for exact comparison: trimmed, trailing period dropped. */
+function normalizeFeedReason(message: string): string {
+  return message.trim().replace(/\.+$/, '')
+}
+
 export function friendlyPublishError(
   err: unknown,
   kind: 'playlist' | 'channel',
@@ -161,12 +174,17 @@ export function friendlyPublishError(
           ? `This ${noun} was published by a different wallet. Connect that wallet to update it, or publish under a new id.`
           : `Signing failed: the feed rejected your signature. Make sure the connected wallet matches the ${signerField} declared in the document.`
 
-      // Keep the feed's sentence unless this copy already paraphrases it. `not signed by an owner` with no
-      // further detail IS the wrong-wallet case, so repeating it adds noise; every other refusal reaching
-      // here is one this mapping does not model — a reworded rule, or a new one — and the server's words
-      // are then the only actionable thing available. Dropping them is what sent people to reconnect a
-      // wallet while the real reason went unseen.
-      const alreadyParaphrased = lower.includes('not signed by an owner')
+      // Keep the feed's sentence unless this copy already paraphrases the whole of it. The bare
+      // not-an-owner refusal IS the wrong-wallet case, so repeating it adds noise; every other refusal
+      // reaching here is one this mapping does not model — a reworded rule, or a new one — and the
+      // server's words are then the only actionable thing available.
+      //
+      // The comparison is exact, not `includes`. The feed builds detailed refusals by suffixing this same
+      // sentence (`...: an owner key signed with a non-owner role (...)`), so a substring test treats a
+      // reworded *detailed* refusal as already paraphrased and drops the very detail that makes it
+      // actionable — reintroducing the wrong-wallet advice this whole change exists to remove. Matching
+      // the bare sentence alone means any added detail, in any wording, survives.
+      const alreadyParaphrased = normalizeFeedReason(lower) === PLAIN_NOT_OWNER_REASON
       return !raw || alreadyParaphrased ? generic : `${generic} Feed said: ${raw}`
     }
 

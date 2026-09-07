@@ -401,7 +401,7 @@ describe('friendlyPublishError', () => {
       )
       const msg = friendlyPublishError(err, 'playlist', 'update')
       expect(msg).toMatch(/curators/i)
-      expect(msg).toMatch(/neither additions nor removals/i)
+      expect(msg).toMatch(/no additions, no removals, no substitutions/i)
       expect(msg).not.toMatch(/would lose an owner|restore the missing/i)
       expect(msg).not.toMatch(/different wallet/i)
       expect(msg).toMatch(/resource owner is immutable and cannot be changed/)
@@ -417,7 +417,7 @@ describe('friendlyPublishError', () => {
       )
       const msg = friendlyPublishError(err, 'playlist', 'update')
       expect(msg).toMatch(/may add owners but never remove them/i)
-      expect(msg).not.toMatch(/neither additions nor removals/i)
+      expect(msg).not.toMatch(/no additions, no removals, no substitutions/i)
     })
 
     it('names the removed owners when a replace drops one', () => {
@@ -497,6 +497,52 @@ describe('friendlyPublishError', () => {
       )
       const msg = friendlyPublishError(err, 'playlist', 'update')
       expect(msg).toMatch(/owner signed with role "agent"; curator role required/)
+    })
+
+    // Channels carry one owner in `publisher.key`; playlists carry many in `curators[].key`. Every
+    // owner-set refusal must point at the key path, not the enclosing field — a publisher told to look at
+    // `publisher` cannot tell whether the name, the url or the key is at fault. Role wording alone was
+    // covered before, which left these three untested for channels.
+    it('points a channel at publisher.key on an immutable owner set', () => {
+      const err = new FeedAPIError('resource owner is immutable and cannot be changed', 403, 'forbidden')
+      const msg = friendlyPublishError(err, 'channel', 'update')
+      expect(msg).toMatch(/publisher\.key/)
+      expect(msg).not.toMatch(/curators/)
+    })
+
+    it('points a channel at publisher.key when an owner would be removed', () => {
+      const err = new FeedAPIError(
+        'owners cannot be removed from a resource: did:pkh:eip155:1:0xabc',
+        403,
+        'forbidden'
+      )
+      const msg = friendlyPublishError(err, 'channel', 'update')
+      expect(msg).toMatch(/publisher\.key/)
+      expect(msg).not.toMatch(/curators/)
+    })
+
+    it('points a channel at publisher.key when a new owner has not consented', () => {
+      const err = new FeedAPIError(
+        'a new owner must sign the document in the owner role: did:pkh:eip155:1:0xabc',
+        403,
+        'forbidden'
+      )
+      const msg = friendlyPublishError(err, 'channel', 'update')
+      expect(msg).toMatch(/publisher\.key/)
+      expect(msg).toMatch(/publisher.*role|"publisher"/)
+      expect(msg).not.toMatch(/curators/)
+    })
+
+    it('points a playlist at curators[].key on the same three refusals', () => {
+      for (const reason of [
+        'resource owner is immutable and cannot be changed',
+        'owners cannot be removed from a resource: did:key:z6MkfAgv',
+        'a new owner must sign the document in the owner role: did:key:z6MkfAgv',
+      ]) {
+        const msg = friendlyPublishError(new FeedAPIError(reason, 403, 'forbidden'), 'playlist', 'update')
+        expect(msg).toMatch(/curators\[\]\.key/)
+        expect(msg).not.toMatch(/publisher/)
+      }
     })
 
     it('still reports a plain not-an-owner 403 as the wrong wallet', () => {

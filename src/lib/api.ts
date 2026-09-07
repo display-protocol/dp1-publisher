@@ -131,7 +131,10 @@ export function friendlyPublishError(
     // and is worth asking the feed for; until then this is checked by a test using a live feed response
     // and one using an unrecognized reason.
     const ownerRole = kind === 'channel' ? 'publisher' : 'curator'
-    const ownerField = kind === 'channel' ? 'publisher' : 'curators[]'
+    // The key path, not the enclosing field: ownership is compared by key, so a publisher pointed at
+    // `publisher` is left to guess whether the name, url or key is at fault. Channels carry one owner in
+    // `publisher.key`; playlists carry many in `curators[].key`.
+    const ownerField = kind === 'channel' ? 'publisher.key' : 'curators[].key'
 
     // An owner key signed, but not in the owner role. Being named is a claim; signing as curator /
     // publisher is the proof, and the feed needs both.
@@ -158,9 +161,9 @@ export function friendlyPublishError(
     // they did and sends them to look for a key nothing is missing.
     if (lower.includes('owner is immutable')) {
       return (
-        `This feed does not allow the owner set of a ${noun} to change. "${ownerField}" must match what ` +
-        `the feed already stores, exactly — neither additions nor removals — with the same keys (names ` +
-        `may differ). Feed said: ${raw}`
+        `This feed does not allow the owner of a ${noun} to change on a replace. "${ownerField}" must be ` +
+        `exactly what the feed already stores — no additions, no removals, no substitutions (names may ` +
+        `differ; keys may not). Feed said: ${raw}`
       )
     }
 

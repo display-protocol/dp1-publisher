@@ -144,11 +144,23 @@ export function friendlyPublishError(
     }
 
     // A replace that drops a stored owner. Owners may be added, never removed.
-    if (lower.includes('owners cannot be removed') || lower.includes('owner is immutable')) {
+    if (lower.includes('owners cannot be removed')) {
       return (
         `This ${noun} would lose an owner. A replace may add owners but never remove them, and ` +
         `"${ownerField}" in your document omits one the feed has stored. Restore the missing ` +
         `key (names may change; keys may not) and try again. Feed said: ${raw}`
+      )
+    }
+
+    // A feed still enforcing exact owner-set equality, which is a different rule from the one above and
+    // must not borrow its wording. It refuses ANY change to the owner set, so an addition is rejected by
+    // this same message — telling that user to "restore a missing key" describes the opposite of what
+    // they did and sends them to look for a key nothing is missing.
+    if (lower.includes('owner is immutable')) {
+      return (
+        `This feed does not allow the owner set of a ${noun} to change. "${ownerField}" must match what ` +
+        `the feed already stores, exactly — neither additions nor removals — with the same keys (names ` +
+        `may differ). Feed said: ${raw}`
       )
     }
 

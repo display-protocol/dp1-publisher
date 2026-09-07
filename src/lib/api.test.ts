@@ -390,7 +390,10 @@ describe('friendlyPublishError', () => {
   // "different wallet" replaces a correct diagnosis with a wrong one: the wallet is usually right and
   // already connected, so it sends the user to reconnect a wallet that would change nothing.
   describe('ownership failures keep the feed\'s reason', () => {
-    it('explains an owner-set change rather than blaming the wallet', () => {
+    it('describes exact-equality feeds neutrally, not as a removal', () => {
+      // A feed still enforcing exact owner-set equality refuses ANY change, so this same message answers
+      // an *addition* too. Removal-specific copy would tell that user to restore a key nothing is
+      // missing — the opposite of what they did.
       const err = new FeedAPIError(
         'resource owner is immutable and cannot be changed',
         403,
@@ -398,7 +401,23 @@ describe('friendlyPublishError', () => {
       )
       const msg = friendlyPublishError(err, 'playlist', 'update')
       expect(msg).toMatch(/curators/i)
+      expect(msg).toMatch(/neither additions nor removals/i)
+      expect(msg).not.toMatch(/would lose an owner|restore the missing/i)
       expect(msg).not.toMatch(/different wallet/i)
+      expect(msg).toMatch(/resource owner is immutable and cannot be changed/)
+    })
+
+    it('keeps removal-specific copy for the removal rule only', () => {
+      // The counterpart to the test above: this rule really is about removal, and additions are allowed,
+      // so the copy that says so belongs here and nowhere else.
+      const err = new FeedAPIError(
+        'owners cannot be removed from a resource: did:key:z6MkfAgv',
+        403,
+        'forbidden'
+      )
+      const msg = friendlyPublishError(err, 'playlist', 'update')
+      expect(msg).toMatch(/may add owners but never remove them/i)
+      expect(msg).not.toMatch(/neither additions nor removals/i)
     })
 
     it('names the removed owners when a replace drops one', () => {

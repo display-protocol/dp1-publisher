@@ -446,6 +446,26 @@ describe('friendlyPublishError', () => {
       expect(msg).not.toMatch(/different wallet/i)
     })
 
+    it('keeps the feed reason for an ownership rule this mapping does not model', () => {
+      // The whole mapping is coupled to the feed's wording, so the case that matters most is the one it
+      // fails to recognize: a reworded rule, or a rule added later. That must degrade to "generic advice
+      // plus the server's words", never to advice that hides them.
+      const err = new FeedAPIError(
+        'owner quorum not met: 2 of 3 owner signatures required',
+        403,
+        'forbidden'
+      )
+      const msg = friendlyPublishError(err, 'playlist', 'update')
+      expect(msg).toMatch(/owner quorum not met: 2 of 3 owner signatures required/)
+    })
+
+    it('keeps the feed reason on an unrecognized create-mode rejection too', () => {
+      const err = new FeedAPIError('signing key revoked at 2026-09-01', 401, 'unauthorized')
+      const msg = friendlyPublishError(err, 'channel', 'create')
+      expect(msg).toMatch(/signing key revoked at 2026-09-01/)
+      expect(msg).toMatch(/signing failed/i)
+    })
+
     it('still reports a plain not-an-owner 403 as the wrong wallet', () => {
       // The one case the old copy was right about: no owner key signed at all.
       const err = new FeedAPIError(

@@ -111,10 +111,12 @@ export function friendlyPublishError(
     // and the non-owner-role detail on ErrNotResourceOwner), not incidental prose. `owner is immutable`
     // additionally covers feeds still running the older exact-set-equality rule, whose message differs.
     //
-    // The failure mode of a wording change is benign by construction: an unmatched message falls through
-    // to the branches below and the feed's own text is still shown, so a stale match degrades to today's
-    // behavior rather than hiding the reason. A distinct error code per rule would remove the coupling and
-    // is worth asking the feed for; until then this is checked by a test using a live feed response.
+    // A wording change or a new ownership rule therefore stops matching here and falls through to the
+    // authorization fallback below, which keeps the feed's own sentence appended to its copy. That is what
+    // makes the coupling survivable: an unmatched reason degrades to "generic advice plus the server's
+    // words", never to advice that hides them. A distinct error code per rule would remove the coupling
+    // and is worth asking the feed for; until then this is checked by a test using a live feed response
+    // and one using an unrecognized reason.
     const ownerRole = kind === 'channel' ? 'publisher' : 'curator'
     const ownerField = kind === 'channel' ? 'publisher' : 'curators[]'
 
@@ -154,9 +156,18 @@ export function friendlyPublishError(
       lower.includes('unauthorized') ||
       lower.includes('forbidden')
     ) {
-      return intent === 'update'
-        ? `This ${noun} was published by a different wallet. Connect that wallet to update it, or publish under a new id.`
-        : `Signing failed: the feed rejected your signature. Make sure the connected wallet matches the ${signerField} declared in the document.`
+      const generic =
+        intent === 'update'
+          ? `This ${noun} was published by a different wallet. Connect that wallet to update it, or publish under a new id.`
+          : `Signing failed: the feed rejected your signature. Make sure the connected wallet matches the ${signerField} declared in the document.`
+
+      // Keep the feed's sentence unless this copy already paraphrases it. `not signed by an owner` with no
+      // further detail IS the wrong-wallet case, so repeating it adds noise; every other refusal reaching
+      // here is one this mapping does not model — a reworded rule, or a new one — and the server's words
+      // are then the only actionable thing available. Dropping them is what sent people to reconnect a
+      // wallet while the real reason went unseen.
+      const alreadyParaphrased = lower.includes('not signed by an owner')
+      return !raw || alreadyParaphrased ? generic : `${generic} Feed said: ${raw}`
     }
 
     // Duplicate primary/unique key from Postgres (safety net — the

@@ -65,8 +65,8 @@ vi.mock('@/lib/api', async () => {
     getChannel: vi.fn(),
     publishPlaylist: vi.fn(),
     publishChannel: vi.fn(),
-    patchPlaylist: vi.fn(),
-    patchChannel: vi.fn(),
+    replacePlaylist: vi.fn(),
+    replaceChannel: vi.fn(),
   }
 })
 
@@ -75,7 +75,7 @@ const mockedApi = apiModule as typeof apiModule & {
   getChannel: ReturnType<typeof vi.fn>
   publishPlaylist: ReturnType<typeof vi.fn>
   publishChannel: ReturnType<typeof vi.fn>
-  patchPlaylist: ReturnType<typeof vi.fn>
+  replacePlaylist: ReturnType<typeof vi.fn>
 }
 const mockedSigning = signingModule as typeof signingModule & {
   signDocument: ReturnType<typeof vi.fn>
@@ -108,7 +108,7 @@ describe('ReviewAndSign', () => {
       mockedApi.getChannel,
       mockedApi.publishPlaylist,
       mockedApi.publishChannel,
-      mockedApi.patchPlaylist,
+      mockedApi.replacePlaylist,
     ]) {
       fn.mockReset()
     }
@@ -158,7 +158,7 @@ describe('ReviewAndSign', () => {
     }
     expect(body.signatures).toHaveLength(1)
     expect(body.signatures[0].role).toBe('curator')
-    expect(mockedApi.patchPlaylist).not.toHaveBeenCalled()
+    expect(mockedApi.replacePlaylist).not.toHaveBeenCalled()
     // Post-publish panel with the feed URL.
     expect(await screen.findByText(/Playlist published/i)).toBeInTheDocument()
   })
@@ -187,7 +187,7 @@ describe('ReviewAndSign', () => {
     expect(screen.queryByRole('button', { name: /Sign & publish/i })).toBeNull()
     expect(mockedSigning.signDocument).not.toHaveBeenCalled()
     expect(mockedApi.publishPlaylist).not.toHaveBeenCalled()
-    expect(mockedApi.patchPlaylist).not.toHaveBeenCalled()
+    expect(mockedApi.replacePlaylist).not.toHaveBeenCalled()
   })
 
   it('updates: summary reflects the MERGED document, and sign PATCHes', async () => {
@@ -213,7 +213,7 @@ describe('ReviewAndSign', () => {
         },
       ],
     })
-    mockedApi.patchPlaylist.mockImplementation(async (_id, body) => ({
+    mockedApi.replacePlaylist.mockImplementation(async (_id, body, _authorization) => ({
       ...(body as Record<string, unknown>),
       id: PLAYLIST_ID,
       slug: 'pasted-playlist',
@@ -234,9 +234,9 @@ describe('ReviewAndSign', () => {
       await screen.findByRole('button', { name: /Sign & replace on feed/i })
     )
     await waitFor(() => {
-      expect(mockedApi.patchPlaylist).toHaveBeenCalledTimes(1)
+      expect(mockedApi.replacePlaylist).toHaveBeenCalledTimes(1)
     })
-    expect(mockedApi.patchPlaylist.mock.calls[0][0]).toBe(PLAYLIST_ID)
+    expect(mockedApi.replacePlaylist.mock.calls[0][0]).toBe(PLAYLIST_ID)
     expect(mockedApi.publishPlaylist).not.toHaveBeenCalled()
   })
 

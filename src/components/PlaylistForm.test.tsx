@@ -46,21 +46,21 @@ vi.mock('@/lib/signing', async () => {
 })
 
 // api: keep helpers + FeedAPIError real (used by friendlyPublishError, URLs);
-// stub the network calls (publish/getPlaylist/patchPlaylist).
+// stub the network calls (publish/getPlaylist/replacePlaylist).
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof apiModule>('@/lib/api')
   return {
     ...actual,
     publishPlaylist: vi.fn(),
     getPlaylist: vi.fn(),
-    patchPlaylist: vi.fn(),
+    replacePlaylist: vi.fn(),
   }
 })
 
 const mockedApi = apiModule as typeof apiModule & {
   publishPlaylist: ReturnType<typeof vi.fn>
   getPlaylist: ReturnType<typeof vi.fn>
-  patchPlaylist: ReturnType<typeof vi.fn>
+  replacePlaylist: ReturnType<typeof vi.fn>
 }
 
 function fillFormAndPublish(title: string, source: string) {
@@ -73,13 +73,20 @@ function fillFormAndPublish(title: string, source: string) {
   fireEvent.click(screen.getByRole('button', { name: /Sign & publish/i }))
 }
 
+/** Edit mode labels the submit button differently from create mode. */
+function fillFormAndUpdate(title: string, source: string) {
+  fireEvent.change(screen.getByLabelText(/Title \*/i), { target: { value: title } })
+  fireEvent.change(screen.getByLabelText(/Source URI \*/i), { target: { value: source } })
+  fireEvent.click(screen.getByRole('button', { name: /Sign & update/i }))
+}
+
 describe('PlaylistForm — publish flow', () => {
   beforeEach(() => {
     localStorage.clear()
     toastMock.mockClear()
     mockedApi.publishPlaylist.mockReset()
     mockedApi.getPlaylist.mockReset()
-    mockedApi.patchPlaylist.mockReset()
+    mockedApi.replacePlaylist.mockReset()
   })
 
   it('regenerates id after a successful create, so "Publish another" POSTs a fresh document', async () => {
@@ -119,13 +126,13 @@ describe('PlaylistForm — publish flow', () => {
     const secondId = secondCallBody.id
     expect(secondId).not.toBe(firstId)
 
-    // And critically — patchPlaylist must NOT have been used. If id had
+    // And critically — replacePlaylist must NOT have been used. If id had
     // been reused, preflight would have found the prior doc (mocked above
     // with .mockRejectedValue 404) and we'd still POST, BUT in the real
     // wild the prior id would resolve and silently overwrite. The
     // not-equal id assertion above is the load-bearing check; this just
     // documents that the create path stays a POST.
-    expect(mockedApi.patchPlaylist).not.toHaveBeenCalled()
+    expect(mockedApi.replacePlaylist).not.toHaveBeenCalled()
   })
 
   it('refuses to sign or PATCH when preflight returns a doc signed by a different wallet', async () => {
@@ -167,7 +174,7 @@ describe('PlaylistForm — publish flow', () => {
 
     // Critically: neither signing nor the PATCH endpoint may have been called.
     expect(signSpy).not.toHaveBeenCalled()
-    expect(mockedApi.patchPlaylist).not.toHaveBeenCalled()
+    expect(mockedApi.replacePlaylist).not.toHaveBeenCalled()
     expect(mockedApi.publishPlaylist).not.toHaveBeenCalled()
   })
 
@@ -195,7 +202,7 @@ describe('PlaylistForm — publish flow', () => {
       ],
     })
     // PATCH rejected as wrong wallet (401).
-    mockedApi.patchPlaylist.mockRejectedValue(
+    mockedApi.replacePlaylist.mockRejectedValue(
       new apiModule.FeedAPIError('signature rejected', 401, 'unauthorized'),
     )
 
@@ -203,7 +210,7 @@ describe('PlaylistForm — publish flow', () => {
     fillFormAndPublish('Whatever', 'https://example.com/a.mp4')
 
     await waitFor(() => {
-      expect(mockedApi.patchPlaylist).toHaveBeenCalledTimes(1)
+      expect(mockedApi.replacePlaylist).toHaveBeenCalledTimes(1)
     })
 
     // The catch must classify this as an update failure → the toast
@@ -331,5 +338,91 @@ describe('PlaylistForm — publish flow', () => {
       ).toBe(true)
     })
     expect(mockedApi.publishPlaylist).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * The core-mode guard has to see the document the feed actually holds.
+ *
+ * Edit loading keeps a stripped copy to populate the form, and that copy was also passed as the replace
+ * base — so the guard asked "does the stored document carry extension data?" of a value those fields had
+ * already been removed from. It always answered no, and the replace proceeded to erase them. The raw GET
+ * response is now retained separately for exactly this check.
+ *
+ * Asserting "blocked" means asserting nothing happened: no signature prompt, no request. A test that only
+ * checked for a toast would still pass if the document were signed and sent first.
+ */
+describe('PlaylistForm — core mode must not silently replace an extension-bearing playlist', () => {
+  const STORED_WITH_EXTENSIONS = {
+    dpVersion: '1.1.0',
+    id: 'ext-bearing-id',
+    slug: 'ext-bearing',
+    title: 'Has extension data',
+    created: '2025-01-01T00:00:00Z',
+    items: [],
+    curators: [{ name: 'NODE', key: 'did:key:z6MkOther', url: '' }],
+    summary: 'only visible when extensions are on',
+    signatures: [
+      {
+        alg: 'eip191',
+        kid: TEST_WALLET_DID,
+        ts: '2025-01-01T00:00:00Z',
+        payload_hash: 'sha256:prior',
+        role: 'curator',
+        sig: 'prior-sig',
+      },
+    ],
+  }
+
+  it('blocks before signing or sending', async () => {
+    mockedApi.getPlaylist.mockResolvedValue(STORED_WITH_EXTENSIONS)
+    const signingModule = await import('@/lib/signing')
+    const signSpy = signingModule.signDocument as unknown as ReturnType<typeof vi.fn>
+    signSpy.mockClear()
+
+    render(<PlaylistForm extensionsEnabled={false} editId="ext-bearing-id" />)
+    await waitFor(() => expect(mockedApi.getPlaylist).toHaveBeenCalled())
+
+    fillFormAndUpdate('Edited in core mode', 'https://example.com/a.mp4')
+
+    await waitFor(() => {
+      const blocked = toastMock.mock.calls.filter(([arg]) =>
+        /extension fields/i.test(String(arg?.description ?? ''))
+      )
+      expect(blocked.length).toBeGreaterThan(0)
+    })
+
+    // The point of the guard: the wallet is never asked to sign, and nothing reaches the feed.
+    expect(signSpy).not.toHaveBeenCalled()
+    expect(mockedApi.replacePlaylist).not.toHaveBeenCalled()
+
+    // The message must name what is at stake rather than being generic.
+    const [blockedCall] = toastMock.mock.calls.filter(([arg]) =>
+      /extension fields/i.test(String(arg?.description ?? ''))
+    )
+    expect(String(blockedCall[0].description)).toContain('curators')
+  })
+
+  it('allows the replace when the stored document carries no extension data', async () => {
+    mockedApi.getPlaylist.mockResolvedValue({
+      ...STORED_WITH_EXTENSIONS,
+      curators: undefined,
+      summary: undefined,
+    })
+    mockedApi.replacePlaylist.mockResolvedValue({
+      ...STORED_WITH_EXTENSIONS,
+      curators: undefined,
+      summary: undefined,
+      title: 'Edited in core mode',
+    })
+
+    render(<PlaylistForm extensionsEnabled={false} editId="ext-bearing-id" />)
+    await waitFor(() => expect(mockedApi.getPlaylist).toHaveBeenCalled())
+
+    fillFormAndUpdate('Edited in core mode', 'https://example.com/a.mp4')
+
+    await waitFor(() => {
+      expect(mockedApi.replacePlaylist).toHaveBeenCalledTimes(1)
+    })
   })
 })

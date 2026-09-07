@@ -1,5 +1,7 @@
 /**
- * Merge helpers aligned with executor partial PATCH semantics in https://github.com/display-protocol/dp1-feed-v2
+ * Merge helpers that build the full replacement document from the stored one plus the user's edits.
+ * The feed no longer merges anything server-side (PATCH is gone), so the merge happens here and the
+ * result is sent whole.
  * (see internal/executor/executor.go UpdatePlaylist / UpdateChannel on main).
  */
 

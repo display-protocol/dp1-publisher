@@ -63,13 +63,13 @@ Tests for building unsigned channel payloads:
 - Array cloning
 
 #### Merge Helpers (`src/lib/dp1Merge.test.ts`) - 38 tests
-Tests for PATCH merge semantics:
+Tests for local merge semantics — the app builds the full replacement document; the feed merges nothing:
 - Playlist merge operations
 - Playlist Group merge operations
 - Channel merge operations
 - `undefined` vs explicit value semantics:
-  - `undefined` in patch → preserve existing value
-  - Explicit value (including empty string) → replace
+  - `undefined` in the edit → keep the stored value
+  - Explicit value (including empty string) → override it
 - Multi-field updates
 - Immutability guarantees
 
@@ -86,11 +86,12 @@ Test patterns and data structures follow dp1-js conventions:
 - Comparable fixture structures
 - Aligned edge case coverage
 
-### 2. PATCH Semantics Verification
-Tests explicitly verify the correct PATCH merge behavior:
-- `undefined` in patch means "don't change"
-- Explicit values (including `null`, empty strings) mean "replace"
-- This matches dp1-feed-v2 executor behavior
+### 2. Merge Semantics Verification
+Tests explicitly verify the local merge behavior that produces a replacement document:
+- `undefined` in the edit means "keep what the feed already stores"
+- Explicit values (including `null`, empty strings) mean "override it"
+- The merge happens entirely here. dp1-feed-v2 removed PATCH, so an update is a full-document
+  `PUT {document, authorization}` and anything missing from the merged result is erased, not preserved.
 
 ### 3. Type Safety
 All tests pass TypeScript strict mode checks:
@@ -110,7 +111,7 @@ Tests are now part of the mandatory verification pipeline:
 ✓ Signature field stripping
 ✓ Entity wire format (omitempty behavior)
 ✓ Sign payload builders (all three document types)
-✓ Merge helpers (PATCH semantics)
+✓ Merge helpers (local merge into a full replacement document)
 
 ### Medium Priority (Future Work)
 - API client error handling (`src/lib/api.ts`)

@@ -4,6 +4,7 @@
  */
 
 import type { Playlist, Channel } from '@/types/dp1'
+import type { SignedIntent } from '@/lib/replaceIntent'
 
 /** Base feed origin, no trailing slash (matches `VITE_FEED_BASE_URL` when set). */
 export function getFeedBaseUrl(): string {
@@ -311,18 +312,23 @@ export async function listChannels(params: {
 }
 
 /**
- * PATCH /api/v1/playlists/{id} — partial update with signature-based auth
+ * PUT /api/v1/playlists/{id} — full replace, authorized by a signed intent.
+ *
+ * The feed removed PATCH: there is no partial update, because a signature covers the whole document and
+ * a server-side merge would produce bytes nobody signed. Both halves of the envelope are verified
+ * independently — the document for what it installs, the intent for who asked and when.
  */
-export async function patchPlaylist(
+export async function replacePlaylist(
   idOrSlug: string,
-  body: Record<string, unknown>
+  document: Record<string, unknown>,
+  authorization: SignedIntent
 ): Promise<Playlist> {
   const response = await fetch(
     `${FEED_BASE_URL}/api/v1/playlists/${encodeURIComponent(idOrSlug)}`,
     {
-      method: 'PATCH',
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ document, authorization }),
     }
   )
 
@@ -332,7 +338,7 @@ export async function patchPlaylist(
       message: response.statusText,
     }))
     throw new FeedAPIError(
-      error.message || 'Failed to update playlist',
+      error.message || 'Failed to replace playlist',
       response.status,
       error.error
     )
@@ -342,18 +348,19 @@ export async function patchPlaylist(
 }
 
 /**
- * PATCH /api/v1/channels/{id} — partial update with signature-based auth
+ * PUT /api/v1/channels/{id} — full replace, authorized by a signed intent (see replacePlaylist).
  */
-export async function patchChannel(
+export async function replaceChannel(
   idOrSlug: string,
-  body: Record<string, unknown>
+  document: Record<string, unknown>,
+  authorization: SignedIntent
 ): Promise<Channel> {
   const response = await fetch(
     `${FEED_BASE_URL}/api/v1/channels/${encodeURIComponent(idOrSlug)}`,
     {
-      method: 'PATCH',
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ document, authorization }),
     }
   )
 
@@ -363,7 +370,7 @@ export async function patchChannel(
       message: response.statusText,
     }))
     throw new FeedAPIError(
-      error.message || 'Failed to update channel',
+      error.message || 'Failed to replace channel',
       response.status,
       error.error
     )

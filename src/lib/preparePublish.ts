@@ -8,7 +8,7 @@
  *   ensure signer identity → validate → canonicalize once → derive wireBody from signedBytes
  *
  * Splitting this across 4 call sites was the source of the round-6 channel-edit
- * drift bug: signed payload built from `merged.publisher`, but the PATCH body
+ * drift bug: signed payload built from `merged.publisher`, but the update body
  * built from `patchFields.publisher`. By computing **signedPayload and wireBody
  * together** here, that class of bug becomes impossible by construction —
  * callers cannot independently shape one without the other.
@@ -19,7 +19,10 @@ import {
   mergeChannelForPatch,
   mergePlaylistForPatch,
 } from '@/lib/dp1Merge'
-import { stripPlaylistExtensionFields } from '@/lib/dp1ExtensionPolicy'
+import {
+  playlistExtensionFieldsPresent,
+  stripPlaylistExtensionFields,
+} from '@/lib/dp1ExtensionPolicy'
 import {
   ensureChannelWalletPublisher,
   ensurePlaylistWalletCurator,
@@ -50,13 +53,15 @@ export interface PreparedDocument<T> {
    */
   signedBytes: Record<string, unknown>
   /**
-   * What to POST/PATCH (caller adds `signatures`).
-   *   - CREATE: equals `signedBytes` exactly — the POST body matches the
-   *     bytes the feed will hash to verify the signature.
-   *   - EDIT (PATCH): `signedBytes` minus `id` (URL path) and `created`
-   *     (immutable). These are the only documented PATCH omissions.
-   * Derived from `signedBytes`, so it cannot drift from what was signed
-   * except in the documented ways above.
+   * What to send (caller adds `signatures`). Equals `signedBytes` exactly, on create and on edit alike,
+   * so the body always matches the bytes the feed hashes to verify the signature.
+   *
+   * Edit used to omit `id` and `created`, which was right for PATCH: the id was in the URL and a partial
+   * update never restated an immutable field. A replace is a whole document, and under PUT those
+   * omissions are wrong twice over — the feed validates the submitted `id`, `slug` and `created` against
+   * the stored resource, and both fields sit inside the signed payload, so dropping them from the wire
+   * would leave the delivered bytes different from the signed ones and every signature would fail to
+   * verify against what was actually sent.
    */
   wireBody: Record<string, unknown>
   /** Informational toasts the caller should show (e.g., "Wallet added as curator"). */
@@ -78,7 +83,7 @@ export interface PreparePlaylistArgs {
   rawDocument: Playlist
   /** Connected wallet's DID (e.g., did:pkh:eip155:1:0x…). */
   walletDID: string
-  /** For edit/PATCH; omit for create. */
+  /** The stored document to merge onto, for an edit/replace; omit for create. */
   base?: Playlist
   /** Drives extension-field stripping and curator auto-inject behavior. */
   extensionsEnabled: boolean
@@ -105,6 +110,32 @@ export function preparePlaylistForPublish(
         typeof merged.dpVersion === 'string' && merged.dpVersion.trim() !== ''
           ? merged.dpVersion.trim()
           : '1.1.0',
+    }
+  }
+
+  // Step 1c: refuse to replace an extension-bearing document while extensions are off.
+  //
+  // Stripping is right for a create — it shapes a fresh payload to what a core-only feed validates. A
+  // replace sends the *complete* document, so every stripped field is erased on the feed. That was
+  // invisible under PATCH, where the feed merged a partial body and omissions survived untouched.
+  //
+  // `curators` makes it worse than data loss: it is the feed's owner set, a replace may not change it,
+  // and step 3 below only re-adds the wallet when extensions are on. So the request either fails as an
+  // owner change or, where the feed accepts it, silently drops fields the user never saw. Refusing is the
+  // honest outcome — the alternative is signing a document that quietly discards someone's work.
+  if (!extensionsEnabled && base) {
+    // Read the STORED document, not the merged result. What a replace erases is whatever the feed holds
+    // and the outgoing document omits, and the merge can hide that: an edit whose items replace the
+    // stored ones drops their extension data from `merged` before this check ever sees it.
+    const losing = playlistExtensionFieldsPresent(base)
+    if (losing.length > 0) {
+      return {
+        validationErrors: [
+          `This playlist uses extension fields (${losing.join(', ')}), and extensions are off for this ` +
+            `session. Replacing it now would erase them, and dropping "curators" would change the owner ` +
+            `the feed recorded. Enable extensions to edit this playlist.`,
+        ],
+      }
     }
   }
 
@@ -157,9 +188,8 @@ export function preparePlaylistForPublish(
   if (validationErrors.length) return { validationErrors }
 
   // Step 5: canonicalize ONCE. `playlistUnsignedPayloadForSigning` is the
-  // single source of truth for the exact bytes the feed will hash. wireBody
-  // is derived from it, so it can't drift from what was signed except in the
-  // intentional PATCH omissions below.
+  // single source of truth for the exact bytes the feed will hash. wireBody is that same object, so it
+  // cannot drift from what was signed.
   const signedBytes = playlistUnsignedPayloadForSigning(canonical)
 
   // The signer defaults the slug (generateSlug) when the document lacks one —
@@ -178,12 +208,6 @@ export function preparePlaylistForPublish(
   }
 
   const wireBody: Record<string, unknown> = { ...signedBytes }
-  if (base !== undefined) {
-    // PATCH: id is in the URL path, created is immutable.
-    delete wireBody.id
-    delete wireBody.created
-  }
-
   return { signedPayload: canonical, signedBytes, wireBody, toasts }
 }
 
@@ -244,9 +268,7 @@ export function prepareChannelForPublish(
   // Step 4: canonicalize ONCE. `channelUnsignedPayloadForSigning` is the
   // single source of truth for the exact bytes the feed will hash (slug
   // auto-generation, default version, entity URL normalization, blank
-  // stripping all live there). wireBody is derived from it, so it cannot
-  // drift from what was signed except in the intentional PATCH omissions
-  // below.
+  // stripping all live there). wireBody is that same object, so it cannot drift from what was signed.
   let signedBytes: Record<string, unknown>
   try {
     signedBytes = channelUnsignedPayloadForSigning(merged)
@@ -258,12 +280,6 @@ export function prepareChannelForPublish(
     }
   }
   const wireBody: Record<string, unknown> = { ...signedBytes }
-  if (base !== undefined) {
-    // PATCH: id is in the URL path, created is immutable.
-    delete wireBody.id
-    delete wireBody.created
-  }
-
   return { signedPayload: merged, signedBytes, wireBody, toasts }
 }
 

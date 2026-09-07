@@ -31,6 +31,34 @@ export function stripItemExtensionFields(item: PlaylistItem): PlaylistItem {
   return rest
 }
 
+/**
+ * Names the playlists-extension fields a stored document actually carries.
+ *
+ * Only meaningful on a replace. A create in core mode has nothing to lose: there is no stored document,
+ * so stripping shapes a fresh payload and that is the whole intent. A replace is different — it sends the
+ * *complete* document, so a field stripped here is a field erased on the feed. That was invisible while
+ * updates were PATCH, because the feed merged a partial body and anything omitted survived.
+ *
+ * `curators` is the sharpest case: it is a playlists-extension field and also the feed's owner set, which
+ * a replace may not change. Stripping it produces a document with no owner, which the feed rejects as an
+ * owner change — and the wallet is not re-added, since that step only runs when extensions are on.
+ */
+export function playlistExtensionFieldsPresent(p: Playlist): string[] {
+  const present: string[] = []
+  if (Array.isArray(p.curators) && p.curators.length > 0) present.push('curators')
+  if (typeof p.summary === 'string' && p.summary.trim() !== '') present.push('summary')
+  if (typeof p.coverImage === 'string' && p.coverImage.trim() !== '') present.push('coverImage')
+  if (p.dynamicQuery !== undefined) present.push('dynamicQuery')
+  if (p.note !== undefined) present.push('note')
+  const itemFields = new Set<string>()
+  for (const item of p.items ?? []) {
+    if (item.note !== undefined) itemFields.add('items[].note')
+    if (item.displayAt !== undefined) itemFields.add('items[].displayAt')
+    if (item.inlineManifest !== undefined) itemFields.add('items[].inlineManifest')
+  }
+  return [...present, ...[...itemFields].sort()]
+}
+
 /** Drop playlists-extension fields so the payload matches core-only feed validation. */
 export function stripPlaylistExtensionFields(p: Playlist): Playlist {
   const items = p.items.map(stripItemExtensionFields)

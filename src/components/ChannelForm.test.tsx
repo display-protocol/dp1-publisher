@@ -45,14 +45,14 @@ vi.mock('@/lib/api', async () => {
     ...actual,
     publishChannel: vi.fn(),
     getChannel: vi.fn(),
-    patchChannel: vi.fn(),
+    replaceChannel: vi.fn(),
   }
 })
 
 const mockedApi = apiModule as typeof apiModule & {
   publishChannel: ReturnType<typeof vi.fn>
   getChannel: ReturnType<typeof vi.fn>
-  patchChannel: ReturnType<typeof vi.fn>
+  replaceChannel: ReturnType<typeof vi.fn>
 }
 
 function fillFormAndPublish(title: string, playlistUrl: string) {
@@ -80,7 +80,7 @@ describe('ChannelForm — publish flow', () => {
     toastMock.mockClear()
     mockedApi.publishChannel.mockReset()
     mockedApi.getChannel.mockReset()
-    mockedApi.patchChannel.mockReset()
+    mockedApi.replaceChannel.mockReset()
   })
 
   it('regenerates id after a successful create, so "Publish another" POSTs a fresh channel', async () => {
@@ -110,7 +110,7 @@ describe('ChannelForm — publish flow', () => {
     })
     const secondId = (mockedApi.publishChannel.mock.calls[1][0] as { id: string }).id
     expect(secondId).not.toBe(firstId)
-    expect(mockedApi.patchChannel).not.toHaveBeenCalled()
+    expect(mockedApi.replaceChannel).not.toHaveBeenCalled()
   })
 
   it('refuses to sign or PATCH when preflight returns a channel signed by a different wallet', async () => {
@@ -152,7 +152,7 @@ describe('ChannelForm — publish flow', () => {
     })
 
     expect(signSpy).not.toHaveBeenCalled()
-    expect(mockedApi.patchChannel).not.toHaveBeenCalled()
+    expect(mockedApi.replaceChannel).not.toHaveBeenCalled()
     expect(mockedApi.publishChannel).not.toHaveBeenCalled()
   })
 
@@ -337,7 +337,7 @@ describe('ChannelForm — publish flow', () => {
         },
       ],
     })
-    mockedApi.patchChannel.mockImplementation(async (_id, body) => ({
+    mockedApi.replaceChannel.mockImplementation(async (_id, body, _authorization) => ({
       ...(body as Record<string, unknown>),
       id: 'ch-edit-id',
       slug: 'occupy',
@@ -363,9 +363,9 @@ describe('ChannelForm — publish flow', () => {
     fireEvent.click(screen.getByRole('button', { name: /Sign & update/i }))
 
     await waitFor(() => {
-      expect(mockedApi.patchChannel).toHaveBeenCalledTimes(1)
+      expect(mockedApi.replaceChannel).toHaveBeenCalledTimes(1)
     })
-    const [editId, body] = mockedApi.patchChannel.mock.calls[0] as [
+    const [editId, body] = mockedApi.replaceChannel.mock.calls[0] as [
       string,
       { playlists: string[] },
     ]
@@ -398,7 +398,7 @@ describe('ChannelForm — publish flow', () => {
         },
       ],
     })
-    mockedApi.patchChannel.mockRejectedValue(
+    mockedApi.replaceChannel.mockRejectedValue(
       new apiModule.FeedAPIError('signature rejected', 401, 'unauthorized'),
     )
 
@@ -406,7 +406,7 @@ describe('ChannelForm — publish flow', () => {
     fillFormAndPublish('Whatever', 'https://feed.example/api/v1/playlists/p1')
 
     await waitFor(() => {
-      expect(mockedApi.patchChannel).toHaveBeenCalledTimes(1)
+      expect(mockedApi.replaceChannel).toHaveBeenCalledTimes(1)
     })
 
     await waitFor(() => {

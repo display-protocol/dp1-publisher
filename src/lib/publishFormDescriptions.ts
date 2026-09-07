@@ -4,7 +4,7 @@
  */
 
 export const publishFormEditDescription =
-  'Edit in the form or JSON tab, then sign to PATCH the feed document.'
+  'Edit in the form or JSON tab, then sign to replace the feed document.'
 
 /** Core playlist — ordered artwork items; curator signature role. */
 export const playlistFormCreateDescription =

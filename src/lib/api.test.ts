@@ -386,6 +386,78 @@ describe('validatePlaylistURI', () => {
 })
 
 describe('friendlyPublishError', () => {
+  // The feed answers a refused mutation with a specific ownership reason. Flattening every 403 into
+  // "different wallet" replaces a correct diagnosis with a wrong one: the wallet is usually right and
+  // already connected, so it sends the user to reconnect a wallet that would change nothing.
+  describe('ownership failures keep the feed\'s reason', () => {
+    it('explains an owner-set change rather than blaming the wallet', () => {
+      const err = new FeedAPIError(
+        'resource owner is immutable and cannot be changed',
+        403,
+        'forbidden'
+      )
+      const msg = friendlyPublishError(err, 'playlist', 'update')
+      expect(msg).toMatch(/curators/i)
+      expect(msg).not.toMatch(/different wallet/i)
+    })
+
+    it('names the removed owners when a replace drops one', () => {
+      const err = new FeedAPIError(
+        'owners cannot be removed from a resource: did:key:z6MkfAgv',
+        403,
+        'forbidden'
+      )
+      const msg = friendlyPublishError(err, 'playlist', 'update')
+      expect(msg).toMatch(/did:key:z6MkfAgv/)
+      expect(msg).not.toMatch(/different wallet/i)
+    })
+
+    it('explains a missing consent signature for an added owner', () => {
+      const err = new FeedAPIError(
+        'a new owner must sign the document in the owner role: did:pkh:eip155:1:0xabc',
+        403,
+        'forbidden'
+      )
+      const msg = friendlyPublishError(err, 'playlist', 'update')
+      expect(msg).toMatch(/did:pkh:eip155:1:0xabc/)
+      expect(msg).not.toMatch(/different wallet/i)
+    })
+
+    it('explains a non-owner role rather than blaming the wallet', () => {
+      const err = new FeedAPIError(
+        'request is not signed by an owner of the resource: an owner key signed with a non-owner role (did:key:z6MkfAgv signed as "agent"); the "curator" role is required',
+        403,
+        'forbidden'
+      )
+      const msg = friendlyPublishError(err, 'playlist', 'update')
+      expect(msg).toMatch(/role/i)
+      expect(msg).toMatch(/curator/i)
+      expect(msg).not.toMatch(/different wallet/i)
+    })
+
+    it('uses the publisher role wording for channels', () => {
+      const err = new FeedAPIError(
+        'request is not signed by an owner of the resource: an owner key signed with a non-owner role (did:pkh:eip155:1:0xabc signed as "curator"); the "publisher" role is required',
+        403,
+        'forbidden'
+      )
+      const msg = friendlyPublishError(err, 'channel', 'update')
+      expect(msg).toMatch(/publisher/i)
+      expect(msg).not.toMatch(/different wallet/i)
+    })
+
+    it('still reports a plain not-an-owner 403 as the wrong wallet', () => {
+      // The one case the old copy was right about: no owner key signed at all.
+      const err = new FeedAPIError(
+        'request is not signed by an owner of the resource',
+        403,
+        'forbidden'
+      )
+      const msg = friendlyPublishError(err, 'playlist', 'update')
+      expect(msg).toMatch(/different wallet/i)
+    })
+  })
+
   describe('wrong wallet', () => {
     it('uses overwrite-specific copy on update intent (401)', () => {
       const err = new FeedAPIError('signature rejected', 401, 'unauthorized')

@@ -96,6 +96,44 @@ export function friendlyPublishError(
     const raw = err.message || ''
     const lower = raw.toLowerCase()
 
+    // Ownership refusals carry a specific reason; keep it.
+    //
+    // The feed decides who may mutate a resource from the document itself, and says which of the rules
+    // failed. Collapsing those into "different wallet" (below) replaces a correct diagnosis with a wrong
+    // one: in every case here the connected wallet IS an owner, so the user is told to reconnect a wallet
+    // that would change nothing, while the real fault — the owner set, or the signature's role — goes
+    // unmentioned. Checked before the wrong-wallet branch because they arrive as 403 too.
+    const ownerRole = kind === 'channel' ? 'publisher' : 'curator'
+    const ownerField = kind === 'channel' ? 'publisher' : 'curators[]'
+
+    // An owner key signed, but not in the owner role. Being named is a claim; signing as curator /
+    // publisher is the proof, and the feed needs both.
+    if (lower.includes('non-owner role')) {
+      return (
+        `Your wallet is an owner of this ${noun}, but it signed under the wrong role. ` +
+        `The feed accepts a mutation only from a signature in the "${ownerRole}" role. ` +
+        `Feed said: ${raw}`
+      )
+    }
+
+    // A replace that drops a stored owner. Owners may be added, never removed.
+    if (lower.includes('owners cannot be removed') || lower.includes('owner is immutable')) {
+      return (
+        `This ${noun} would lose an owner. A replace may add owners but never remove them, and ` +
+        `"${ownerField}" in your document omits one the feed has stored. Restore the missing ` +
+        `key (names may change; keys may not) and try again. Feed said: ${raw}`
+      )
+    }
+
+    // A replace that adds an owner who did not sign. Nobody can be attributed without consenting.
+    if (lower.includes('new owner must sign')) {
+      return (
+        `This ${noun} adds an owner that has not signed it. Every key added to "${ownerField}" must ` +
+        `itself sign the document in the "${ownerRole}" role, which proves the key exists and agrees ` +
+        `to be listed. Feed said: ${raw}`
+      )
+    }
+
     // Wrong wallet trying to overwrite someone else's document.
     if (
       err.status === 401 ||

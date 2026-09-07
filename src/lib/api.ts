@@ -103,6 +103,18 @@ export function friendlyPublishError(
     // one: in every case here the connected wallet IS an owner, so the user is told to reconnect a wallet
     // that would change nothing, while the real fault — the owner set, or the signature's role — goes
     // unmentioned. Checked before the wrong-wallet branch because they arrive as 403 too.
+    //
+    // Matched on the message text, which couples this to the feed's wording. That is a real cost and it
+    // was the only option: all three arrive as HTTP 403 with `error: "forbidden"`, so the machine-readable
+    // half of the response cannot tell them apart, and matching it would collapse them again. The phrases
+    // below are the stable part of the feed's sentinel errors (ErrOwnerRemoved, ErrOwnerConsentRequired,
+    // and the non-owner-role detail on ErrNotResourceOwner), not incidental prose. `owner is immutable`
+    // additionally covers feeds still running the older exact-set-equality rule, whose message differs.
+    //
+    // The failure mode of a wording change is benign by construction: an unmatched message falls through
+    // to the branches below and the feed's own text is still shown, so a stale match degrades to today's
+    // behavior rather than hiding the reason. A distinct error code per rule would remove the coupling and
+    // is worth asking the feed for; until then this is checked by a test using a live feed response.
     const ownerRole = kind === 'channel' ? 'publisher' : 'curator'
     const ownerField = kind === 'channel' ? 'publisher' : 'curators[]'
 

@@ -81,6 +81,19 @@ export class FeedAPIError extends Error {
  * Use for publish/update toasts so the surface never shows raw Postgres or
  * protocol-level signature complaints.
  */
+/**
+ * The feed's bare "not an owner" refusal, which the wrong-wallet copy already paraphrases in full.
+ *
+ * Detailed refusals are this sentence plus a `: <detail>` suffix, so only an exact match may be treated
+ * as paraphrased — see friendlyPublishError.
+ */
+const PLAIN_NOT_OWNER_REASON = 'request is not signed by an owner of the resource'
+
+/** Normalizes a feed message for exact comparison: trimmed, trailing period dropped. */
+function normalizeFeedReason(message: string): string {
+  return message.trim().replace(/\.+$/, '')
+}
+
 export function friendlyPublishError(
   err: unknown,
   kind: 'playlist' | 'channel',
@@ -96,6 +109,73 @@ export function friendlyPublishError(
     const raw = err.message || ''
     const lower = raw.toLowerCase()
 
+    // Ownership refusals carry a specific reason; keep it.
+    //
+    // The feed decides who may mutate a resource from the document itself, and says which of the rules
+    // failed. Collapsing those into "different wallet" (below) replaces a correct diagnosis with a wrong
+    // one: in every case here the connected wallet IS an owner, so the user is told to reconnect a wallet
+    // that would change nothing, while the real fault — the owner set, or the signature's role — goes
+    // unmentioned. Checked before the wrong-wallet branch because they arrive as 403 too.
+    //
+    // Matched on the message text, which couples this to the feed's wording. That is a real cost and it
+    // was the only option: all three arrive as HTTP 403 with `error: "forbidden"`, so the machine-readable
+    // half of the response cannot tell them apart, and matching it would collapse them again. The phrases
+    // below are the stable part of the feed's sentinel errors (ErrOwnerRemoved, ErrOwnerConsentRequired,
+    // and the non-owner-role detail on ErrNotResourceOwner), not incidental prose. `owner is immutable`
+    // additionally covers feeds still running the older exact-set-equality rule, whose message differs.
+    //
+    // A wording change or a new ownership rule therefore stops matching here and falls through to the
+    // authorization fallback below, which keeps the feed's own sentence appended to its copy. That is what
+    // makes the coupling survivable: an unmatched reason degrades to "generic advice plus the server's
+    // words", never to advice that hides them. A distinct error code per rule would remove the coupling
+    // and is worth asking the feed for; until then this is checked by a test using a live feed response
+    // and one using an unrecognized reason.
+    const ownerRole = kind === 'channel' ? 'publisher' : 'curator'
+    // The key path, not the enclosing field: ownership is compared by key, so a publisher pointed at
+    // `publisher` is left to guess whether the name, url or key is at fault. Channels carry one owner in
+    // `publisher.key`; playlists carry many in `curators[].key`.
+    const ownerField = kind === 'channel' ? 'publisher.key' : 'curators[].key'
+
+    // An owner key signed, but not in the owner role. Being named is a claim; signing as curator /
+    // publisher is the proof, and the feed needs both.
+    if (lower.includes('non-owner role')) {
+      return (
+        `Your wallet is an owner of this ${noun}, but it signed under the wrong role. ` +
+        `The feed accepts a mutation only from a signature in the "${ownerRole}" role. ` +
+        `Feed said: ${raw}`
+      )
+    }
+
+    // A replace that drops a stored owner. Owners may be added, never removed.
+    if (lower.includes('owners cannot be removed')) {
+      return (
+        `This ${noun} would lose an owner. A replace may add owners but never remove them, and ` +
+        `"${ownerField}" in your document omits one the feed has stored. Restore the missing ` +
+        `key (names may change; keys may not) and try again. Feed said: ${raw}`
+      )
+    }
+
+    // A feed still enforcing exact owner-set equality, which is a different rule from the one above and
+    // must not borrow its wording. It refuses ANY change to the owner set, so an addition is rejected by
+    // this same message — telling that user to "restore a missing key" describes the opposite of what
+    // they did and sends them to look for a key nothing is missing.
+    if (lower.includes('owner is immutable')) {
+      return (
+        `This feed does not allow the owner of a ${noun} to change on a replace. "${ownerField}" must be ` +
+        `exactly what the feed already stores — no additions, no removals, no substitutions (names may ` +
+        `differ; keys may not). Feed said: ${raw}`
+      )
+    }
+
+    // A replace that adds an owner who did not sign. Nobody can be attributed without consenting.
+    if (lower.includes('new owner must sign')) {
+      return (
+        `This ${noun} adds an owner that has not signed it. Every key added to "${ownerField}" must ` +
+        `itself sign the document in the "${ownerRole}" role, which proves the key exists and agrees ` +
+        `to be listed. Feed said: ${raw}`
+      )
+    }
+
     // Wrong wallet trying to overwrite someone else's document.
     if (
       err.status === 401 ||
@@ -104,9 +184,23 @@ export function friendlyPublishError(
       lower.includes('unauthorized') ||
       lower.includes('forbidden')
     ) {
-      return intent === 'update'
-        ? `This ${noun} was published by a different wallet. Connect that wallet to update it, or publish under a new id.`
-        : `Signing failed: the feed rejected your signature. Make sure the connected wallet matches the ${signerField} declared in the document.`
+      const generic =
+        intent === 'update'
+          ? `This ${noun} was published by a different wallet. Connect that wallet to update it, or publish under a new id.`
+          : `Signing failed: the feed rejected your signature. Make sure the connected wallet matches the ${signerField} declared in the document.`
+
+      // Keep the feed's sentence unless this copy already paraphrases the whole of it. The bare
+      // not-an-owner refusal IS the wrong-wallet case, so repeating it adds noise; every other refusal
+      // reaching here is one this mapping does not model — a reworded rule, or a new one — and the
+      // server's words are then the only actionable thing available.
+      //
+      // The comparison is exact, not `includes`. The feed builds detailed refusals by suffixing this same
+      // sentence (`...: an owner key signed with a non-owner role (...)`), so a substring test treats a
+      // reworded *detailed* refusal as already paraphrased and drops the very detail that makes it
+      // actionable — reintroducing the wrong-wallet advice this whole change exists to remove. Matching
+      // the bare sentence alone means any added detail, in any wording, survives.
+      const alreadyParaphrased = normalizeFeedReason(lower) === PLAIN_NOT_OWNER_REASON
+      return !raw || alreadyParaphrased ? generic : `${generic} Feed said: ${raw}`
     }
 
     // Duplicate primary/unique key from Postgres (safety net — the

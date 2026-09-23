@@ -584,6 +584,23 @@ function isPrivateOrLoopbackIPv6(hostname: string): boolean {
 const ABSOLUTE_URI_SCHEME = /^[a-z][a-z0-9+.-]*:/i
 
 /**
+ * Checks on the **raw** string that WHATWG `new URL()` would otherwise paper over. The signed document
+ * carries the raw string, not `URL.href`, and the feed parses it with Go's url.Parse — so anything the
+ * browser silently repairs (strips tabs/newlines, trims, re-encodes spaces, accepts `\\` as `/`,
+ * tolerates `%ZZ`) must be refused here or it passes validation and fails at the feed.
+ *
+ * RFC 3986 §2.1: '%' must start a two-hex-digit escape. Go rejects bad escapes in path/fragment; this
+ * enforces it in every component (query, opaque `data:`) since RFC 3986 forbids a bare '%' anywhere.
+ */
+function rawUriSyntaxError(uri: string): string | null {
+  // eslint-disable-next-line no-control-regex
+  if (/[\s\u0000-\u001f\u007f]/.test(uri)) return 'URI must not contain spaces or control characters'
+  if (uri.includes('\\')) return 'URI must not contain backslashes'
+  if (/%(?![0-9a-f]{2})/i.test(uri)) return 'URI contains a malformed percent-escape (expected %XX hex)'
+  return null
+}
+
+/**
  * Validate a playlist item `source` (also suitable for `ref`) against DP-1 core.
  *
  * The core schema (`core/v1.1.0/schemas/playlist.json`) types `source` as `format: uri` with no scheme
@@ -605,16 +622,8 @@ export function validateItemSourceURI(uri: string): { valid: boolean; reason?: s
   if (/^javascript:/i.test(uri)) {
     return { valid: false, reason: 'javascript: URIs are not allowed' }
   }
-  // eslint-disable-next-line no-control-regex
-  if (/[\s\u0000-\u001f\u007f]/.test(uri)) {
-    return { valid: false, reason: 'URI must not contain spaces or control characters' }
-  }
-  // RFC 3986 §2.1: '%' must start a two-hex-digit escape. `new URL()` tolerates `%`, `%ZZ`, `%2G`; Go's
-  // url.Parse (behind dp1-go's `format: uri` assertion) rejects them in path/fragment, so the feed would
-  // too. Enforced everywhere (query, opaque `data:`) since RFC 3986 forbids a bare '%' in any component.
-  if (/%(?![0-9a-f]{2})/i.test(uri)) {
-    return { valid: false, reason: 'URI contains a malformed percent-escape (expected %XX hex)' }
-  }
+  const syntaxError = rawUriSyntaxError(uri)
+  if (syntaxError) return { valid: false, reason: syntaxError }
   try {
     new URL(uri)
   } catch {
@@ -627,9 +636,11 @@ export function validateItemSourceURI(uri: string): { valid: boolean; reason?: s
  * Validate a channel/group `playlists[]` entry: a URL the **feed server fetches** at ingest.
  *
  * Mirrors dp1-feed-v2 `internal/fetcher` (`validateFetchURL` + dial guard): http(s) only, a host, no
- * embedded credentials, no private/loopback destinations. `ipfs://` and other schemes are rejected
- * because the feed would reject them at publish time. Production additionally narrows to https:// as
- * publisher policy; dev + `VITE_DEBUG_MODE=true` allows http:// and private hosts for local feeds.
+ * embedded credentials, no private/loopback destinations. Syntax is checked on the raw string (see
+ * `rawUriSyntaxError`) because that string, not the WHATWG-normalized one, is what gets signed.
+ * `ipfs://` and other schemes are rejected because the feed would reject them at publish time.
+ * Production additionally narrows to https:// as publisher policy; dev + `VITE_DEBUG_MODE=true` allows
+ * http:// and private hosts for local feeds.
  */
 export function validatePlaylistURI(uri: string): { valid: boolean; reason?: string } {
   let url: URL
@@ -638,20 +649,32 @@ export function validatePlaylistURI(uri: string): { valid: boolean; reason?: str
   } catch {
     return { valid: false, reason: 'Invalid URI format' }
   }
-  if (url.username || url.password) {
+
+  const debug = isDebugMode()
+  const schemeOk = url.protocol === 'https:' || (debug && url.protocol === 'http:')
+  if (!schemeOk) {
+    return {
+      valid: false,
+      reason: debug
+        ? 'Only http:// and https:// URIs are allowed (debug mode)'
+        : 'Only https:// URIs are allowed',
+    }
+  }
+  // Authority form on the raw string: WHATWG normalizes `https:/p.json` to `https://p.json/`, but the
+  // signed string has no authority to Go, and the feed fetcher refuses a URL with no host.
+  if (!/^https?:\/\/[^/?#]/i.test(uri)) {
+    return { valid: false, reason: 'Must be an http(s):// URL with a host' }
+  }
+  const syntaxError = rawUriSyntaxError(uri)
+  if (syntaxError) return { valid: false, reason: syntaxError }
+  // Any '@' in the raw authority is userinfo to Go (even empty: `https://@host`), which the feed fetcher
+  // refuses; WHATWG drops an empty userinfo, so `url.username`/`password` would miss it.
+  const authority = uri.slice(uri.indexOf('//') + 2).split(/[/?#]/, 1)[0]
+  if (authority.includes('@')) {
     return { valid: false, reason: 'URI must not embed credentials' }
   }
-
-  if (isDebugMode()) {
-    if ((url.protocol === 'http:' || url.protocol === 'https:') && url.hostname) {
-      return { valid: true }
-    }
-    return { valid: false, reason: 'Only http:// and https:// URIs are allowed (debug mode)' }
-  }
-
-  if (url.protocol !== 'https:') {
-    return { valid: false, reason: 'Only https:// URIs are allowed' }
-  }
+  // Dev + VITE_DEBUG_MODE: local feeds on private/loopback hosts are the point of the escape hatch.
+  if (debug) return { valid: true }
 
   // Block localhost by name
   let hostname = url.hostname.toLowerCase()

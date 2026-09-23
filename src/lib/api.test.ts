@@ -35,10 +35,32 @@ describe('validatePlaylistURI', () => {
       expect(result.reason).toContain('https://')
     })
 
-    it('blocks embedded credentials', () => {
-      const result = validatePlaylistURI('https://user:pass@example.com/playlist.json')
+    // WHATWG repairs these, but the raw (signed) string fails Go url.Parse / the feed fetcher.
+    it.each([
+      'https:/playlist.json',
+      'https:example.com/playlist.json',
+      'https:\\\\example.com/playlist.json',
+      'https://example.com/%',
+      'https://example.com/%ZZ',
+      'https://example.com/a b.json',
+      'https://example.com/a\tb.json',
+    ])('blocks raw-syntax problem %j that new URL() would normalize', (uri) => {
+      expect(validatePlaylistURI(uri).valid).toBe(false)
+    })
+
+    // WHATWG drops an empty userinfo, but Go still sees User != nil and the feed fetcher refuses it.
+    it.each([
+      'https://user:pass@example.com/playlist.json',
+      'https://@example.com/playlist.json',
+      'https://:@example.com/playlist.json',
+    ])('blocks embedded credentials in %s', (uri) => {
+      const result = validatePlaylistURI(uri)
       expect(result.valid).toBe(false)
       expect(result.reason).toContain('credentials')
+    })
+
+    it('allows @ outside the authority', () => {
+      expect(validatePlaylistURI('https://example.com/p/@curator.json').valid).toBe(true)
     })
 
     it('blocks http:// in production', () => {
@@ -359,6 +381,13 @@ describe('validatePlaylistURI', () => {
 
       const result = validatePlaylistURI('ipfs://QmExample123')
       expect(result.valid).toBe(false)
+    })
+
+    it('still requires authority form in debug mode', () => {
+      ;(import.meta.env as { DEV: boolean }).DEV = true
+      ;(import.meta.env as { VITE_DEBUG_MODE?: string }).VITE_DEBUG_MODE = 'true'
+
+      expect(validatePlaylistURI('http:/localhost:3000/playlist.json').valid).toBe(false)
     })
 
     it('does not allow http:// when DEV is false', () => {

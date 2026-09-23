@@ -143,6 +143,8 @@ function channelFromJsonImport(raw: Channel, fallbackId: string): Channel {
     ...rest,
     id: rest.id || fallbackId,
     created,
+    // parseChannelJson validates trimmed entries; sign the same trimmed values.
+    playlists: rest.playlists.map((u) => (typeof u === 'string' ? u.trim() : u)),
   };
 }
 

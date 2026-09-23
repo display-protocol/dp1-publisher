@@ -443,6 +443,19 @@ describe('validateItemSourceURI', () => {
     }
   )
 
+  it.each(['https://example.com/%', 'https://example.com/%ZZ', 'https://example.com/a%2G', 'ipfs://Qm%4'])(
+    'rejects malformed percent-escape in %s',
+    (uri) => {
+      const result = validateItemSourceURI(uri)
+      expect(result.valid).toBe(false)
+      expect(result.reason).toContain('percent-escape')
+    }
+  )
+
+  it('allows well-formed percent-escapes', () => {
+    expect(validateItemSourceURI('https://example.com/a%20b%2Fc%e2%9c%93.html').valid).toBe(true)
+  })
+
   it.each(['javascript:alert(1)', 'JavaScript:alert(1)'])('rejects %s (publisher policy)', (uri) => {
     const result = validateItemSourceURI(uri)
     expect(result.valid).toBe(false)

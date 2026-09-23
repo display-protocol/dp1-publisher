@@ -590,8 +590,8 @@ const ABSOLUTE_URI_SCHEME = /^[a-z][a-z0-9+.-]*:/i
  * allow-list, and dp1-go asserts that format as "parses and is absolute". Spec §8 names HTTP(S), IPFS,
  * and offline `file://` transports, and provenance examples use Arweave/`eth://`, so any scheme is legal.
  * The feed never fetches `source` — players do — so there is no SSRF surface here and no private-host
- * check. Whitespace/control characters are rejected because RFC 3986 forbids them unencoded and
- * `new URL()` would otherwise silently percent-encode them into a different signed string.
+ * check. Whitespace/control characters and malformed `%` escapes are rejected because RFC 3986 forbids
+ * them and `new URL()` would otherwise accept or silently re-encode them into a different signed string.
  *
  * One deliberate publisher-policy narrowing beyond the spec: `javascript:` is rejected. It is never
  * artwork, and players that load `source` in a webview would execute it in the page's own origin
@@ -608,6 +608,12 @@ export function validateItemSourceURI(uri: string): { valid: boolean; reason?: s
   // eslint-disable-next-line no-control-regex
   if (/[\s\u0000-\u001f\u007f]/.test(uri)) {
     return { valid: false, reason: 'URI must not contain spaces or control characters' }
+  }
+  // RFC 3986 §2.1: '%' must start a two-hex-digit escape. `new URL()` tolerates `%`, `%ZZ`, `%2G`; Go's
+  // url.Parse (behind dp1-go's `format: uri` assertion) rejects them in path/fragment, so the feed would
+  // too. Enforced everywhere (query, opaque `data:`) since RFC 3986 forbids a bare '%' in any component.
+  if (/%(?![0-9a-f]{2})/i.test(uri)) {
+    return { valid: false, reason: 'URI contains a malformed percent-escape (expected %XX hex)' }
   }
   try {
     new URL(uri)

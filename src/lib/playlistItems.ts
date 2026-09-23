@@ -30,15 +30,26 @@ export function isEmptyManualPlaceholder(item: PlaylistItem): boolean {
 }
 
 /**
- * When series (or other substantive items) are present, drop the initial empty
- * manual placeholder so publish/JSON export does not emit a blank leaf alongside
- * real items.
+ * The items that go into the signed/exported playlist: when series (or other
+ * substantive items) are present, drop the initial empty manual placeholder so
+ * publish/JSON export does not emit a blank leaf alongside real items.
+ *
+ * `source` is trimmed here because this is the one path shared by form-tab
+ * validation, the JSON view, and the signed payload. Validating a trimmed value
+ * while signing the raw input would let surrounding whitespace — invalid in a
+ * DP-1 `format: uri` — past `validateItemSourceURI` into the document.
  */
 export function itemsForPlaylistExport(items: PlaylistItem[]): PlaylistItem[] {
   const hasSubstantive = items.some((item) => !isEmptyManualPlaceholder(item))
-  if (!hasSubstantive || items.length === 0) return items
-  if (isEmptyManualPlaceholder(items[0])) return items.slice(1)
-  return items
+  const kept =
+    hasSubstantive && items.length > 0 && isEmptyManualPlaceholder(items[0])
+      ? items.slice(1)
+      : items
+  return kept.map((item) =>
+    typeof item.source === 'string' && item.source !== item.source.trim()
+      ? { ...item, source: item.source.trim() }
+      : item
+  )
 }
 
 /** Count items that would be included in the signed playlist. */

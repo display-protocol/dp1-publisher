@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { FeedAPIError, friendlyPublishError, validatePlaylistURI } from './api'
+import {
+  FeedAPIError,
+  friendlyPublishError,
+  validateItemSourceURI,
+  validatePlaylistURI,
+} from './api'
 
 describe('validatePlaylistURI', () => {
   const originalEnv = { ...import.meta.env }
@@ -23,9 +28,39 @@ describe('validatePlaylistURI', () => {
       expect(result.valid).toBe(true)
     })
 
-    it('allows ipfs://', () => {
+    // The feed fetches playlists[] over http(s) only (dp1-feed-v2 fetcher); ipfs:// would fail at publish.
+    it('blocks ipfs://', () => {
       const result = validatePlaylistURI('ipfs://QmExample123')
-      expect(result.valid).toBe(true)
+      expect(result.valid).toBe(false)
+      expect(result.reason).toContain('https://')
+    })
+
+    // WHATWG repairs these, but the raw (signed) string fails Go url.Parse / the feed fetcher.
+    it.each([
+      'https:/playlist.json',
+      'https:example.com/playlist.json',
+      'https:\\\\example.com/playlist.json',
+      'https://example.com/%',
+      'https://example.com/%ZZ',
+      'https://example.com/a b.json',
+      'https://example.com/a\tb.json',
+    ])('blocks raw-syntax problem %j that new URL() would normalize', (uri) => {
+      expect(validatePlaylistURI(uri).valid).toBe(false)
+    })
+
+    // WHATWG drops an empty userinfo, but Go still sees User != nil and the feed fetcher refuses it.
+    it.each([
+      'https://user:pass@example.com/playlist.json',
+      'https://@example.com/playlist.json',
+      'https://:@example.com/playlist.json',
+    ])('blocks embedded credentials in %s', (uri) => {
+      const result = validatePlaylistURI(uri)
+      expect(result.valid).toBe(false)
+      expect(result.reason).toContain('credentials')
+    })
+
+    it('allows @ outside the authority', () => {
+      expect(validatePlaylistURI('https://example.com/p/@curator.json').valid).toBe(true)
     })
 
     it('blocks http:// in production', () => {
@@ -340,6 +375,21 @@ describe('validatePlaylistURI', () => {
       expect(result.valid).toBe(true)
     })
 
+    it('still blocks ipfs:// in debug mode', () => {
+      ;(import.meta.env as { DEV: boolean }).DEV = true
+      ;(import.meta.env as { VITE_DEBUG_MODE?: string }).VITE_DEBUG_MODE = 'true'
+
+      const result = validatePlaylistURI('ipfs://QmExample123')
+      expect(result.valid).toBe(false)
+    })
+
+    it('still requires authority form in debug mode', () => {
+      ;(import.meta.env as { DEV: boolean }).DEV = true
+      ;(import.meta.env as { VITE_DEBUG_MODE?: string }).VITE_DEBUG_MODE = 'true'
+
+      expect(validatePlaylistURI('http:/localhost:3000/playlist.json').valid).toBe(false)
+    })
+
     it('does not allow http:// when DEV is false', () => {
       ;(import.meta.env as { DEV: boolean }).DEV = false
       ;(import.meta.env as { VITE_DEBUG_MODE?: string }).VITE_DEBUG_MODE = 'true'
@@ -382,6 +432,63 @@ describe('validatePlaylistURI', () => {
       const result = validatePlaylistURI('https://EXAMPLE.COM/playlist.json')
       expect(result.valid).toBe(true)
     })
+  })
+})
+
+// DP-1 core types items[].source as `format: uri` — any absolute URI, no scheme allow-list.
+describe('validateItemSourceURI', () => {
+  it.each([
+    'https://cdn.example.com/art/index.html',
+    'http://example.com/art.html',
+    'ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/index.html',
+    'ar://bNbA3TEQVL60xlgCcqdz4ZPHFZ711cZ3hmkpGttDt_U',
+    'file:///media/usb/art/index.html',
+    'data:text/html;base64,PGgxPmhpPC9oMT4=',
+    'eth://0xabc/1',
+    'https://localhost:8080/art.html',
+    'https://192.168.1.10/art.html',
+  ])('allows %s', (uri) => {
+    expect(validateItemSourceURI(uri)).toEqual({ valid: true })
+  })
+
+  it('is not affected by production-only playlist policy', () => {
+    ;(import.meta.env as { DEV: boolean }).DEV = false
+    expect(validateItemSourceURI('ipfs://QmExample123').valid).toBe(true)
+  })
+
+  it.each(['not-a-uri', '', '//example.com/a.html', '/relative/path.html', '1ab://x'])(
+    'rejects relative or scheme-less %j',
+    (uri) => {
+      const result = validateItemSourceURI(uri)
+      expect(result.valid).toBe(false)
+      expect(result.reason).toMatch(/absolute URI/)
+    }
+  )
+
+  it.each(['https://example.com/a b.html', 'https://example.com/a\tb', 'ipfs://Qm\nx'])(
+    'rejects whitespace/control characters in %j',
+    (uri) => {
+      expect(validateItemSourceURI(uri).valid).toBe(false)
+    }
+  )
+
+  it.each(['https://example.com/%', 'https://example.com/%ZZ', 'https://example.com/a%2G', 'ipfs://Qm%4'])(
+    'rejects malformed percent-escape in %s',
+    (uri) => {
+      const result = validateItemSourceURI(uri)
+      expect(result.valid).toBe(false)
+      expect(result.reason).toContain('percent-escape')
+    }
+  )
+
+  it('allows well-formed percent-escapes', () => {
+    expect(validateItemSourceURI('https://example.com/a%20b%2Fc%e2%9c%93.html').valid).toBe(true)
+  })
+
+  it.each(['javascript:alert(1)', 'JavaScript:alert(1)'])('rejects %s (publisher policy)', (uri) => {
+    const result = validateItemSourceURI(uri)
+    expect(result.valid).toBe(false)
+    expect(result.reason).toContain('javascript:')
   })
 })
 

@@ -72,7 +72,7 @@ export default function PlaylistItemForm({
               id={`source-${index}`}
               value={item.source}
               onChange={(e) => onUpdate({ ...item, source: e.target.value })}
-              placeholder="https://… or ipfs://…"
+              placeholder="https://…, ipfs://…, ar://…"
             />
           </div>
 

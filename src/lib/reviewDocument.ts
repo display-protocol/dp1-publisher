@@ -16,7 +16,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid'
-import { validatePlaylistURI } from '@/lib/api'
+import { validateItemSourceURI, validatePlaylistURI } from '@/lib/api'
 import type { Channel, Entity, Playlist, PlaylistItem } from '@/types/dp1'
 
 export type ReviewedDp1Document =
@@ -107,7 +107,7 @@ function validatePlaylistShape(
           ? (it as PlaylistItem).source.trim()
           : ''
       if (!src) return `items[${i}].source is required.`
-      const validation = validatePlaylistURI(src)
+      const validation = validateItemSourceURI(src)
       if (!validation.valid) return `items[${i}].source: ${validation.reason || 'Invalid URI'}`
     }
   }
@@ -233,7 +233,11 @@ function uniqueHosts(uris: string[]): string[] {
   for (const u of uris) {
     try {
       const parsed = new URL(u)
-      hosts.add(parsed.protocol === 'ipfs:' ? 'ipfs://' : parsed.host)
+      // Item sources may use any scheme (DP-1 core); only http(s) hosts are meaningful locations.
+      // Other schemes (ipfs, ar, file, data, …) are summarized by scheme alone.
+      const isWeb = parsed.protocol === 'http:' || parsed.protocol === 'https:'
+      const hierarchical = u.toLowerCase().startsWith(`${parsed.protocol}//`)
+      hosts.add(isWeb ? parsed.host : hierarchical ? `${parsed.protocol}//` : parsed.protocol)
     } catch {
       // Unparseable URIs already failed validation upstream; skip defensively.
     }

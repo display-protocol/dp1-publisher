@@ -88,6 +88,12 @@ describe('isEmptyManualPlaceholder', () => {
 })
 
 describe('itemsForPlaylistExport', () => {
+  // The signed payload must carry the same source the form validated (trimmed).
+  it('trims item sources so the signed value matches the validated one', () => {
+    const padded = { source: '  https://example.com/art.html\n' } as PlaylistItem
+    expect(itemsForPlaylistExport([padded])[0].source).toBe('https://example.com/art.html')
+  })
+
   it('keeps a lone empty placeholder when nothing else was added', () => {
     expect(itemsForPlaylistExport([emptyPlaceholder])).toEqual([emptyPlaceholder])
   })

@@ -219,6 +219,40 @@ describe('ChannelForm — publish flow', () => {
     expect(body.playlists).not.toContain(placeholder)
   })
 
+  // parseChannelJson validates trimmed entries, so the signed body must carry the trimmed values too.
+  it('JSON-tab publish signs trimmed playlist URIs', async () => {
+    const url = 'https://feed.example/api/v1/playlists/a'
+    mockedApi.getChannel.mockRejectedValue(
+      new apiModule.FeedAPIError('not found', 404),
+    )
+    mockedApi.publishChannel.mockImplementation(async (c) => ({
+      ...(c as Record<string, unknown>),
+      slug: 'published-slug',
+    }))
+
+    render(<ChannelForm />)
+    const jsonTextarea = await switchToJsonTabAndGetTextarea()
+    fireEvent.change(jsonTextarea, {
+      target: {
+        value: JSON.stringify({
+          dpVersion: '1.1.0',
+          id: 'padded-id',
+          title: 'Padded channel',
+          version: '1.0.0',
+          playlists: [`  ${url}\n`],
+          publisher: { name: 'Bob', key: TEST_WALLET_DID },
+        }),
+      },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Sign & publish/i }))
+    await waitFor(() => {
+      expect(mockedApi.publishChannel).toHaveBeenCalledTimes(1)
+    })
+    const body = mockedApi.publishChannel.mock.calls[0][0] as { playlists: string[] }
+    expect(body.playlists).toEqual([url])
+  })
+
   it('JSON-import "Use in a channel" does NOT smuggle the prefill into a multi-playlist template', async () => {
     const prefill = 'https://feed.example/api/v1/playlists/prefill'
     const a = 'https://feed.example/api/v1/playlists/A'

@@ -102,6 +102,24 @@ describe('parseReviewDocument — validation', () => {
     expect(r).toHaveProperty('error')
   })
 
+  it('accepts any absolute item source URI the DP-1 schema accepts', () => {
+    const doc = parseOk(
+      JSON.stringify({
+        ...minimalPlaylist,
+        items: [{ source: 'ar://bNbA3TEQVL60xlgCcqdz4ZPHFZ711cZ3hmkpGttDt_U' }],
+      })
+    )
+    expect(doc.kind).toBe('playlist')
+  })
+
+  it('rejects channel playlist URIs the feed cannot fetch', () => {
+    const r = parseReviewDocument(
+      JSON.stringify({ ...minimalChannel, playlists: ['ipfs://QmExample123'] }),
+      EXT
+    )
+    expect((r as { error: string }).error).toMatch(/playlists\[0\]/)
+  })
+
   it('rejects channels when extensions are off', () => {
     const r = parseReviewDocument(JSON.stringify(minimalChannel), NO_EXT)
     expect((r as { error: string }).error).toMatch(/extensions are off/)
@@ -230,6 +248,22 @@ describe('describeReviewDocument', () => {
     const doc = parseOk(JSON.stringify(minimalPlaylist))
     const summary = describeReviewDocument(doc)
     expect(summary.facts.join(' ')).toMatch(/example\.com/)
+  })
+
+  it('summarizes non-web item sources by scheme', () => {
+    const doc = parseOk(
+      JSON.stringify({
+        ...minimalPlaylist,
+        items: [
+          { source: 'ar://bNbA3TEQVL60xlgCcqdz4ZPHFZ711cZ3hmkpGttDt_U' },
+          { source: 'data:text/html;base64,PGgxPmhpPC9oMT4=' },
+        ],
+      })
+    )
+    const facts = describeReviewDocument(doc).facts.join(' ')
+    expect(facts).toContain('ar://')
+    expect(facts).toContain('data:')
+    expect(facts).not.toContain('bNbA3TEQ')
   })
 })
 

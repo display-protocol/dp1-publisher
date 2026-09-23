@@ -21,7 +21,7 @@ Authoritative HTTP contract lives in **[dp1-feed-v2](https://github.com/display-
 - **Playlist groups (“exhibitions”)**: Compose and publish grouped playlists
 - **Channels**: Visible when deployment reports `extensionsEnabled` (or forced via env)
 - **Replace updates**: Publish view lists prior work per wallet; edits refetch authoritative documents via GET before merge/sign
-- **URI checks**: Playlist item URIs validated for HTTPS/IPFS reachability UX (optional dev overrides)
+- **URI checks**: Item sources accept any absolute URI (DP-1 core); channel playlist URIs are checked against what the feed can fetch (optional dev overrides)
 - **DP-1 signing**: Strip signatures → JCS (RFC 8785) → SHA-256 over canonical bytes + `\n` → EIP-191 personal sign (`did:pkh` identifiers)
 
 ## Tech stack
@@ -116,8 +116,8 @@ Full HTTP contract: **[dp1-feed-v2](https://github.com/display-protocol/dp1-feed
 
 ## Security
 
-- **Production** playlist-item URIs: **https:** and **ipfs:** only; private/local blocked in UI validation (`src/lib/api.ts`).
-- **`VITE_DEBUG_MODE=true`** (Vite dev only) additionally allows `http:` for experimentation.
+- **Playlist item sources**: any absolute URI, per the DP-1 core schema (`format: uri`); only `javascript:` is refused (`src/lib/api.ts`).
+- **Channel playlist URIs** (fetched by the feed): **https:** only in production, no credentials, private/local hosts blocked; **`VITE_DEBUG_MODE=true`** (Vite dev only) additionally allows `http:` and private hosts for local feeds.
 - **No API keys** in the SPA path—wallet signatures only.
 
 ## License

@@ -47,7 +47,7 @@ import {
   getPlaylist,
   replacePlaylist,
   publishPlaylist,
-  validatePlaylistURI,
+  validateItemSourceURI,
 } from '@/lib/api';
 import { FeedUrlToastDescription } from '@/components/FeedUrlToastDescription';
 import {
@@ -119,8 +119,7 @@ function parsePlaylistJson(
       if (!src) {
         return { error: `items[${i}].source is required.` };
       }
-      // Validate URI format and security
-      const validation = validatePlaylistURI(src);
+      const validation = validateItemSourceURI(src);
       if (!validation.valid) {
         return {
           error: `items[${i}].source: ${validation.reason || 'Invalid URI'}`,
@@ -796,13 +795,13 @@ export default function PlaylistForm({
         ? 'At least one item with source URI is required, or enable Dynamic Query'
         : 'At least one item with source URI is required';
     }
-    // Validate every source URI through the same policy applied to JSON-tab imports.
-    // This catches disallowed schemes and private/local hosts regardless of whether
-    // items were entered manually or expanded from an indexer series.
+    // Validate every source URI through the same policy applied to JSON-tab imports
+    // (DP-1 core: any absolute URI), whether items were entered manually or expanded
+    // from an indexer series.
     for (let i = 0; i < exportItems.length; i++) {
       const src = exportItems[i].source?.trim();
       if (!src) continue;
-      const validation = validatePlaylistURI(src);
+      const validation = validateItemSourceURI(src);
       if (!validation.valid) {
         return `Item ${i + 1} source: ${validation.reason || 'Invalid URI'}`;
       }

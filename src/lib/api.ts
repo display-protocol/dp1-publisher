@@ -580,77 +580,108 @@ function isPrivateOrLoopbackIPv6(hostname: string): boolean {
   return false
 }
 
+/** RFC 3986 §3.1 scheme followed by ':' — what makes a URI absolute. */
+const ABSOLUTE_URI_SCHEME = /^[a-z][a-z0-9+.-]*:/i
+
 /**
- * Validate playlist URI format and security.
- * Blocks http:// (prod only), localhost, loopback, and RFC1918 private IPs (IPv4 + common IPv6 patterns).
+ * Validate a playlist item `source` (also suitable for `ref`) against DP-1 core.
+ *
+ * The core schema (`core/v1.1.0/schemas/playlist.json`) types `source` as `format: uri` with no scheme
+ * allow-list, and dp1-go asserts that format as "parses and is absolute". Spec §8 names HTTP(S), IPFS,
+ * and offline `file://` transports, and provenance examples use Arweave/`eth://`, so any scheme is legal.
+ * The feed never fetches `source` — players do — so there is no SSRF surface here and no private-host
+ * check. Whitespace/control characters are rejected because RFC 3986 forbids them unencoded and
+ * `new URL()` would otherwise silently percent-encode them into a different signed string.
+ *
+ * One deliberate publisher-policy narrowing beyond the spec: `javascript:` is rejected. It is never
+ * artwork, and players that load `source` in a webview would execute it in the page's own origin
+ * (unlike `data:`/`https:` HTML, which runs as a document of its own). Keep any further scheme bans
+ * equally justified — the spec's position is "any absolute URI".
  */
-export function validatePlaylistURI(uri: string): { valid: boolean; reason?: string } {
-  if (isDebugMode()) {
-    try {
-      const url = new URL(uri)
-      if (url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'ipfs:') {
-        return { valid: true }
-      }
-      return {
-        valid: false,
-        reason: 'Only http://, https://, and ipfs:// URIs are allowed (debug mode)',
-      }
-    } catch {
-      return { valid: false, reason: 'Invalid URI format' }
-    }
+export function validateItemSourceURI(uri: string): { valid: boolean; reason?: string } {
+  if (!ABSOLUTE_URI_SCHEME.test(uri)) {
+    return { valid: false, reason: 'Must be an absolute URI with a scheme (e.g. https://, ipfs://, ar://)' }
   }
-
+  if (/^javascript:/i.test(uri)) {
+    return { valid: false, reason: 'javascript: URIs are not allowed' }
+  }
+  // eslint-disable-next-line no-control-regex
+  if (/[\s\u0000-\u001f\u007f]/.test(uri)) {
+    return { valid: false, reason: 'URI must not contain spaces or control characters' }
+  }
   try {
-    const url = new URL(uri)
-
-    // Only allow https:// and ipfs://
-    if (url.protocol !== 'https:' && url.protocol !== 'ipfs:') {
-      return { valid: false, reason: 'Only https:// and ipfs:// URIs are allowed' }
-    }
-
-    // For ipfs://, no hostname to check
-    if (url.protocol === 'ipfs:') {
-      return { valid: true }
-    }
-
-    // Block localhost by name
-    let hostname = url.hostname.toLowerCase()
-    if (hostname === 'localhost') {
-      return { valid: false, reason: 'Private/local URIs are not allowed' }
-    }
-
-    // IPv6 literals may have brackets in some environments; strip them
-    if (hostname.startsWith('[') && hostname.endsWith(']')) {
-      hostname = hostname.slice(1, -1)
-    }
-
-    // Check if hostname is an IPv6 literal (contains colons)
-    if (hostname.includes(':')) {
-      if (isPrivateOrLoopbackIPv6(hostname)) {
-        return { valid: false, reason: 'Private/local URIs are not allowed' }
-      }
-      return { valid: true }
-    }
-
-    // Check if hostname is an IPv4 address
-    const ipv4Bytes = parseIPv4(hostname)
-    if (ipv4Bytes) {
-      if (isPrivateOrLoopbackIPv4(ipv4Bytes)) {
-        return { valid: false, reason: 'Private/local URIs are not allowed' }
-      }
-      return { valid: true }
-    }
-
-    // If it looks like an IPv4 address (4 dot-separated parts) but failed to parse,
-    // reject it as potentially malformed or obfuscated
-    const parts = hostname.split('.')
-    if (parts.length === 4 && parts.every(p => /^\d+$/.test(p))) {
-      return { valid: false, reason: 'Malformed or obfuscated IP address' }
-    }
-
-    // Hostname is a domain name; allow it (browser DNS will resolve, but we can't block all possible resolutions here)
-    return { valid: true }
+    new URL(uri)
   } catch {
     return { valid: false, reason: 'Invalid URI format' }
   }
+  return { valid: true }
+}
+
+/**
+ * Validate a channel/group `playlists[]` entry: a URL the **feed server fetches** at ingest.
+ *
+ * Mirrors dp1-feed-v2 `internal/fetcher` (`validateFetchURL` + dial guard): http(s) only, a host, no
+ * embedded credentials, no private/loopback destinations. `ipfs://` and other schemes are rejected
+ * because the feed would reject them at publish time. Production additionally narrows to https:// as
+ * publisher policy; dev + `VITE_DEBUG_MODE=true` allows http:// and private hosts for local feeds.
+ */
+export function validatePlaylistURI(uri: string): { valid: boolean; reason?: string } {
+  let url: URL
+  try {
+    url = new URL(uri)
+  } catch {
+    return { valid: false, reason: 'Invalid URI format' }
+  }
+  if (url.username || url.password) {
+    return { valid: false, reason: 'URI must not embed credentials' }
+  }
+
+  if (isDebugMode()) {
+    if ((url.protocol === 'http:' || url.protocol === 'https:') && url.hostname) {
+      return { valid: true }
+    }
+    return { valid: false, reason: 'Only http:// and https:// URIs are allowed (debug mode)' }
+  }
+
+  if (url.protocol !== 'https:') {
+    return { valid: false, reason: 'Only https:// URIs are allowed' }
+  }
+
+  // Block localhost by name
+  let hostname = url.hostname.toLowerCase()
+  if (hostname === 'localhost') {
+    return { valid: false, reason: 'Private/local URIs are not allowed' }
+  }
+
+  // IPv6 literals may have brackets in some environments; strip them
+  if (hostname.startsWith('[') && hostname.endsWith(']')) {
+    hostname = hostname.slice(1, -1)
+  }
+
+  // Check if hostname is an IPv6 literal (contains colons)
+  if (hostname.includes(':')) {
+    if (isPrivateOrLoopbackIPv6(hostname)) {
+      return { valid: false, reason: 'Private/local URIs are not allowed' }
+    }
+    return { valid: true }
+  }
+
+  // Check if hostname is an IPv4 address
+  const ipv4Bytes = parseIPv4(hostname)
+  if (ipv4Bytes) {
+    if (isPrivateOrLoopbackIPv4(ipv4Bytes)) {
+      return { valid: false, reason: 'Private/local URIs are not allowed' }
+    }
+    return { valid: true }
+  }
+
+  // If it looks like an IPv4 address (4 dot-separated parts) but failed to parse,
+  // reject it as potentially malformed or obfuscated
+  const parts = hostname.split('.')
+  if (parts.length === 4 && parts.every(p => /^\d+$/.test(p))) {
+    return { valid: false, reason: 'Malformed or obfuscated IP address' }
+  }
+
+  // Hostname is a domain name; allow it (browser DNS will resolve, but we can't block all possible resolutions here)
+  return { valid: true }
 }

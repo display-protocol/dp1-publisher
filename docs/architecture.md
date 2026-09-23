@@ -85,7 +85,8 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 
 ## Security posture (browser)
 
-- **Playlist URIs** in channel flows: validated in-browser (`validatePlaylistURI`); production allows **https://** and **ipfs://** only and blocks obvious private/local hosts unless **dev** + `VITE_DEBUG_MODE=true`. Form-tab publish requires an explicit **Check URLs** pass; the publish pipeline re-validates before signing.
+- **Playlist item `source`**: validated in-browser (`validateItemSourceURI`) to the DP-1 core rule — `format: uri`, i.e. any **absolute URI** (https, http, ipfs, ar, file, data, …; spec §8 lists HTTP(S), IPFS and offline `file://`). The feed never fetches `source` (players do), so there is no scheme allow-list or private-host check. Only publisher-policy narrowing: `javascript:` is rejected, and unencoded whitespace/control characters are refused rather than silently re-encoded.
+- **Playlist URIs** in channel flows (`playlists[]`): the feed **fetches** these at ingest, so `validatePlaylistURI` mirrors the dp1-feed-v2 fetcher — http(s) only (no `ipfs://`), a host, no embedded credentials, obvious private/local hosts blocked. Production narrows further to **https://**; **dev** + `VITE_DEBUG_MODE=true` allows `http://` and private hosts. Form-tab publish requires an explicit **Check URLs** pass; the publish pipeline re-validates before signing.
 - **No API keys** in the dashboard path: the feed removed API-key auth, so authenticated writes rely solely on the cryptographic signatures in the request body.
 - **Secrets:** never commit `.env`; WalletConnect project id is optional public config embedded at build time.
 

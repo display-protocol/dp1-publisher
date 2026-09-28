@@ -30,6 +30,7 @@ import {
 } from '@/lib/dp1WalletSigner'
 import { validateChannelFields } from '@/lib/channelValidation'
 import { validateItemInlineManifest } from '@/lib/inlineManifestValidation'
+import { validateItemContentRating } from '@/lib/contentRatingValidation'
 import { playlistUnsignedPayloadForSigning } from '@/lib/playlistSignPayload'
 import { channelUnsignedPayloadForSigning } from '@/lib/channelSignPayload'
 
@@ -180,9 +181,16 @@ export function preparePlaylistForPublish(
     // Running after the extension strip above is what gates this correctly:
     // with extensions off the field is already gone, and rejecting a document
     // over bytes we just discarded would be noise.
+    //
+    // Content-rating fields (dp1 extensions/content-rating) are the other item
+    // fields the form never builds. They are not stripped in either mode —
+    // they belong to a separate extension the feed does not yet validate —
+    // so the shape check runs in both modes on exactly the bytes we sign.
     for (let i = 0; i < canonical.items.length; i++) {
       const manifestError = validateItemInlineManifest(canonical.items[i], i)
       if (manifestError) validationErrors.push(manifestError)
+      const ratingError = validateItemContentRating(canonical.items[i], i)
+      if (ratingError) validationErrors.push(ratingError)
     }
   }
   if (validationErrors.length) return { validationErrors }

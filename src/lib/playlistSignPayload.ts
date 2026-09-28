@@ -1,14 +1,21 @@
 /**
  * Build the JSON object the feed hashes for playlist (curator) signatures.
- * Aligns with https://github.com/display-protocol/dp1-feed-v2 `buildPlaylistDocument` + `json.Marshal(playlist.Playlist)`:
+ *
+ * The feed (https://github.com/display-protocol/dp1-feed-v2) verifies over the
+ * bytes it is sent and stores the document without content changes, so the
+ * shape produced here is what gets published, not a prediction of a server
+ * re-marshal. The rules below therefore describe the wire contract we choose
+ * to emit, mirroring dp1-go's `omitempty` conventions so a document round-trips
+ * through typed tooling unchanged:
  * - identity.Entity: omit empty `url` ([entityWire])
- * - `summary` / `coverImage`: omit when empty (struct tags `omitempty`)
- * - `curators`: omit when length 0 (server only sets `p.Curators` when `len(req.Curators) > 0`)
- * - **only typed fields are emitted, recursively**: unknown keys at any level —
+ * - `summary` / `coverImage`: omit when empty
+ * - `curators`: omit when length 0
+ * - **only listed fields are emitted, recursively**: unknown keys at any level —
  *   top-level, inside items, inside item.display, inside defaults,
- *   inside dynamicQuery, etc. — are dropped before hashing. The feed's
- *   typed Go struct silently drops them during `json.Marshal`, so we must
- *   match that shape pre-hash or the signature won't verify.
+ *   inside dynamicQuery, etc. — are dropped before hashing. That whitelist is
+ *   also the only place a legitimate field can go missing: a spec field absent
+ *   from the list is signed away silently (see `displayAt`, `inlineManifest`,
+ *   `contentRating` below, each once lost this way).
  */
 
 import { entityWire } from '@/lib/dp1EntityWire'
@@ -72,6 +79,15 @@ const PLAYLIST_ITEM_FIELDS: readonly string[] = [
   // the manifest would remove bytes the feed keeps and break verification —
   // the exact inverse of the omitempty stripping the other blocks need.
   'inlineManifest',
+  // Content Rating Extension v0.1.0 (dp1 extensions/content-rating): a signed,
+  // per-item audience label. `contentRating` is an open string vocabulary
+  // (`general` | `mature` defined; unknown values read as unrated by
+  // consumers) and `contentReasons` is free text in the curator's words. Both
+  // pass through verbatim: the feed stores what it is sent, and the FF1 hides
+  // an item only when this label says `mature`, so dropping it here silently
+  // un-labels a work the curator meant to hide (dp1-publisher#25).
+  'contentRating',
+  'contentReasons',
 ]
 
 const PLAYLIST_DEFAULTS_FIELDS: readonly string[] = ['display', 'license', 'duration']

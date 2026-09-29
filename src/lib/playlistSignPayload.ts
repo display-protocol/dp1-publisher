@@ -1,14 +1,25 @@
 /**
  * Build the JSON object the feed hashes for playlist (curator) signatures.
- * Aligns with https://github.com/display-protocol/dp1-feed-v2 `buildPlaylistDocument` + `json.Marshal(playlist.Playlist)`:
+ *
+ * The feed (https://github.com/display-protocol/dp1-feed-v2) verifies over the
+ * bytes it is sent and stores the document without content changes, so the
+ * shape produced here is what gets published, not a prediction of a server
+ * re-marshal. The rules below therefore describe the wire contract we choose
+ * to emit, mirroring dp1-go's `omitempty` conventions so a document round-trips
+ * through typed tooling unchanged:
  * - identity.Entity: omit empty `url` ([entityWire])
- * - `summary` / `coverImage`: omit when empty (struct tags `omitempty`)
- * - `curators`: omit when length 0 (server only sets `p.Curators` when `len(req.Curators) > 0`)
- * - **only typed fields are emitted, recursively**: unknown keys at any level —
+ * - `summary` / `coverImage`: omit when empty
+ * - `curators`: omit when length 0
+ * - **only listed fields are emitted, recursively**: unknown keys at any level —
  *   top-level, inside items, inside item.display, inside defaults,
- *   inside dynamicQuery, etc. — are dropped before hashing. The feed's
- *   typed Go struct silently drops them during `json.Marshal`, so we must
- *   match that shape pre-hash or the signature won't verify.
+ *   inside dynamicQuery, etc. — are dropped before hashing. The feed decodes a
+ *   submission strictly against its request models (dp1-go's document
+ *   structs): a member they do not declare is a 400 naming the field, never a
+ *   silent drop. So the list must stay inside what the feed's dp1-go knows, or
+ *   a paste with a stray key fails the publish; and it is also the only place
+ *   a legitimate field can go missing: a spec field absent from the list is
+ *   signed away silently (see `displayAt`, `inlineManifest`, `contentRating`
+ *   below, each once lost this way).
  */
 
 import { entityWire } from '@/lib/dp1EntityWire'
@@ -67,11 +78,23 @@ const PLAYLIST_ITEM_FIELDS: readonly string[] = [
   // playlists-extension §3.6 (dp1-go v0.6.0 PlaylistItem.InlineManifest,
   // `json.RawMessage json:"inlineManifest,omitempty"`). An open shape like
   // `override`: listed here so the whole value is copied verbatim, and
-  // deliberately given no nested `*_FIELDS` list. The feed carries these bytes
-  // through as raw JSON rather than a typed struct, so filtering keys inside
-  // the manifest would remove bytes the feed keeps and break verification —
-  // the exact inverse of the omitempty stripping the other blocks need.
+  // deliberately given no nested `*_FIELDS` list. dp1-go carries these bytes
+  // as raw JSON rather than a typed struct, so a key inside the manifest is
+  // never "unknown" to the feed and filtering here would only lose manifest
+  // data — the exact inverse of the omitempty stripping the other blocks need.
   'inlineManifest',
+  // Content Rating Extension v0.1.0 (dp1 extensions/content-rating): a signed,
+  // per-item audience label. `contentRating` is an open string vocabulary
+  // (`general` | `mature` defined; unknown values read as unrated by
+  // consumers) and `contentReasons` is free text in the curator's words. Both
+  // pass through verbatim: the feed stores what it is sent, and the FF1 hides
+  // an item only when this label says `mature`, so dropping it here silently
+  // un-labels a work the curator meant to hide (dp1-publisher#25). The feed
+  // declares both members from dp1-go v0.6.2 on; against an older feed the
+  // item is refused with a 400 naming the field, which is the failure we
+  // want — loud, at publish time — rather than a hidden work shown.
+  'contentRating',
+  'contentReasons',
 ]
 
 const PLAYLIST_DEFAULTS_FIELDS: readonly string[] = ['display', 'license', 'duration']
@@ -143,15 +166,15 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 
 /**
  * Mirror Go `json:",omitempty"` on value-typed struct fields: json.Marshal
- * drops "", false, and empty slices. The feed rebuilds the document from its
- * typed structs before verifying signatures, so a zero value we keep in the
- * hashed bytes would be absent from the feed's re-marshal — a guaranteed
- * signature-verification failure, not just drift.
+ * drops "", false, and empty slices. The feed verifies and stores the bytes we
+ * send, so a zero value kept here would publish fine — it would just publish a
+ * shape dp1-go's own marshal never produces, so Go tooling could not
+ * reproduce the signed bytes from the decoded document. Emit what Go would.
  *
  * Only safe on structs whose fields are ALL value-typed omitempty in dp1-go
  * (MousePrefs, FrameHash, ProvenanceDep). Pointer-typed fields (e.g.
- * DisplayPrefs.Autoplay `*bool`) survive marshal as explicit false and must
- * NOT go through this.
+ * DisplayPrefs.Autoplay `*bool`) marshal as explicit false and must NOT go
+ * through this.
  */
 function dropOmitemptyZeros(obj: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
@@ -173,9 +196,9 @@ function canonicalDisplayPrefs(d: unknown): Record<string, unknown> | undefined 
     if (Array.isArray(interaction.keyboard) && interaction.keyboard.length === 0) {
       delete interaction.keyboard
     }
-    // MousePrefs bools are value-typed omitempty: false never survives the
-    // feed's re-marshal. A present-but-all-false mouse re-marshals as `{}`
-    // (the pointer is non-nil), so keep the object itself.
+    // MousePrefs bools are value-typed omitempty: Go's marshal never emits
+    // false. A present-but-all-false mouse marshals as `{}` (the pointer is
+    // non-nil), so keep the object itself.
     if (isPlainObject(interaction.mouse)) {
       interaction.mouse = dropOmitemptyZeros(
         pickFields(interaction.mouse, INTERACTION_MOUSE_FIELDS)
@@ -193,16 +216,16 @@ function canonicalPlaylistItem(item: unknown): Record<string, unknown> | undefin
   if ('display' in out) out.display = canonicalDisplayPrefs(out.display)
   if (isPlainObject(out.note)) out.note = pickFields(out.note, NOTE_FIELDS)
   // `DisplayAt *string omitempty` — Go omits only a nil pointer, so JSON null
-  // must be dropped pre-hash (the feed's re-marshal drops it; keeping it here
-  // would break signature verification). An empty string round-trips verbatim
-  // through the pointer, so it is deliberately NOT dropped.
+  // is dropped pre-hash: it is the one value Go's marshal cannot emit for
+  // this field. An empty string round-trips verbatim through the pointer, so
+  // it is deliberately NOT dropped.
   if (out.displayAt === null) delete out.displayAt
   // `inlineManifest` gets no such treatment, and that asymmetry is deliberate.
   // `json.RawMessage` implements Unmarshaler, so Go hands it the literal bytes
   // `null` — a non-empty slice that `omitempty` does not drop and that
-  // re-marshals as `"inlineManifest":null`. Verified against dp1-go v0.6.0:
-  // null, `{}`, unknown keys, and present-but-empty strings all survive the
-  // feed's round trip untouched, so we must not touch them either.
+  // marshals back as `"inlineManifest":null`. Verified against dp1-go v0.6.0:
+  // null, `{}`, unknown keys, and present-but-empty strings all survive a Go
+  // round trip untouched, so we must not touch them either.
   if (isPlainObject(out.repro)) {
     const repro = pickFields(out.repro, REPRO_FIELDS)
     // engineVersion is an open dictionary (map[string]string) — pass keys

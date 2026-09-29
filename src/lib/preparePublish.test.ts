@@ -247,6 +247,68 @@ describe('preparePlaylistForPublish — create', () => {
     expect(items[0]).not.toHaveProperty('inlineManifest')
   })
 
+  it('keeps item contentRating and contentReasons in signed bytes and wire body, in both modes', () => {
+    const raw: Playlist = {
+      ...basePlaylist,
+      id: 'pl-rated',
+      created: '2026-09-27T00:00:00Z',
+      items: [
+        {
+          source: 'https://example.com/sextape.mp4',
+          contentRating: 'mature',
+          contentReasons: ['sexually explicit found footage', 'deepfake'],
+        },
+      ],
+    }
+    for (const extensionsEnabled of [true, false]) {
+      const r = preparePlaylistForPublish({ rawDocument: raw, walletDID: WALLET, extensionsEnabled })
+      ok<Playlist>(r)
+      const item = (r.signedBytes.items as Array<Record<string, unknown>>)[0]
+      expect(item.contentRating).toBe('mature')
+      expect(item.contentReasons).toEqual(['sexually explicit found footage', 'deepfake'])
+      expect(r.wireBody).toEqual(r.signedBytes)
+    }
+  })
+
+  it('keeps a stored item label through an edit that changes something else', () => {
+    const existing: Playlist = {
+      ...basePlaylist,
+      id: 'pl-rated',
+      created: '2026-09-27T00:00:00Z',
+      items: [{ source: 'https://example.com/sextape.mp4', contentRating: 'mature' }],
+    }
+    // The JSON-tab edit path: the pasted document restates the items, as
+    // playlistFromJsonImport does, so the label rides in patch.items.
+    const r = preparePlaylistForPublish({
+      rawDocument: { ...existing, title: 'edited' },
+      walletDID: WALLET,
+      base: existing,
+      extensionsEnabled: true,
+    })
+    ok<Playlist>(r)
+    expect((r.signedBytes.items as Array<Record<string, unknown>>)[0].contentRating).toBe('mature')
+  })
+
+  it('rejects a malformed content rating before signing (extension rejected fixtures)', () => {
+    const r = preparePlaylistForPublish({
+      rawDocument: {
+        ...basePlaylist,
+        items: [
+          { source: 'https://example.com/a.html', contentRating: null },
+          { source: 'https://example.com/b.html', contentRating: 'mature', contentReasons: [''] },
+        ],
+      } as unknown as Playlist,
+      walletDID: WALLET,
+      extensionsEnabled: true,
+    })
+    expect('validationErrors' in r).toBe(true)
+    if ('validationErrors' in r) {
+      expect(r.validationErrors).toHaveLength(2)
+      expect(r.validationErrors[0]).toMatch(/items\[0\]\.contentRating must be a string/)
+      expect(r.validationErrors[1]).toMatch(/items\[1\]\.contentReasons must contain only non-empty strings/)
+    }
+  })
+
   it('returns validation errors for missing title', () => {
     const r = preparePlaylistForPublish({
       rawDocument: { ...basePlaylist, title: '' },

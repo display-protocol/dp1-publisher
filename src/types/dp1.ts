@@ -121,6 +121,13 @@ export interface PlaylistItem {
   // validates the format under extension validation; it does not compute the
   // active set, so this is stored item metadata from the publisher's view.
   displayAt?: string
+  // Content Rating Extension v0.1.0 (dp1 extensions/content-rating): the
+  // curator's audience label for this item, covered by the playlist signature.
+  // Open vocabulary on the wire (`general` and `mature` are defined); typed as
+  // string so a label from a newer extension revision is carried, not dropped.
+  contentRating?: string
+  // Free-text reasons in the curator's own words; each entry non-empty.
+  contentReasons?: string[]
 }
 
 export interface PlaylistDefaults {

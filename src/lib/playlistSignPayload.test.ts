@@ -75,6 +75,32 @@ describe('playlistUnsignedPayloadForSigning', () => {
     expect(items[2]).not.toHaveProperty('displayAt')
   })
 
+  it('preserves items[i].contentRating and contentReasons (content-rating extension v0.1.0)', () => {
+    const playlist = {
+      ...minimalPlaylist,
+      items: [
+        {
+          source: 'https://example.com/sextape.mp4',
+          contentRating: 'mature',
+          contentReasons: ['sexually explicit found footage', 'deepfake'],
+        },
+        { source: 'https://example.com/plain.html', contentRating: 'general' },
+        // A label from a newer extension revision is carried, not dropped:
+        // consumers treat what they do not recognise as unrated (dp1 §3.3).
+        { source: 'https://example.com/future.html', contentRating: 'teen' },
+        { source: 'https://example.com/unrated.html' },
+      ],
+    } as unknown as Playlist
+    const payload = playlistUnsignedPayloadForSigning(playlist)
+    const items = payload.items as Array<Record<string, unknown>>
+    expect(items[0].contentRating).toBe('mature')
+    expect(items[0].contentReasons).toEqual(['sexually explicit found footage', 'deepfake'])
+    expect(items[1].contentRating).toBe('general')
+    expect(items[1]).not.toHaveProperty('contentReasons')
+    expect(items[2].contentRating).toBe('teen')
+    expect(items[3]).not.toHaveProperty('contentRating')
+  })
+
   it('drops a null displayAt but keeps an empty string (Go *string omitempty)', () => {
     // Feed-side `DisplayAt *string omitempty`: JSON null unmarshals to a nil
     // pointer and is omitted on re-marshal; "" survives through the pointer.

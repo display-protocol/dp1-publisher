@@ -1,7 +1,8 @@
 /**
- * Build the exact unsigned channel JSON shape the feed hashes for publisher signatures
- * (dp1-go extension/channels Channel struct omitempty + executor buildChannelDocument + makeSlug).
- * Must match server json.Marshal before signatures are attached.
+ * Build the unsigned channel JSON the feed hashes for publisher signatures.
+ * The feed verifies over and stores the bytes we send; this mirrors dp1-go's
+ * extension/channels Channel struct (omitempty) and the feed's makeSlug so the
+ * published shape is the one Go tooling would emit for the same document.
  */
 
 import { entityWire } from '@/lib/dp1EntityWire'

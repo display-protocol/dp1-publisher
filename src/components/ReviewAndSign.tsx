@@ -47,10 +47,6 @@ import {
   publishChannel,
   publishPlaylist,
 } from '@/lib/api';
-import {
-  recordPublishedChannel,
-  recordPublishedPlaylist,
-} from '@/lib/publishedStorage';
 import type { Channel, Playlist } from '@/types/dp1';
 
 type PreparedState =
@@ -376,7 +372,6 @@ export default function ReviewAndSign() {
               })
             )
           : await publishPlaylist(body as unknown as Playlist);
-        recordPublishedPlaylist(address, result);
         feedUrl = feedPlaylistResourceUrl(
           result.slug?.trim() || result.id || ''
         );
@@ -400,7 +395,6 @@ export default function ReviewAndSign() {
               })
             )
           : await publishChannel(body as unknown as Channel);
-        recordPublishedChannel(address, result);
         feedUrl = feedChannelResourceUrl(
           result.slug?.trim() || result.id || ''
         );

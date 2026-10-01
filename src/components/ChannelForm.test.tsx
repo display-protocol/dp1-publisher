@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { renderWithQueryClient as render } from '@/test/renderWithQueryClient'
 import ChannelForm from './ChannelForm'
 import * as apiModule from '@/lib/api'
 import { ethereumAddressToDIDPKH } from '@/lib/signing'
@@ -46,6 +47,7 @@ vi.mock('@/lib/api', async () => {
     publishChannel: vi.fn(),
     getChannel: vi.fn(),
     replaceChannel: vi.fn(),
+    listPlaylists: vi.fn(),
   }
 })
 
@@ -53,6 +55,7 @@ const mockedApi = apiModule as typeof apiModule & {
   publishChannel: ReturnType<typeof vi.fn>
   getChannel: ReturnType<typeof vi.fn>
   replaceChannel: ReturnType<typeof vi.fn>
+  listPlaylists: ReturnType<typeof vi.fn>
 }
 
 function fillFormAndPublish(title: string, playlistUrl: string) {
@@ -76,11 +79,12 @@ function fillFormAndPublish(title: string, playlistUrl: string) {
 
 describe('ChannelForm — publish flow', () => {
   beforeEach(() => {
-    localStorage.clear()
     toastMock.mockClear()
     mockedApi.publishChannel.mockReset()
     mockedApi.getChannel.mockReset()
     mockedApi.replaceChannel.mockReset()
+    mockedApi.listPlaylists.mockReset()
+    mockedApi.listPlaylists.mockResolvedValue({ items: [], hasMore: false })
   })
 
   it('regenerates id after a successful create, so "Publish another" POSTs a fresh channel', async () => {
@@ -291,13 +295,19 @@ describe('ChannelForm — publish flow', () => {
   })
 
   it('playlist picker on the JSON tab appends to playlists[] in the JSON editor and the signed body', async () => {
-    const { recordPublishedPlaylist } = await import('@/lib/publishedStorage')
-    // Seed a published playlist so the picker has something to show.
-    recordPublishedPlaylist(TEST_WALLET, {
-      id: 'seeded-pl-id',
-      slug: 'seeded-slug',
-      title: 'Seeded Playlist',
-      created: '2026-05-01T00:00:00Z',
+    // The feed lists one playlist curated by the wallet, so the picker has something to show.
+    mockedApi.listPlaylists.mockResolvedValue({
+      items: [
+        {
+          id: 'seeded-pl-id',
+          slug: 'seeded-slug',
+          title: 'Seeded Playlist',
+          created: '2026-05-01T00:00:00Z',
+          items: [],
+          curators: [{ name: '', key: TEST_WALLET_DID }],
+        },
+      ],
+      hasMore: false,
     })
     const expectedPickerUrl = apiModule.feedPlaylistResourceUrl('seeded-slug')
 
@@ -324,7 +334,11 @@ describe('ChannelForm — publish flow', () => {
 
     // Click the picker button for the seeded playlist.
     fireEvent.click(
-      screen.getByRole('button', { name: /Seeded Playlist/ }),
+      await screen.findByRole('button', { name: /Seeded Playlist/ }),
+    )
+    // The picker is fed by the wallet-filtered feed query, not local state.
+    expect(mockedApi.listPlaylists).toHaveBeenCalledWith(
+      expect.objectContaining({ curator: TEST_WALLET_DID, sort: 'desc' }),
     )
 
     // JSON editor reflects the appended URL.
@@ -452,5 +466,51 @@ describe('ChannelForm — publish flow', () => {
         .description as string
       expect(desc).toMatch(/different wallet/i)
     })
+  })
+
+  it('playlist picker pages through the feed with "More playlists"', async () => {
+    const owned = (id: string, title: string) => ({
+      id,
+      slug: `${id}-slug`,
+      title,
+      items: [],
+      curators: [{ name: '', key: TEST_WALLET_DID }],
+    })
+    mockedApi.listPlaylists
+      .mockResolvedValueOnce({ items: [owned('p1', 'Newest')], hasMore: true, cursor: 'next-1' })
+      .mockResolvedValueOnce({ items: [owned('p2', 'Older')], hasMore: false })
+
+    render(<ChannelForm />)
+    fireEvent.click(await screen.findByRole('button', { name: 'More playlists' }))
+
+    expect(await screen.findByRole('button', { name: /Older/ })).toBeInTheDocument()
+    expect(mockedApi.listPlaylists).toHaveBeenLastCalledWith(
+      expect.objectContaining({ cursor: 'next-1' }),
+    )
+    expect(screen.queryByRole('button', { name: 'More playlists' })).toBeNull()
+  })
+
+  it('playlist picker surfaces a feed failure with a retry that recovers', async () => {
+    mockedApi.listPlaylists
+      .mockRejectedValueOnce(new apiModule.FeedAPIError('bad request', 400))
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'p1',
+            slug: 'p1-slug',
+            title: 'Recovered playlist',
+            items: [],
+            curators: [{ name: '', key: TEST_WALLET_DID }],
+          },
+        ],
+        hasMore: false,
+      })
+
+    render(<ChannelForm />)
+    expect(await screen.findByText(/Couldn't load your playlists from the feed/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByRole('button', { name: /Recovered playlist/ })).toBeInTheDocument()
+    expect(screen.queryByText(/Couldn't load your playlists/)).toBeNull()
   })
 })

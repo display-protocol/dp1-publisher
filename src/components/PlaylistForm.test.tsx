@@ -82,7 +82,6 @@ function fillFormAndUpdate(title: string, source: string) {
 
 describe('PlaylistForm — publish flow', () => {
   beforeEach(() => {
-    localStorage.clear()
     toastMock.mockClear()
     mockedApi.publishPlaylist.mockReset()
     mockedApi.getPlaylist.mockReset()

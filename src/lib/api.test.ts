@@ -1,7 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   FeedAPIError,
   friendlyPublishError,
+  listChannels,
+  listPlaylists,
   validateItemSourceURI,
   validatePlaylistURI,
 } from './api'
@@ -749,5 +751,46 @@ describe('friendlyPublishError', () => {
       expect(msg).not.toMatch(/^store:/i)
       expect(msg).toMatch(/weird db hiccup/i)
     })
+  })
+})
+
+describe('owner-filtered list queries', () => {
+  const did = 'did:pkh:eip155:1:0x000000000000000000000000000000000000aBcD'
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn(async () => new Response(JSON.stringify({ items: [], hasMore: false })))
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function requestedUrl(): URL {
+    return new URL(fetchMock.mock.calls[0][0] as string)
+  }
+
+  it('sends curator on GET /playlists with the key verbatim (feed match is case-sensitive)', async () => {
+    await listPlaylists({ curator: did, sort: 'desc', limit: 50, cursor: 'c1' })
+    const url = requestedUrl()
+    expect(url.pathname).toBe('/api/v1/playlists')
+    expect(url.searchParams.get('curator')).toBe(did)
+    expect(url.searchParams.get('sort')).toBe('desc')
+    expect(url.searchParams.get('limit')).toBe('50')
+    expect(url.searchParams.get('cursor')).toBe('c1')
+  })
+
+  it('sends publisher and curator on GET /channels', async () => {
+    await listChannels({ publisher: did, curator: did })
+    const url = requestedUrl()
+    expect(url.pathname).toBe('/api/v1/channels')
+    expect(url.searchParams.get('publisher')).toBe(did)
+    expect(url.searchParams.get('curator')).toBe(did)
+  })
+
+  it('omits owner filters when not given', async () => {
+    await listChannels({})
+    expect(requestedUrl().search).toBe('')
   })
 })

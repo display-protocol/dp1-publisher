@@ -189,4 +189,52 @@ describe('PostPublishPanel', () => {
     )
     expect(screen.getByText('Channel published')).toBeTruthy()
   })
+
+  it('renders "More channels" only while more channel pages exist', () => {
+    const onLoadMore = vi.fn()
+    const { rerender } = render(
+      <PostPublishPanel
+        kind="playlist"
+        feedUrl="https://feed.example/api/v1/playlists/p"
+        existingChannels={[{ id: 'c1', title: 'One' }]}
+        onAddToExistingChannel={() => undefined}
+        onLoadMoreChannels={onLoadMore}
+        onPublishAnother={() => undefined}
+        onViewPublished={() => undefined}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'More channels' }))
+    expect(onLoadMore).toHaveBeenCalledTimes(1)
+
+    rerender(
+      <PostPublishPanel
+        kind="playlist"
+        feedUrl="https://feed.example/api/v1/playlists/p"
+        existingChannels={[{ id: 'c1', title: 'One' }]}
+        onAddToExistingChannel={() => undefined}
+        onPublishAnother={() => undefined}
+        onViewPublished={() => undefined}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: 'More channels' })).toBeNull()
+  })
+
+  it('shows a channel-load failure with retry, keeping loaded targets', () => {
+    const onRetry = vi.fn()
+    render(
+      <PostPublishPanel
+        kind="playlist"
+        feedUrl="https://feed.example/api/v1/playlists/p"
+        existingChannels={[{ id: 'c1', title: 'One' }]}
+        onAddToExistingChannel={() => undefined}
+        onRetryChannels={onRetry}
+        onPublishAnother={() => undefined}
+        onViewPublished={() => undefined}
+      />,
+    )
+    expect(screen.getByText(/Couldn't load your channels from the feed/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Add to: One/ })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+  })
 })

@@ -33,11 +33,7 @@ import { signDocument, stripSignatureFields } from '@/lib/signing';
 import { buildReplaceIntent } from '@/lib/replaceIntent';
 import { channelUnsignedPayloadForSigning } from '@/lib/channelSignPayload';
 import { mergeChannelForPatch } from '@/lib/dp1Merge';
-import {
-  loadPublished,
-  recordPublishedChannel,
-  sortByCreatedDesc,
-} from '@/lib/publishedStorage';
+import { flattenOwnedPages, useOwnedPlaylists } from '@/hooks/useOwnedDocuments';
 import {
   FeedAPIError,
   feedChannelResourceUrl,
@@ -734,7 +730,6 @@ export default function ChannelForm({
               }),
           })
         );
-        recordPublishedChannel(address, updated);
         onPublished?.();
         loadedRef.current = updated;
         setAppendBanner(null);
@@ -765,7 +760,6 @@ export default function ChannelForm({
               }),
           })
         );
-        recordPublishedChannel(address, updated);
         onPublished?.();
         const feedUrl = feedChannelResourceUrl(
           updated.slug?.trim() || updated.id || ''
@@ -794,7 +788,6 @@ export default function ChannelForm({
         setId(uuidv4());
       } else {
         const published = await publishChannel(body as Channel);
-        recordPublishedChannel(address, published);
         onPublished?.();
         const feedUrl = feedChannelResourceUrl(
           published.slug?.trim() || published.id || ''
@@ -842,18 +835,21 @@ export default function ChannelForm({
     }
   };
 
-  /** User's published playlists, surfaced as a one-click picker so they can
-   * compose this channel without copy/pasting URLs. Recomputed on each render
-   * — cheap, and avoids stale data after a side-tab publish. */
-  const availablePlaylists = useMemo(() => {
-    if (!address) return [];
-    const bucket = loadPublished(address);
-    return sortByCreatedDesc(bucket.playlists).map((p) => ({
-      id: p.id,
-      title: p.title || 'Untitled playlist',
-      feedUrl: feedPlaylistResourceUrl(p.slug?.trim() || p.id || ''),
-    }));
-  }, [address]);
+  /** Playlists listing the wallet as curator (per the feed), surfaced as a
+   * one-click picker so the user can compose this channel without
+   * copy/pasting URLs. Loaded pages are offered newest first (cache shared
+   * with the Published view), with a "More playlists" button while the feed
+   * has further pages. */
+  const ownedPlaylistsQuery = useOwnedPlaylists(address);
+  const availablePlaylists = useMemo(
+    () =>
+      flattenOwnedPages(ownedPlaylistsQuery.data).map((p) => ({
+        id: p.id,
+        title: p.title || 'Untitled playlist',
+        feedUrl: feedPlaylistResourceUrl(p.slug?.trim() || p.id),
+      })),
+    [ownedPlaylistsQuery.data]
+  );
 
   const currentPlaylistUrls = useMemo(
     () =>
@@ -976,7 +972,9 @@ export default function ChannelForm({
             </p>
           ) : (
             <>
-              {availablePlaylists.length > 0 ? (
+              {availablePlaylists.length > 0 ||
+              ownedPlaylistsQuery.hasNextPage ||
+              ownedPlaylistsQuery.isError ? (
                 <div className="mb-6 rounded-xl border border-border/60 bg-muted/20 p-4">
                   <p className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     Your published playlists
@@ -1003,7 +1001,33 @@ export default function ChannelForm({
                         </Button>
                       );
                     })}
+                    {ownedPlaylistsQuery.hasNextPage ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={ownedPlaylistsQuery.isFetchingNextPage}
+                        onClick={() => void ownedPlaylistsQuery.fetchNextPage()}
+                        className="h-8 rounded-full text-[12px]"
+                      >
+                        {ownedPlaylistsQuery.isFetchingNextPage ? 'Loading…' : 'More playlists'}
+                      </Button>
+                    ) : null}
                   </div>
+                  {ownedPlaylistsQuery.isError ? (
+                    <p className="mt-3 flex flex-wrap items-center gap-2 text-xs text-destructive">
+                      Couldn't load your playlists from the feed.
+                      <Button
+                        type="button"
+                        variant="link"
+                        disabled={ownedPlaylistsQuery.isFetching}
+                        onClick={() => void ownedPlaylistsQuery.refetch()}
+                        className="h-auto p-0 text-xs"
+                      >
+                        {ownedPlaylistsQuery.isFetching ? 'Retrying…' : 'Retry'}
+                      </Button>
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
               <Tabs

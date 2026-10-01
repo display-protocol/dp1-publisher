@@ -319,17 +319,24 @@ export interface FeedListResponse<T> {
 }
 
 /**
- * GET /api/v1/playlists — paginated list (sort by created_at)
+ * GET /api/v1/playlists — paginated list ordered by created_at.
+ *
+ * `curator` filters to playlists whose signed `curators[]` contains exactly this key. The feed matches
+ * the declared attribution, not the derived owner set: a playlist that declares no `curators` never
+ * matches even if this key signed it as `curator`, and the match is case-sensitive. The feed rejects
+ * `curator` combined with `channel` / `playlist-group` (400), which this client does not expose.
  */
 export async function listPlaylists(params: {
   limit?: number
   cursor?: string
   sort?: 'asc' | 'desc'
+  curator?: string
 }): Promise<FeedListResponse<Playlist>> {
   const sp = new URLSearchParams()
   if (params.limit != null) sp.set('limit', String(params.limit))
   if (params.cursor) sp.set('cursor', params.cursor)
   if (params.sort) sp.set('sort', params.sort)
+  if (params.curator) sp.set('curator', params.curator)
   const q = sp.toString()
   const response = await fetch(
     `${FEED_BASE_URL}/api/v1/playlists${q ? `?${q}` : ''}`
@@ -374,17 +381,26 @@ export async function getChannel(idOrSlug: string): Promise<Channel> {
 }
 
 /**
- * GET /api/v1/channels — paginated list
+ * GET /api/v1/channels — paginated list ordered by created_at (requires extensions).
+ *
+ * `publisher` filters on the declared `publisher.key` (the channel owner); `curator` filters on
+ * `curators[].key`, which for channels is attribution only and never authorizes writes. Both match
+ * exactly and case-sensitively; when combined, a channel must match both. A channel that declares no
+ * `publisher` never matches `publisher`, even though its single `publisher`-role signer owns it.
  */
 export async function listChannels(params: {
   limit?: number
   cursor?: string
   sort?: 'asc' | 'desc'
+  publisher?: string
+  curator?: string
 }): Promise<FeedListResponse<Channel>> {
   const sp = new URLSearchParams()
   if (params.limit != null) sp.set('limit', String(params.limit))
   if (params.cursor) sp.set('cursor', params.cursor)
   if (params.sort) sp.set('sort', params.sort)
+  if (params.publisher) sp.set('publisher', params.publisher)
+  if (params.curator) sp.set('curator', params.curator)
   const q = sp.toString()
   const response = await fetch(
     `${FEED_BASE_URL}/api/v1/channels${q ? `?${q}` : ''}`

@@ -37,6 +37,10 @@ export default function PostPublishPanel({
   onUseInNewChannel,
   existingChannels = [],
   onAddToExistingChannel,
+  onLoadMoreChannels,
+  loadingMoreChannels = false,
+  onRetryChannels,
+  retryingChannels = false,
   onPublishAnother,
   onViewPublished,
 }: {
@@ -53,11 +57,17 @@ export default function PostPublishPanel({
   /** When provided, renders a "Start a new channel" CTA. Only meaningful when
    * kind === 'playlist' and channel extensions are enabled. */
   onUseInNewChannel?: () => void
-  /** Channels the user has already published from this browser. Each renders
-   * as a separate "Add to: <title>" CTA. */
+  /** Channels the wallet publishes (from the feed, loaded pages only). Each
+   * renders as a separate "Add to: <title>" CTA. */
   existingChannels?: ExistingChannel[]
   /** Required when existingChannels has entries — fires when the user picks one. */
   onAddToExistingChannel?: (channelId: string) => void
+  /** Set while the feed has more of the wallet's channels; renders a "More channels" button. */
+  onLoadMoreChannels?: () => void
+  loadingMoreChannels?: boolean
+  /** Set when loading the wallet's channels failed; renders the failure and a retry. Loaded rows stay. */
+  onRetryChannels?: () => void
+  retryingChannels?: boolean
   onPublishAnother: () => void
   onViewPublished: () => void
 }) {
@@ -148,14 +158,16 @@ export default function PostPublishPanel({
           <p className="text-xs text-muted-foreground">
             {kind === 'playlist' ? (
               <>
-                Saved to your published list in this browser. Paste this URL
-                into a channel's <code className="font-mono">playlists</code>{' '}
-                array to reference it.
+                Stored on the feed. Paste this URL into a channel's{' '}
+                <code className="font-mono">playlists</code> array to reference
+                it. Reopen it for edit from Published in any browser (by this
+                URL on feeds without extensions).
               </>
             ) : (
               <>
-                Saved to your published list in this browser. Open the URL to
-                see the channel as the feed exposes it.
+                Stored on the feed and listed under Published for your wallet in
+                any browser. Open the URL to see the channel as the feed exposes
+                it.
               </>
             )}
           </p>
@@ -183,7 +195,8 @@ export default function PostPublishPanel({
 
         {kind === 'playlist' &&
         (onUseInNewChannel ||
-          (existingChannels.length > 0 && onAddToExistingChannel)) ? (
+          ((existingChannels.length > 0 || onLoadMoreChannels || onRetryChannels) &&
+            onAddToExistingChannel)) ? (
           <div className="space-y-3">
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Use this playlist in a channel
@@ -211,7 +224,32 @@ export default function PostPublishPanel({
                   Add to: {ch.title}
                 </Button>
               ))}
+              {onLoadMoreChannels && onAddToExistingChannel ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={loadingMoreChannels}
+                  onClick={onLoadMoreChannels}
+                  className="rounded-full sm:w-auto"
+                >
+                  {loadingMoreChannels ? 'Loading…' : 'More channels'}
+                </Button>
+              ) : null}
             </div>
+            {onRetryChannels && onAddToExistingChannel ? (
+              <p className="flex flex-wrap items-center gap-2 text-sm text-destructive">
+                Couldn't load your channels from the feed.
+                <Button
+                  type="button"
+                  variant="link"
+                  disabled={retryingChannels}
+                  onClick={onRetryChannels}
+                  className="h-auto p-0 text-sm"
+                >
+                  {retryingChannels ? 'Retrying…' : 'Retry'}
+                </Button>
+              </p>
+            ) : null}
           </div>
         ) : null}
 

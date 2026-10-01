@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import { useAccount } from 'wagmi'
 import { ListMusic, Radio } from 'lucide-react'
 import {
@@ -10,11 +10,33 @@ import {
   TabsTrigger,
 } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { parsePlaylistReference } from '@/lib/playlistReference'
 import {
   feedChannelResourceUrl,
   feedPlaylistResourceUrl,
 } from '@/lib/api'
-import { loadPublished, sortByCreatedDesc, type PublishedRecord } from '@/lib/publishedStorage'
+import {
+  flattenOwnedPages,
+  useOwnedChannels,
+  useOwnedPlaylists,
+} from '@/hooks/useOwnedDocuments'
+
+/** List fields shared by feed playlists and channels. */
+type PublishedRow = { id: string; slug?: string; title: string; created?: string }
+
+/** The subset of a `useInfiniteQuery` result the table needs. */
+type OwnedListState = {
+  isPending: boolean
+  isError: boolean
+  error: unknown
+  hasNextPage: boolean
+  isFetchingNextPage: boolean
+  fetchNextPage: () => unknown
+  refetch: () => unknown
+}
 
 function formatWhen(iso?: string): string {
   if (!iso) return '—'
@@ -36,23 +58,10 @@ export default function PublishedView({
   onEditChannel: (id: string) => void
 }) {
   const { address } = useAccount()
-  const [playlists, setPlaylists] = useState<PublishedRecord[]>([])
-  const [channels, setChannels] = useState<PublishedRecord[]>([])
-
-  const reloadFromStorage = useCallback(() => {
-    if (!address) {
-      setPlaylists([])
-      setChannels([])
-      return
-    }
-    const b = loadPublished(address)
-    setPlaylists(sortByCreatedDesc(b.playlists))
-    setChannels(sortByCreatedDesc(b.channels))
-  }, [address])
-
-  useEffect(() => {
-    reloadFromStorage()
-  }, [reloadFromStorage])
+  const playlistsQuery = useOwnedPlaylists(address)
+  const channelsQuery = useOwnedChannels(address, extensionsEnabled)
+  const playlists = flattenOwnedPages(playlistsQuery.data)
+  const channels = flattenOwnedPages(channelsQuery.data)
 
   if (!address) {
     return null
@@ -61,8 +70,8 @@ export default function PublishedView({
   const titleHeading = extensionsEnabled ? 'Your playlists & channels' : 'Your playlists'
 
   const titleDescription = extensionsEnabled
-    ? 'Entries saved in this browser when you publish from here. Sorted by created time (newest first).'
-    : 'Core playlists saved here when you publish. Sorted by created time (newest first).'
+    ? 'Playlists listing your wallet as curator and channels it publishes, as the feed has them. Newest first.'
+    : 'This feed runs without extensions, so playlists published to it carry no curator and the feed cannot list them by wallet. Open one by its feed URL, ID or slug to edit it.'
 
   return (
     <Card className="border-border/45 shadow-[0_2px_40px_-20px_rgba(15,23,42,0.15)]">
@@ -90,7 +99,9 @@ export default function PublishedView({
             <TabsContent value="playlist" className="mt-8 outline-none">
               <PublishedTable
                 rows={playlists}
-                empty="No playlists recorded yet. Publish one from the Publish screen."
+                query={playlistsQuery}
+                noun="playlists"
+                empty="No playlists yet. Publish one from the Publish screen."
                 onRowClick={(r) => onEditPlaylist(r.id)}
                 feedResourceUrl={(r) =>
                   feedPlaylistResourceUrl(r.slug?.trim() || r.id)
@@ -101,7 +112,9 @@ export default function PublishedView({
             <TabsContent value="channel" className="mt-8 outline-none">
               <PublishedTable
                 rows={channels}
-                empty="No channels recorded yet. Publish one from the Publish screen."
+                query={channelsQuery}
+                noun="channels"
+                empty="No channels yet. Publish one from the Publish screen."
                 onRowClick={(r) => onEditChannel(r.id)}
                 feedResourceUrl={(r) =>
                   feedChannelResourceUrl(r.slug?.trim() || r.id)
@@ -111,83 +124,163 @@ export default function PublishedView({
           </Tabs>
         ) : (
           // Core-only deployments publish playlists and nothing else, so there
-          // is no second list to tab between.
-          <PublishedTable
-            rows={playlists}
-            empty="No playlists recorded yet. Publish one from the Publish screen."
-            onRowClick={(r) => onEditPlaylist(r.id)}
-            feedResourceUrl={(r) => feedPlaylistResourceUrl(r.slug?.trim() || r.id)}
-          />
+          // is no second list to tab between. `curators` is an extension field
+          // stripped at publish here, so the curator-filtered list only shows
+          // playlists published elsewhere with extensions; opening by reference
+          // is how a core-mode playlist is reached for edit.
+          <div className="space-y-8">
+            <OpenPlaylistByReference onOpen={onEditPlaylist} />
+            <PublishedTable
+              rows={playlists}
+              query={playlistsQuery}
+              noun="playlists"
+              empty="No playlists on this feed declare your wallet as curator."
+              onRowClick={(r) => onEditPlaylist(r.id)}
+              feedResourceUrl={(r) => feedPlaylistResourceUrl(r.slug?.trim() || r.id)}
+            />
+          </div>
         )}
       </CardContent>
     </Card>
   )
 }
 
+function OpenPlaylistByReference({ onOpen }: { onOpen: (idOrSlug: string) => void }) {
+  const [value, setValue] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault()
+    const ref = parsePlaylistReference(value)
+    if (!ref) {
+      setError('Enter a playlist feed URL (…/api/v1/playlists/…), ID or slug.')
+      return
+    }
+    setError(null)
+    onOpen(ref)
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-2">
+      <Label htmlFor="open-playlist-ref">Open a playlist</Label>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Input
+          id="open-playlist-ref"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="Feed URL, ID or slug"
+          className="min-w-0 flex-1"
+        />
+        <Button type="submit" variant="outline">
+          Open for edit
+        </Button>
+      </div>
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+    </form>
+  )
+}
+
+const placeholderClass =
+  'rounded-xl border border-dashed border-border/60 bg-muted/10 px-4 py-10 text-center text-[15px] text-muted-foreground'
+
 function PublishedTable({
   rows,
+  query,
+  noun,
   empty,
   onRowClick,
   feedResourceUrl,
 }: {
-  rows: PublishedRecord[]
+  rows: PublishedRow[]
+  query: OwnedListState
+  noun: string
   empty: string
-  onRowClick: (r: PublishedRecord) => void
-  feedResourceUrl: (r: PublishedRecord) => string
+  onRowClick: (r: PublishedRow) => void
+  feedResourceUrl: (r: PublishedRow) => string
 }) {
-  if (rows.length === 0) {
+  if (query.isPending) {
+    return <p className={placeholderClass}>Loading your {noun} from the feed…</p>
+  }
+
+  if (query.isError && rows.length === 0) {
+    const reason = query.error instanceof Error ? query.error.message : 'Unknown error'
     return (
-      <p className="rounded-xl border border-dashed border-border/60 bg-muted/10 px-4 py-10 text-center text-[15px] text-muted-foreground">
-        {empty}
-      </p>
+      <div className={placeholderClass}>
+        <p>Could not load your {noun} from the feed: {reason}</p>
+        <Button variant="outline" size="sm" className="mt-4" onClick={() => void query.refetch()}>
+          Try again
+        </Button>
+      </div>
     )
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border/50">
-      <table className="w-full text-left text-[14px]">
-        <thead>
-          <tr className="border-b border-border/50 bg-muted/25 text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
-            <th className="px-4 py-3 font-medium">Title</th>
-            <th className="hidden px-4 py-3 font-medium sm:table-cell">Feed URL</th>
-            <th className="px-4 py-3 font-medium">Created</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr
-              key={r.id}
-              className="cursor-pointer border-b border-border/40 transition-colors last:border-0 hover:bg-muted/20"
-              onClick={() => onRowClick(r)}
-            >
-              <td className="max-w-[200px] px-4 py-3 font-medium text-foreground sm:max-w-none">
-                <div className="truncate sm:max-w-none">{r.title || '—'}</div>
-                <a
-                  href={feedResourceUrl(r)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-1.5 hidden max-w-full font-mono text-[11px] font-normal leading-snug text-primary underline underline-offset-2 [word-break:break-all] max-[639px]:block hover:text-primary/90"
-                  onClick={(e) => e.stopPropagation()}
+    <div className="space-y-4">
+      {rows.length === 0 ? (
+        // Can still have a next page: the owner guard in useOwnedDocuments may empty a whole page.
+        <p className={placeholderClass}>{empty}</p>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-border/50">
+          <table className="w-full text-left text-[14px]">
+            <thead>
+              <tr className="border-b border-border/50 bg-muted/25 text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
+                <th className="px-4 py-3 font-medium">Title</th>
+                <th className="hidden px-4 py-3 font-medium sm:table-cell">Feed URL</th>
+                <th className="px-4 py-3 font-medium">Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr
+                  key={r.id}
+                  className="cursor-pointer border-b border-border/40 transition-colors last:border-0 hover:bg-muted/20"
+                  onClick={() => onRowClick(r)}
                 >
-                  {feedResourceUrl(r)}
-                </a>
-              </td>
-              <td className="hidden max-w-[min(28rem,50vw)] px-4 py-3 align-top sm:table-cell">
-                <a
-                  href={feedResourceUrl(r)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-mono text-[12px] text-primary underline underline-offset-2 [word-break:break-all] hover:text-primary/90"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {feedResourceUrl(r)}
-                </a>
-              </td>
-              <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{formatWhen(r.created)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                  <td className="max-w-[200px] px-4 py-3 font-medium text-foreground sm:max-w-none">
+                    <div className="truncate sm:max-w-none">{r.title || '—'}</div>
+                    <a
+                      href={feedResourceUrl(r)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1.5 hidden max-w-full font-mono text-[11px] font-normal leading-snug text-primary underline underline-offset-2 [word-break:break-all] max-[639px]:block hover:text-primary/90"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {feedResourceUrl(r)}
+                    </a>
+                  </td>
+                  <td className="hidden max-w-[min(28rem,50vw)] px-4 py-3 align-top sm:table-cell">
+                    <a
+                      href={feedResourceUrl(r)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-[12px] text-primary underline underline-offset-2 [word-break:break-all] hover:text-primary/90"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {feedResourceUrl(r)}
+                    </a>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{formatWhen(r.created)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {query.hasNextPage ? (
+        <div className="flex justify-center">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={query.isFetchingNextPage}
+            onClick={() => void query.fetchNextPage()}
+          >
+            {query.isFetchingNextPage ? 'Loading…' : `Load more ${noun}`}
+          </Button>
+        </div>
+      ) : null}
+      {query.isError ? (
+        <p className="text-center text-sm text-destructive">The feed request failed, so this list may be incomplete or out of date.</p>
+      ) : null}
     </div>
   )
 }

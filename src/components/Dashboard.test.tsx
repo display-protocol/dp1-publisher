@@ -31,6 +31,7 @@ vi.mock('./PlaylistForm', () => ({
     onUseInNewChannel?: (url: string) => void
     onPublished?: () => void
     existingChannels?: { id: string; title: string }[]
+    onRetryChannels?: () => void
   }) => (
     <>
       <button
@@ -43,6 +44,11 @@ vi.mock('./PlaylistForm', () => ({
       <button type="button" data-testid="trigger-published" onClick={() => props.onPublished?.()}>
         simulate publish
       </button>
+      {props.onRetryChannels ? (
+        <button type="button" onClick={props.onRetryChannels}>
+          retry channels
+        </button>
+      ) : null}
       <ul data-testid="existing-channels">
         {(props.existingChannels ?? []).map((c) => (
           <li key={c.id}>{c.title}</li>
@@ -141,5 +147,18 @@ describe('Dashboard — pendingChannelPlaylistsText lifecycle', () => {
 
     fireEvent.click(screen.getByTestId('trigger-published'))
     await waitFor(() => expect(mockedListChannels).toHaveBeenCalledTimes(2))
+  })
+
+  it('hands the playlist form a channel retry only while the channels query has failed', async () => {
+    mockedListChannels
+      .mockRejectedValueOnce(new apiModule.FeedAPIError('bad request', 400))
+      .mockResolvedValueOnce({ items: [], hasMore: false })
+    render(<Dashboard />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'retry channels' }))
+    await waitFor(() => expect(mockedListChannels).toHaveBeenCalledTimes(2))
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'retry channels' })).toBeNull(),
+    )
   })
 })

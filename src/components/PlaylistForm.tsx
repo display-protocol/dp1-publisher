@@ -229,6 +229,8 @@ export default function PlaylistForm({
   onAddToExistingChannel,
   onLoadMoreChannels,
   loadingMoreChannels,
+  onRetryChannels,
+  retryingChannels,
   onViewPublished,
   extensionsEnabled,
 }: {
@@ -245,6 +247,9 @@ export default function PlaylistForm({
   /** Set while the feed has more of the wallet's channels than `existingChannels` holds. */
   onLoadMoreChannels?: () => void;
   loadingMoreChannels?: boolean;
+  /** Set when loading the wallet's channels failed. */
+  onRetryChannels?: () => void;
+  retryingChannels?: boolean;
   /** Called when the user clicks "View all published" after a create publish. */
   onViewPublished?: () => void;
   extensionsEnabled: boolean;
@@ -1122,6 +1127,8 @@ export default function PlaylistForm({
         }
         onLoadMoreChannels={extensionsEnabled ? onLoadMoreChannels : undefined}
         loadingMoreChannels={loadingMoreChannels}
+        onRetryChannels={extensionsEnabled ? onRetryChannels : undefined}
+        retryingChannels={retryingChannels}
         onPublishAnother={() => setPublishedDoc(null)}
         onViewPublished={() => {
           if (onViewPublished) {

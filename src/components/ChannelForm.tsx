@@ -972,7 +972,9 @@ export default function ChannelForm({
             </p>
           ) : (
             <>
-              {availablePlaylists.length > 0 || ownedPlaylistsQuery.hasNextPage ? (
+              {availablePlaylists.length > 0 ||
+              ownedPlaylistsQuery.hasNextPage ||
+              ownedPlaylistsQuery.isError ? (
                 <div className="mb-6 rounded-xl border border-border/60 bg-muted/20 p-4">
                   <p className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     Your published playlists
@@ -1012,6 +1014,20 @@ export default function ChannelForm({
                       </Button>
                     ) : null}
                   </div>
+                  {ownedPlaylistsQuery.isError ? (
+                    <p className="mt-3 flex flex-wrap items-center gap-2 text-xs text-destructive">
+                      Couldn't load your playlists from the feed.
+                      <Button
+                        type="button"
+                        variant="link"
+                        disabled={ownedPlaylistsQuery.isFetching}
+                        onClick={() => void ownedPlaylistsQuery.refetch()}
+                        className="h-auto p-0 text-xs"
+                      >
+                        {ownedPlaylistsQuery.isFetching ? 'Retrying…' : 'Retry'}
+                      </Button>
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
               <Tabs

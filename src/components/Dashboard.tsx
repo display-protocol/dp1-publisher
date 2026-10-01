@@ -241,6 +241,12 @@ export default function Dashboard() {
                     : undefined
                 }
                 loadingMoreChannels={ownedChannelsQuery.isFetchingNextPage}
+                onRetryChannels={
+                  ownedChannelsQuery.isError
+                    ? () => void ownedChannelsQuery.refetch()
+                    : undefined
+                }
+                retryingChannels={ownedChannelsQuery.isFetching}
                 onViewPublished={handleViewPublished}
               />
             </TabsContent>

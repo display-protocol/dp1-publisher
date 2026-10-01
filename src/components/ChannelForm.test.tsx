@@ -489,4 +489,28 @@ describe('ChannelForm — publish flow', () => {
     )
     expect(screen.queryByRole('button', { name: 'More playlists' })).toBeNull()
   })
+
+  it('playlist picker surfaces a feed failure with a retry that recovers', async () => {
+    mockedApi.listPlaylists
+      .mockRejectedValueOnce(new apiModule.FeedAPIError('bad request', 400))
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'p1',
+            slug: 'p1-slug',
+            title: 'Recovered playlist',
+            items: [],
+            curators: [{ name: '', key: TEST_WALLET_DID }],
+          },
+        ],
+        hasMore: false,
+      })
+
+    render(<ChannelForm />)
+    expect(await screen.findByText(/Couldn't load your playlists from the feed/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByRole('button', { name: /Recovered playlist/ })).toBeInTheDocument()
+    expect(screen.queryByText(/Couldn't load your playlists/)).toBeNull()
+  })
 })

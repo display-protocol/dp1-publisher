@@ -39,6 +39,8 @@ export default function PostPublishPanel({
   onAddToExistingChannel,
   onLoadMoreChannels,
   loadingMoreChannels = false,
+  onRetryChannels,
+  retryingChannels = false,
   onPublishAnother,
   onViewPublished,
 }: {
@@ -63,6 +65,9 @@ export default function PostPublishPanel({
   /** Set while the feed has more of the wallet's channels; renders a "More channels" button. */
   onLoadMoreChannels?: () => void
   loadingMoreChannels?: boolean
+  /** Set when loading the wallet's channels failed; renders the failure and a retry. Loaded rows stay. */
+  onRetryChannels?: () => void
+  retryingChannels?: boolean
   onPublishAnother: () => void
   onViewPublished: () => void
 }) {
@@ -190,7 +195,8 @@ export default function PostPublishPanel({
 
         {kind === 'playlist' &&
         (onUseInNewChannel ||
-          ((existingChannels.length > 0 || onLoadMoreChannels) && onAddToExistingChannel)) ? (
+          ((existingChannels.length > 0 || onLoadMoreChannels || onRetryChannels) &&
+            onAddToExistingChannel)) ? (
           <div className="space-y-3">
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Use this playlist in a channel
@@ -230,6 +236,20 @@ export default function PostPublishPanel({
                 </Button>
               ) : null}
             </div>
+            {onRetryChannels && onAddToExistingChannel ? (
+              <p className="flex flex-wrap items-center gap-2 text-sm text-destructive">
+                Couldn't load your channels from the feed.
+                <Button
+                  type="button"
+                  variant="link"
+                  disabled={retryingChannels}
+                  onClick={onRetryChannels}
+                  className="h-auto p-0 text-sm"
+                >
+                  {retryingChannels ? 'Retrying…' : 'Retry'}
+                </Button>
+              </p>
+            ) : null}
           </div>
         ) : null}
 

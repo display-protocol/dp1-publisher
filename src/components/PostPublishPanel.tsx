@@ -153,14 +153,16 @@ export default function PostPublishPanel({
           <p className="text-xs text-muted-foreground">
             {kind === 'playlist' ? (
               <>
-                Saved to your published list in this browser. Paste this URL
-                into a channel's <code className="font-mono">playlists</code>{' '}
-                array to reference it.
+                Stored on the feed. Paste this URL into a channel's{' '}
+                <code className="font-mono">playlists</code> array to reference
+                it. Reopen it for edit from Published in any browser (by this
+                URL on feeds without extensions).
               </>
             ) : (
               <>
-                Saved to your published list in this browser. Open the URL to
-                see the channel as the feed exposes it.
+                Stored on the feed and listed under Published for your wallet in
+                any browser. Open the URL to see the channel as the feed exposes
+                it.
               </>
             )}
           </p>

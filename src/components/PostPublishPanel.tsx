@@ -37,6 +37,8 @@ export default function PostPublishPanel({
   onUseInNewChannel,
   existingChannels = [],
   onAddToExistingChannel,
+  onLoadMoreChannels,
+  loadingMoreChannels = false,
   onPublishAnother,
   onViewPublished,
 }: {
@@ -53,11 +55,14 @@ export default function PostPublishPanel({
   /** When provided, renders a "Start a new channel" CTA. Only meaningful when
    * kind === 'playlist' and channel extensions are enabled. */
   onUseInNewChannel?: () => void
-  /** Channels the user has already published from this browser. Each renders
-   * as a separate "Add to: <title>" CTA. */
+  /** Channels the wallet publishes (from the feed, loaded pages only). Each
+   * renders as a separate "Add to: <title>" CTA. */
   existingChannels?: ExistingChannel[]
   /** Required when existingChannels has entries — fires when the user picks one. */
   onAddToExistingChannel?: (channelId: string) => void
+  /** Set while the feed has more of the wallet's channels; renders a "More channels" button. */
+  onLoadMoreChannels?: () => void
+  loadingMoreChannels?: boolean
   onPublishAnother: () => void
   onViewPublished: () => void
 }) {
@@ -183,7 +188,7 @@ export default function PostPublishPanel({
 
         {kind === 'playlist' &&
         (onUseInNewChannel ||
-          (existingChannels.length > 0 && onAddToExistingChannel)) ? (
+          ((existingChannels.length > 0 || onLoadMoreChannels) && onAddToExistingChannel)) ? (
           <div className="space-y-3">
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Use this playlist in a channel
@@ -211,6 +216,17 @@ export default function PostPublishPanel({
                   Add to: {ch.title}
                 </Button>
               ))}
+              {onLoadMoreChannels && onAddToExistingChannel ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={loadingMoreChannels}
+                  onClick={onLoadMoreChannels}
+                  className="rounded-full sm:w-auto"
+                >
+                  {loadingMoreChannels ? 'Loading…' : 'More channels'}
+                </Button>
+              ) : null}
             </div>
           </div>
         ) : null}

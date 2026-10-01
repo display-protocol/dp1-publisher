@@ -467,4 +467,26 @@ describe('ChannelForm — publish flow', () => {
       expect(desc).toMatch(/different wallet/i)
     })
   })
+
+  it('playlist picker pages through the feed with "More playlists"', async () => {
+    const owned = (id: string, title: string) => ({
+      id,
+      slug: `${id}-slug`,
+      title,
+      items: [],
+      curators: [{ name: '', key: TEST_WALLET_DID }],
+    })
+    mockedApi.listPlaylists
+      .mockResolvedValueOnce({ items: [owned('p1', 'Newest')], hasMore: true, cursor: 'next-1' })
+      .mockResolvedValueOnce({ items: [owned('p2', 'Older')], hasMore: false })
+
+    render(<ChannelForm />)
+    fireEvent.click(await screen.findByRole('button', { name: 'More playlists' }))
+
+    expect(await screen.findByRole('button', { name: /Older/ })).toBeInTheDocument()
+    expect(mockedApi.listPlaylists).toHaveBeenLastCalledWith(
+      expect.objectContaining({ cursor: 'next-1' }),
+    )
+    expect(screen.queryByRole('button', { name: 'More playlists' })).toBeNull()
+  })
 })

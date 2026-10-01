@@ -1,3 +1,4 @@
+import { useState, type FormEvent } from 'react'
 import { useAccount } from 'wagmi'
 import { ListMusic, Radio } from 'lucide-react'
 import {
@@ -10,6 +11,9 @@ import {
 } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { parsePlaylistReference } from '@/lib/playlistReference'
 import {
   feedChannelResourceUrl,
   feedPlaylistResourceUrl,
@@ -67,7 +71,7 @@ export default function PublishedView({
 
   const titleDescription = extensionsEnabled
     ? 'Playlists listing your wallet as curator and channels it publishes, as the feed has them. Newest first.'
-    : 'Playlists listing your wallet as curator, as the feed has them. Newest first.'
+    : 'This feed runs without extensions, so playlists published to it carry no curator and the feed cannot list them by wallet. Open one by its feed URL, ID or slug to edit it.'
 
   return (
     <Card className="border-border/45 shadow-[0_2px_40px_-20px_rgba(15,23,42,0.15)]">
@@ -120,18 +124,59 @@ export default function PublishedView({
           </Tabs>
         ) : (
           // Core-only deployments publish playlists and nothing else, so there
-          // is no second list to tab between.
-          <PublishedTable
-            rows={playlists}
-            query={playlistsQuery}
-            noun="playlists"
-            empty="No playlists yet. Publish one from the Publish screen."
-            onRowClick={(r) => onEditPlaylist(r.id)}
-            feedResourceUrl={(r) => feedPlaylistResourceUrl(r.slug?.trim() || r.id)}
-          />
+          // is no second list to tab between. `curators` is an extension field
+          // stripped at publish here, so the curator-filtered list only shows
+          // playlists published elsewhere with extensions; opening by reference
+          // is how a core-mode playlist is reached for edit.
+          <div className="space-y-8">
+            <OpenPlaylistByReference onOpen={onEditPlaylist} />
+            <PublishedTable
+              rows={playlists}
+              query={playlistsQuery}
+              noun="playlists"
+              empty="No playlists on this feed declare your wallet as curator."
+              onRowClick={(r) => onEditPlaylist(r.id)}
+              feedResourceUrl={(r) => feedPlaylistResourceUrl(r.slug?.trim() || r.id)}
+            />
+          </div>
         )}
       </CardContent>
     </Card>
+  )
+}
+
+function OpenPlaylistByReference({ onOpen }: { onOpen: (idOrSlug: string) => void }) {
+  const [value, setValue] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault()
+    const ref = parsePlaylistReference(value)
+    if (!ref) {
+      setError('Enter a playlist feed URL (…/api/v1/playlists/…), ID or slug.')
+      return
+    }
+    setError(null)
+    onOpen(ref)
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-2">
+      <Label htmlFor="open-playlist-ref">Open a playlist</Label>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Input
+          id="open-playlist-ref"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="Feed URL, ID or slug"
+          className="min-w-0 flex-1"
+        />
+        <Button type="submit" variant="outline">
+          Open for edit
+        </Button>
+      </div>
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+    </form>
   )
 }
 

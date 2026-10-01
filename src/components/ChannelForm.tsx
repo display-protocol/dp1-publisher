@@ -837,9 +837,9 @@ export default function ChannelForm({
 
   /** Playlists listing the wallet as curator (per the feed), surfaced as a
    * one-click picker so the user can compose this channel without
-   * copy/pasting URLs. Only pages already loaded are offered (newest first,
-   * cache shared with the Published view); older playlists can still be
-   * pasted by URL. */
+   * copy/pasting URLs. Loaded pages are offered newest first (cache shared
+   * with the Published view), with a "More playlists" button while the feed
+   * has further pages. */
   const ownedPlaylistsQuery = useOwnedPlaylists(address);
   const availablePlaylists = useMemo(
     () =>
@@ -972,7 +972,7 @@ export default function ChannelForm({
             </p>
           ) : (
             <>
-              {availablePlaylists.length > 0 ? (
+              {availablePlaylists.length > 0 || ownedPlaylistsQuery.hasNextPage ? (
                 <div className="mb-6 rounded-xl border border-border/60 bg-muted/20 p-4">
                   <p className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     Your published playlists
@@ -999,6 +999,18 @@ export default function ChannelForm({
                         </Button>
                       );
                     })}
+                    {ownedPlaylistsQuery.hasNextPage ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={ownedPlaylistsQuery.isFetchingNextPage}
+                        onClick={() => void ownedPlaylistsQuery.fetchNextPage()}
+                        className="h-8 rounded-full text-[12px]"
+                      >
+                        {ownedPlaylistsQuery.isFetchingNextPage ? 'Loading…' : 'More playlists'}
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               ) : null}

@@ -71,7 +71,7 @@ describe('PublishedView — feed-backed lists', () => {
 
     render(<PublishedView extensionsEnabled={false} onEditPlaylist={noop} onEditChannel={noop} />)
 
-    expect(await screen.findByText(/No playlists yet/)).toBeInTheDocument()
+    expect(await screen.findByText(/No playlists on this feed declare your wallet/)).toBeInTheDocument()
     expect(mockedApi.listChannels).not.toHaveBeenCalled()
   })
 
@@ -128,7 +128,7 @@ describe('PublishedView — feed-backed lists', () => {
       .mockResolvedValueOnce({ items: [playlist('p1', 'Mine')], hasMore: false })
 
     render(<PublishedView extensionsEnabled={false} onEditPlaylist={noop} onEditChannel={noop} />)
-    expect(await screen.findByText(/No playlists yet/)).toBeInTheDocument()
+    expect(await screen.findByText(/No playlists on this feed declare your wallet/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Load more playlists/ }))
 
     expect(await screen.findByText('Mine')).toBeInTheDocument()
@@ -159,5 +159,31 @@ describe('PublishedView — feed-backed lists', () => {
       expect(screen.getByText(/list may be incomplete/)).toBeInTheDocument()
     })
     expect(screen.getByText('Loaded')).toBeInTheDocument()
+  })
+
+  it('core mode: opens a playlist for edit from its feed URL', async () => {
+    mockedApi.listPlaylists.mockResolvedValue({ items: [], hasMore: false })
+    const onEditPlaylist = vi.fn()
+
+    render(<PublishedView extensionsEnabled={false} onEditPlaylist={onEditPlaylist} onEditChannel={noop} />)
+    const input = screen.getByLabelText('Open a playlist')
+
+    fireEvent.change(input, { target: { value: 'not a ref' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Open for edit' }))
+    expect(screen.getByText(/Enter a playlist feed URL/)).toBeInTheDocument()
+    expect(onEditPlaylist).not.toHaveBeenCalled()
+
+    fireEvent.change(input, { target: { value: 'https://feed.example/api/v1/playlists/core-slug' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Open for edit' }))
+    expect(onEditPlaylist).toHaveBeenCalledWith('core-slug')
+  })
+
+  it('extensions mode does not show the open-by-reference form', async () => {
+    mockedApi.listPlaylists.mockResolvedValue({ items: [], hasMore: false })
+
+    render(<PublishedView extensionsEnabled onEditPlaylist={noop} onEditChannel={noop} />)
+
+    expect(await screen.findByText(/No playlists yet/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Open a playlist')).not.toBeInTheDocument()
   })
 })

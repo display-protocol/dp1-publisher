@@ -227,6 +227,8 @@ export default function PlaylistForm({
   onUseInNewChannel,
   existingChannels,
   onAddToExistingChannel,
+  onLoadMoreChannels,
+  loadingMoreChannels,
   onViewPublished,
   extensionsEnabled,
 }: {
@@ -240,6 +242,9 @@ export default function PlaylistForm({
   existingChannels?: { id: string; title: string }[];
   /** Fires when the user picks an existing channel to add this playlist to. */
   onAddToExistingChannel?: (channelId: string, feedUrl: string) => void;
+  /** Set while the feed has more of the wallet's channels than `existingChannels` holds. */
+  onLoadMoreChannels?: () => void;
+  loadingMoreChannels?: boolean;
   /** Called when the user clicks "View all published" after a create publish. */
   onViewPublished?: () => void;
   extensionsEnabled: boolean;
@@ -1115,6 +1120,8 @@ export default function PlaylistForm({
                 onAddToExistingChannel(channelId, publishedDoc.feedUrl)
             : undefined
         }
+        onLoadMoreChannels={extensionsEnabled ? onLoadMoreChannels : undefined}
+        loadingMoreChannels={loadingMoreChannels}
         onPublishAnother={() => setPublishedDoc(null)}
         onViewPublished={() => {
           if (onViewPublished) {

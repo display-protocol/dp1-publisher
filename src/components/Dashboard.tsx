@@ -49,7 +49,8 @@ export default function Dashboard() {
   const bumpPublished = useInvalidateOwnedDocuments()
 
   /** Channels the wallet publishes, per the feed. Powers the "Add to: <channel>"
-   * CTAs on the playlist post-publish panel; only the loaded page(s) are offered. */
+   * CTAs on the playlist post-publish panel; loaded pages are offered, with a
+   * "More channels" button while the feed has further pages. */
   const ownedChannelsQuery = useOwnedChannels(address, extensionsEnabled)
   const existingChannels = useMemo(
     () =>
@@ -234,6 +235,12 @@ export default function Dashboard() {
                 onUseInNewChannel={handleUseInNewChannel}
                 existingChannels={existingChannels}
                 onAddToExistingChannel={handleAddToExistingChannel}
+                onLoadMoreChannels={
+                  ownedChannelsQuery.hasNextPage
+                    ? () => void ownedChannelsQuery.fetchNextPage()
+                    : undefined
+                }
+                loadingMoreChannels={ownedChannelsQuery.isFetchingNextPage}
                 onViewPublished={handleViewPublished}
               />
             </TabsContent>

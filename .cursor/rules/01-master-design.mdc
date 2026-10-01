@@ -33,5 +33,5 @@ Use this rule for structural decisions and module boundaries.
 ## 4) Completion checks
 
 - Dependency direction stays clear (components call into `lib/`, not the reverse except via props/callbacks).
-- Behavior that looks like validation or merging with server state is justified and documented (`publishedStorage`, PATCH merges, etc.).
+- Behavior that looks like validation or merging with server state is justified and documented (feed-backed owned lists in `useOwnedDocuments.ts`, replace merges, etc.).
 - No new unexplained widening of URIs or dev-only escapes without documenting security posture changes.

@@ -59,7 +59,6 @@ import {
   stripPlaylistExtensionFields,
   stripItemExtensionFields,
 } from '@/lib/dp1ExtensionPolicy';
-import { recordPublishedPlaylist } from '@/lib/publishedStorage';
 import type { DynamicQuery, Entity, Playlist, PlaylistItem } from '@/types/dp1';
 import SeriesExpander from './SeriesExpander';
 import ManualItemsSection from './ManualItemsSection';
@@ -236,7 +235,7 @@ export default function PlaylistForm({
   onPublished?: () => void;
   /** Fires when the user clicks "Start a new channel" on the post-publish panel. */
   onUseInNewChannel?: (feedUrl: string) => void;
-  /** User's existing channels (read from localStorage); each renders as an
+  /** Channels the wallet publishes (read from the feed); each renders as an
    * "Add to: <title>" CTA on the post-publish panel. */
   existingChannels?: { id: string; title: string }[];
   /** Fires when the user picks an existing channel to add this playlist to. */
@@ -969,7 +968,6 @@ export default function PlaylistForm({
               }),
           })
         );
-        recordPublishedPlaylist(address, updated);
         onPublished?.();
         storedBaseRef.current = updated;
         loadedRef.current = extensionsEnabled
@@ -1003,7 +1001,6 @@ export default function PlaylistForm({
               }),
           })
         );
-        recordPublishedPlaylist(address, updated);
         onPublished?.();
         const feedUrl = feedPlaylistResourceUrl(
           updated.slug?.trim() || updated.id || ''
@@ -1042,7 +1039,6 @@ export default function PlaylistForm({
         setId(uuidv4());
       } else {
         const published = await publishPlaylist(body as Playlist);
-        recordPublishedPlaylist(address, published);
         onPublished?.();
         const feedUrl = feedPlaylistResourceUrl(
           published.slug?.trim() || published.id || ''

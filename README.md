@@ -86,7 +86,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for environment nuances and feed-local deve
 1. **Connect wallet**
 2. **Publish** tabs: Playlist, Group (and Channel when extensions are on)—use forms or paste JSON where offered
 3. **Sign & publish** submits `POST /api/v1/...` with non-empty signatures
-4. **Published**: local per-wallet registry (browser `localStorage`) for shortcuts; edits always reload from GET before replace + re-sign
+4. **Published**: the connected wallet's playlists and channels, queried from the feed by owner key (`?curator=` / `?publisher=`), so the list is the same in every browser; edits always reload from GET before replace + re-sign
 
 ### Extensions
 

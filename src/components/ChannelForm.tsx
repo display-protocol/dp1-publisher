@@ -33,11 +33,7 @@ import { signDocument, stripSignatureFields } from '@/lib/signing';
 import { buildReplaceIntent } from '@/lib/replaceIntent';
 import { channelUnsignedPayloadForSigning } from '@/lib/channelSignPayload';
 import { mergeChannelForPatch } from '@/lib/dp1Merge';
-import {
-  loadPublished,
-  recordPublishedChannel,
-  sortByCreatedDesc,
-} from '@/lib/publishedStorage';
+import { flattenOwnedPages, useOwnedPlaylists } from '@/hooks/useOwnedDocuments';
 import {
   FeedAPIError,
   feedChannelResourceUrl,
@@ -734,7 +730,6 @@ export default function ChannelForm({
               }),
           })
         );
-        recordPublishedChannel(address, updated);
         onPublished?.();
         loadedRef.current = updated;
         setAppendBanner(null);
@@ -765,7 +760,6 @@ export default function ChannelForm({
               }),
           })
         );
-        recordPublishedChannel(address, updated);
         onPublished?.();
         const feedUrl = feedChannelResourceUrl(
           updated.slug?.trim() || updated.id || ''
@@ -794,7 +788,6 @@ export default function ChannelForm({
         setId(uuidv4());
       } else {
         const published = await publishChannel(body as Channel);
-        recordPublishedChannel(address, published);
         onPublished?.();
         const feedUrl = feedChannelResourceUrl(
           published.slug?.trim() || published.id || ''
@@ -842,18 +835,21 @@ export default function ChannelForm({
     }
   };
 
-  /** User's published playlists, surfaced as a one-click picker so they can
-   * compose this channel without copy/pasting URLs. Recomputed on each render
-   * — cheap, and avoids stale data after a side-tab publish. */
-  const availablePlaylists = useMemo(() => {
-    if (!address) return [];
-    const bucket = loadPublished(address);
-    return sortByCreatedDesc(bucket.playlists).map((p) => ({
-      id: p.id,
-      title: p.title || 'Untitled playlist',
-      feedUrl: feedPlaylistResourceUrl(p.slug?.trim() || p.id || ''),
-    }));
-  }, [address]);
+  /** Playlists listing the wallet as curator (per the feed), surfaced as a
+   * one-click picker so the user can compose this channel without
+   * copy/pasting URLs. Only pages already loaded are offered (newest first,
+   * cache shared with the Published view); older playlists can still be
+   * pasted by URL. */
+  const ownedPlaylistsQuery = useOwnedPlaylists(address);
+  const availablePlaylists = useMemo(
+    () =>
+      flattenOwnedPages(ownedPlaylistsQuery.data).map((p) => ({
+        id: p.id,
+        title: p.title || 'Untitled playlist',
+        feedUrl: feedPlaylistResourceUrl(p.slug?.trim() || p.id),
+      })),
+    [ownedPlaylistsQuery.data]
+  );
 
   const currentPlaylistUrls = useMemo(
     () =>

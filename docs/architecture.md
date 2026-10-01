@@ -8,7 +8,7 @@
 Publisher (browser) ──► Feed API ──► PostgreSQL
    │  Vite/React       (DP-1 Feed server — https://github.com/display-protocol/dp1-feed-v2)
    │  wagmi + viem
-   └── localStorage (published list UX only)
+   └── TanStack Query cache (in-memory; "Published" lists come from the feed)
 ```
 
 ---
@@ -22,7 +22,7 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 | **Review & sign page** | `src/components/ReviewAndSign.tsx`, `src/lib/reviewDocument.ts` | Standalone `#/sign` hash route (routed in `App.tsx`) for already-composed documents: paste/drop JSON → kind detection + strict validation + import normalization (`reviewDocument.ts`, mirroring the forms' JSON-tab parsers) → plain-language attestation summary (role, what the signature covers, what can change post-signing) → preflight overwrite check → the same `preparePublish` pipeline → wallet sign → POST (create) or PUT (replace). Prototype for issue #10's composition/signing split; the forms remain the composition surface. |
 | **Forms & editors** | `src/components/PlaylistForm.tsx`, `ChannelForm.tsx` | Composer UI, JSON editor paths. Forms resolve a *raw document* from form state or pasted JSON, then route it through the publish-preparation boundary below — they no longer build wire JSON or run canonicalization themselves. |
 | **Publish preparation** | `src/lib/preparePublish.ts` | **Single chokepoint** for the `raw document → signed bytes + wire body` pipeline. Merges with base (edit), strips extensions when off (playlist), ensures the connected wallet is declared as signer (`curators[]` for playlist, `curator` for playlist group, `publisher.key` for channel), validates, then canonicalizes once via `*UnsignedPayloadForSigning` and derives the wire body from that canonical form. **Invariant:** the wire body equals the signed bytes, on create and replace alike — nothing is omitted from what was signed. |
-| **Published registry (local)** | `src/components/PublishedView.tsx`, `src/lib/publishedStorage.ts` | Per-wallet list metadata in `localStorage`; edits always refetch via GET—never replace from stale cache alone. |
+| **Published lists (feed-backed)** | `src/components/PublishedView.tsx`, `src/hooks/useOwnedDocuments.ts` | The wallet's playlists (`GET /api/v1/playlists?curator=<did>`) and channels (`GET /api/v1/channels?publisher=<did>`), newest first, paged by feed cursor. Also feeds the channel form's playlist picker and the post-publish "Add to: <channel>" CTAs. Works across browsers; nothing is persisted client-side. The feed matches the *declared* key (`curators[].key` / `publisher.key`) exactly and case-sensitively, so documents that never declared this wallet's checksummed did:pkh are not listed. Lists are display data only; edits always refetch via GET—never replace from a list row. Invalidated after every publish/replace from the dashboard. |
 | **Feed HTTP client** | `src/lib/api.ts` | Base URL helpers, GET metadata, POST create, PUT replace (document plus signed intent), GET list/detail, playlist URI helpers. Throws `FeedAPIError` with status + stable `error` code when present. |
 | **Indexer GraphQL client** | `src/lib/indexerApi.ts`, `src/lib/indexerToPlaylistItem.ts` | ff-indexer-v2 GraphQL (`VITE_INDEXER_BASE_URL` + `/graphql`). Resolves releases by vendor slug across four vendors (`feralfile`, `artblocks`, `fxhash`, `objkt`) and fetches tokens using sparse `mint_numbers` lists (batched at 50/request). Also calls `triggerReleaseIndexing` mutation when the curator requests gap-filling — this is a browser-originated write, not a read-only path. Tokens are expanded into `PlaylistItem` leaves at compose time; no live indexer calls at play time. |
 | **Series expand UI** | `src/components/SeriesExpander.tsx` | Curator panel inside `PlaylistForm`. Accepts a vendor slug and optional mint spec; loads tokens from the indexer, detects gaps (mint numbers present in spec but absent in index), and offers an "Index missing tokens" flow: Phase 1 polls `jobStatus` until enqueuing completes, Phase 2 polls token appearance until gaps close or timeout. Replaces the playlist item list on completion. |
@@ -60,7 +60,7 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 
 `wireBody` is derived from `signedBytes` directly (not built in parallel) — drift between them is structurally impossible at this layer.
 
-**Replace:** signatures must verify against the **merged** stored document overlaid with the user's edits — the app refetches GET before merging for edit flows (see `publishedStorage.ts` comments). The create-time auto-overwrite path uses the same merge-with-base mechanism, so the same invariant holds.
+**Replace:** signatures must verify against the **merged** stored document overlaid with the user's edits — the app refetches GET before merging for edit flows (see `useOwnedDocuments.ts` comments). The create-time auto-overwrite path uses the same merge-with-base mechanism, so the same invariant holds.
 
 ---
 
@@ -105,7 +105,8 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 
 - Running or embedding [dp1-feed-v2](https://github.com/display-protocol/dp1-feed-v2) / PostgreSQL.
 - OAuth/JWT flows (wallet signatures only here).
-- Server-side persistence of drafts (except browser `localStorage` list metadata).
+- Server-side persistence of drafts.
+- Client-side registries of published documents: the feed's owner filters are the only source for "Published".
 
 ---
 

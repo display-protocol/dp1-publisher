@@ -17,7 +17,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Toaster } from '@/components/ui/toaster'
 import { cn } from '@/lib/utils'
 import { useDp1Extensions } from '@/context/Dp1ExtensionsContext'
-import { loadPublished, sortByCreatedDesc } from '@/lib/publishedStorage'
+import {
+  flattenOwnedPages,
+  useInvalidateOwnedDocuments,
+  useOwnedChannels,
+} from '@/hooks/useOwnedDocuments'
 import WalletConnect from './WalletConnect'
 import PlaylistForm from './PlaylistForm'
 import ChannelForm from './ChannelForm'
@@ -38,26 +42,25 @@ export default function Dashboard() {
    * Bumped via "Add to: <channel>" CTA on the post-publish panel. */
   const [pendingAppendPlaylistUrl, setPendingAppendPlaylistUrl] =
     useState<string | undefined>(undefined)
-  const [publishedTick, setPublishedTick] = useState(0)
   const [editPlaylistId, setEditPlaylistId] = useState<string | null>(null)
   const [editChannelId, setEditChannelId] = useState<string | null>(null)
 
-  const bumpPublished = () => setPublishedTick((n) => n + 1)
+  /** Refetch the feed-backed owned lists after any publish or replace from a form. */
+  const bumpPublished = useInvalidateOwnedDocuments()
 
-  /** Existing channels the user has published from this browser. Rebuilt
-   * whenever a new publish happens (publishedTick). Powers the "Add to: <channel>"
-   * CTAs on the playlist post-publish panel. */
-  const existingChannels = useMemo(() => {
-    if (!address || !extensionsEnabled) return []
-    const bucket = loadPublished(address)
-    return sortByCreatedDesc(bucket.channels).map((c) => ({
-      id: c.id,
-      title: c.title || 'Untitled channel',
-    }))
-    // publishedTick is intentionally part of the dep set so a fresh channel
-    // publish refreshes this list without a full reload.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [address, extensionsEnabled, publishedTick])
+  /** Channels the wallet publishes, per the feed. Powers the "Add to: <channel>"
+   * CTAs on the playlist post-publish panel; only the loaded page(s) are offered. */
+  const ownedChannelsQuery = useOwnedChannels(address, extensionsEnabled)
+  const existingChannels = useMemo(
+    () =>
+      extensionsEnabled
+        ? flattenOwnedPages(ownedChannelsQuery.data).map((c) => ({
+            id: c.id,
+            title: c.title || 'Untitled channel',
+          }))
+        : [],
+    [extensionsEnabled, ownedChannelsQuery.data]
+  )
 
   useEffect(() => {
     if (!extensionsEnabled) {
@@ -279,7 +282,6 @@ export default function Dashboard() {
           />
         ) : (
           <PublishedView
-            key={publishedTick}
             extensionsEnabled={extensionsEnabled}
             onEditPlaylist={(id) => {
               setEditChannelId(null)

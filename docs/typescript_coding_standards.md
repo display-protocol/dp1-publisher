@@ -31,7 +31,7 @@ This repository favors clarity, predictable boundaries, and behavior aligned wit
 Add comments where future maintainers could otherwise misalign with DP-1 or the feed:
 
 - signing / canonicalization invariants (`signing.ts`, payload builders)
-- why refetch-before-replace matters (`publishedStorage.ts`) — a replace sends the whole document, so a stale base silently drops fields
+- why refetch-before-replace matters (`useOwnedDocuments.ts`) — a replace sends the whole document, so a stale base silently drops fields
 - extensions fallbacks (`Dp1ExtensionsContext.tsx`)
 
 Avoid narrating obvious JSX or trivial assignments.

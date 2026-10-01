@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import * as apiModule from '@/lib/api'
+import { ethereumAddressToDIDPKH } from '@/lib/signing'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { renderWithQueryClient as render } from '@/test/renderWithQueryClient'
 import Dashboard from './Dashboard'
 
 vi.mock('wagmi', () => ({
@@ -26,14 +29,26 @@ vi.mock('./PlaylistForm', () => ({
   __esModule: true,
   default: (props: {
     onUseInNewChannel?: (url: string) => void
+    onPublished?: () => void
+    existingChannels?: { id: string; title: string }[]
   }) => (
-    <button
-      type="button"
-      data-testid="trigger-use-in-new-channel"
-      onClick={() => props.onUseInNewChannel?.('https://feed.example/api/v1/playlists/just-published')}
-    >
-      simulate Use in new channel
-    </button>
+    <>
+      <button
+        type="button"
+        data-testid="trigger-use-in-new-channel"
+        onClick={() => props.onUseInNewChannel?.('https://feed.example/api/v1/playlists/just-published')}
+      >
+        simulate Use in new channel
+      </button>
+      <button type="button" data-testid="trigger-published" onClick={() => props.onPublished?.()}>
+        simulate publish
+      </button>
+      <ul data-testid="existing-channels">
+        {(props.existingChannels ?? []).map((c) => (
+          <li key={c.id}>{c.title}</li>
+        ))}
+      </ul>
+    </>
   ),
 }))
 
@@ -57,13 +72,21 @@ vi.mock('./WalletConnect', () => ({
   default: () => <div data-testid="wallet-connect" />,
 }))
 
+// Dashboard reads the wallet's channels from the feed for the "Add to" CTAs.
+vi.mock('@/lib/api', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api')
+  return { ...actual, listChannels: vi.fn(async () => ({ items: [], hasMore: false })) }
+})
+
 vi.mock('@/components/ui/toaster', () => ({
   Toaster: () => null,
 }))
 
+const mockedListChannels = apiModule.listChannels as unknown as ReturnType<typeof vi.fn>
+
 describe('Dashboard — pendingChannelPlaylistsText lifecycle', () => {
   beforeEach(() => {
-    localStorage.clear()
+    mockedListChannels.mockClear()
   })
 
   it('clears the new-channel pre-fill URL when navigating to Published and back', async () => {
@@ -96,5 +119,27 @@ describe('Dashboard — pendingChannelPlaylistsText lifecycle', () => {
       const channelForm = screen.getByTestId('channel-form')
       expect(channelForm.getAttribute('data-initial-playlists-text')).toBe('')
     })
+  })
+
+  it('offers the wallet\'s feed channels as "Add to" targets and refetches them after a publish', async () => {
+    mockedListChannels.mockResolvedValue({
+      items: [
+        {
+          version: '0.1.0',
+          id: 'c1',
+          title: 'Owned channel',
+          playlists: [],
+          publisher: { name: '', key: ethereumAddressToDIDPKH('0x000000000000000000000000000000000000aBcD') },
+        },
+      ],
+      hasMore: false,
+    })
+    render(<Dashboard />)
+
+    expect(await screen.findByText('Owned channel')).toBeInTheDocument()
+    expect(mockedListChannels).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByTestId('trigger-published'))
+    await waitFor(() => expect(mockedListChannels).toHaveBeenCalledTimes(2))
   })
 })

@@ -65,8 +65,22 @@ describe('normalizeIndexerChain', () => {
 
   it('maps CAIP-2 tezos and bitmark ids by namespace', () => {
     expect(normalizeIndexerChain('tezos:mainnet')).toBe('tezos')
-    expect(normalizeIndexerChain('TEZOS:ghostnet')).toBe('tezos')
+    expect(normalizeIndexerChain(' tezos:ghostnet ')).toBe('tezos')
     expect(normalizeIndexerChain('bitmark:livenet')).toBe('bitmark')
+  })
+
+  it('maps ids that violate the CAIP-2 grammar to other', () => {
+    expect(normalizeIndexerChain('eip155:1:junk')).toBe('other')
+    expect(normalizeIndexerChain('eip155:1/2')).toBe('other')
+    expect(normalizeIndexerChain(`eip155:${'1'.repeat(33)}`)).toBe('other')
+    // Namespaces are lowercase-only in CAIP-2.
+    expect(normalizeIndexerChain('EIP155:1')).toBe('other')
+  })
+
+  it('does not resolve inherited object keys as namespaces', () => {
+    expect(normalizeIndexerChain('__proto__:1')).toBe('other')
+    expect(normalizeIndexerChain('constructor:1')).toBe('other')
+    expect(normalizeIndexerChain('toString:1')).toBe('other')
   })
 
   it('maps unknown namespaces and non-CAIP strings to other rather than guessing', () => {

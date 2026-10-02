@@ -46,6 +46,7 @@ export interface IndexerTokenDisplay {
 
 export interface IndexerToken {
   id: number
+  // CAIP-2 chain id, e.g. "eip155:1" or "tezos:mainnet" (see normalizeIndexerChain).
   chain: string
   standard: string
   contract_address: string

@@ -80,6 +80,7 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 - **Vendor support:** `feralfile`, `artblocks`, `fxhash`, `objkt`. Releases are looked up by `vendor_release_slug`; for objkt the slug equals the KT1 contract address.
 - **Mint filter:** Uses sparse `mint_numbers: [Int!]` (max 50/request). The old `mint_from`/`mint_to` range fields are no longer used.
 - **Job polling:** After triggering indexing, the UI polls `Query.jobStatus(job_id)` (Phase 1) then re-polls `Query.tokens(mint_numbers)` (Phase 2) until gaps close.
+- **Chain ids:** `Token.chain` is a CAIP-2 id (`eip155:1`, `tezos:mainnet`). `normalizeIndexerChain` maps it by namespace to DP-1 `contract.chain`: `eip155` → `evm`, `tezos` → `tezos`, `bitmark` → `bitmark`, anything else → `other`. Interim assumption: bitmark tokens use a `bitmark:<ref>` id (not yet seen in live indexer data).
 - **Contract:** GraphQL schema in **[ff-indexer-v2](https://github.com/feral-file/ff-indexer-v2)** `api/graphql/schema.graphql`.
 
 ---

@@ -171,7 +171,7 @@ describe('resolveReleaseBySlug', () => {
 
 const makeToken = (id: number, mintNumber: number) => ({
   id,
-  chain: 'ethereum',
+  chain: 'eip155:1',
   standard: 'erc721',
   contract_address: '0xabc',
   token_number: String(mintNumber),

@@ -36,7 +36,7 @@ vi.mock('@/hooks/use-toast', () => ({
 function makeToken(id: number, mintNumber: number): indexerApi.IndexerToken {
   return {
     id,
-    chain: 'ethereum',
+    chain: 'eip155:1',
     standard: 'erc721',
     contract_address: '0x0000000000000000000000000000000000000000',
     token_number: String(mintNumber),

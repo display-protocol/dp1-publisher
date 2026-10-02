@@ -12,7 +12,7 @@ import type { IndexerToken } from '@/lib/indexerApi'
 function makeToken(overrides: Partial<IndexerToken> = {}): IndexerToken {
   return {
     id: 1,
-    chain: 'ethereum',
+    chain: 'eip155:1',
     standard: 'erc721',
     contract_address: '0xabc',
     token_number: '42',
@@ -58,19 +58,23 @@ describe('resolveTokenSourceUrl', () => {
 })
 
 describe('normalizeIndexerChain', () => {
-  it('maps tezos and bitmark explicitly', () => {
-    expect(normalizeIndexerChain('tezos')).toBe('tezos')
-    expect(normalizeIndexerChain('bitmark')).toBe('bitmark')
+  it('maps CAIP-2 eip155 ids on any network to evm', () => {
+    expect(normalizeIndexerChain('eip155:1')).toBe('evm')
+    expect(normalizeIndexerChain('eip155:8453')).toBe('evm')
   })
 
-  it('maps known EVM chains to evm', () => {
-    expect(normalizeIndexerChain('ethereum')).toBe('evm')
+  it('maps CAIP-2 tezos and bitmark ids by namespace', () => {
+    expect(normalizeIndexerChain('tezos:mainnet')).toBe('tezos')
+    expect(normalizeIndexerChain('TEZOS:ghostnet')).toBe('tezos')
+    expect(normalizeIndexerChain('bitmark:livenet')).toBe('bitmark')
   })
 
-  it('maps unknown/non-EVM chains to other rather than silently labeling them evm', () => {
-    expect(normalizeIndexerChain('polygon')).toBe('other')
-    expect(normalizeIndexerChain('solana')).toBe('other')
-    expect(normalizeIndexerChain('unknown-chain')).toBe('other')
+  it('maps unknown namespaces and non-CAIP strings to other rather than guessing', () => {
+    expect(normalizeIndexerChain('solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp')).toBe('other')
+    expect(normalizeIndexerChain('ethereum')).toBe('other')
+    expect(normalizeIndexerChain('eip155')).toBe('other')
+    expect(normalizeIndexerChain('eip155:')).toBe('other')
+    expect(normalizeIndexerChain('')).toBe('other')
   })
 })
 

@@ -2,14 +2,15 @@
 name: reviewer
 model: composer-2-fast
 description: >-
-  Read-only TypeScript/React reviewer for dp1-publisher. Uses prompts/code-review.md.
+  Read-only TypeScript/React reviewer for dp1-publisher. Uses the generated
+  contract and repository delta.
   Does not edit unless asked.
 readonly: true
 ---
 
 You are the project reviewer.
 
-Read and follow `prompts/code-review.md` in full. That file is the single source of truth for review priority, posture, output shape, and verdict.
+Read and follow `prompts/code-review.md` in full, then apply the repository-specific checks in `prompts/code-review.delta.md`. The delta may not weaken the generated contract.
 
 Use the repository contract in `AGENTS.md` for workflow expectations.
 

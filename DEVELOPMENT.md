@@ -24,10 +24,11 @@ Edit `.env`:
 | Variable | Purpose |
 | -------- | ------- |
 | `VITE_FEED_BASE_URL` | Feed API origin (`https://…`), no trailing slash |
-| `VITE_INDEXER_BASE_URL` | ff-indexer-v2 origin for series expand — see [Series expand](#series-expand-vite_indexer_base_url) below |
 | `VITE_DP1_EXTENSIONS_ENABLED` | Optional `true` / `false`; when unset, use `GET /api/v1` |
 | `VITE_WALLETCONNECT_PROJECT_ID` | Optional; omit to use injected wallet only |
 | `VITE_DEBUG_MODE` | Dev server only (`true`): relax playlist URI schemes for Channel validation |
+| `VITE_FERALFILE_API_BASE_URL` | Optional Feral File API base for series expand — see [Series expand](#series-expand-vendor-apis) below |
+| `VITE_IPFS_GATEWAY_BASE_URL` | Optional IPFS gateway (`…/ipfs`) for objkt media; default `https://ipfs.feralfile.com/ipfs` |
 
 URI rules and dev-only relaxations: [`validatePlaylistURI` / `isDebugMode`](src/lib/api.ts) in `src/lib/api.ts`.
 
@@ -58,21 +59,21 @@ Conceptual layering and flows: **[docs/architecture.md](docs/architecture.md)**
 
 ---
 
-## Series expand (`VITE_INDEXER_BASE_URL`)
+## Series expand (vendor APIs)
 
-The **Load from series** feature in the playlist form calls `VITE_INDEXER_BASE_URL/graphql`. It supports four vendors — Feral File, Art Blocks, fxhash, and objkt — all identified by release slug. It requires **ff-indexer-v2** with the slug + sparse-mint API:
+The **Load from series** panel in the playlist form reads releases directly from three vendor APIs: Feral File, Art Blocks and objkt. There is no indexer dependency. The architecture doc lists the endpoints and rules: [docs/architecture.md](docs/architecture.md#dependencies-on-vendor-apis-series-expand).
 
-- `Query.releases(vendor, vendor_release_slug, limit)` — resolve a release by vendor slug
-- `Query.tokens(release_vendor, release_vendor_slug, mint_numbers, ...)` — fetch tokens by sparse mint list (max 50/request)
-- `Mutation.triggerReleaseIndexing(vendor, vendor_release_slug, mint_numbers)` — enqueue indexing for missing mints
-- `Query.jobStatus(job_id)` — poll Phase 1 job completion
+Art Blocks and objkt allow any origin, so they work from `npm run dev` unchanged. Feral File refuses the `localhost` origin with a 403, so the dev server proxies `/ff-api` to `https://feralfile.com/api` and strips the `Origin` header (`vite.config.ts`). With `VITE_FERALFILE_API_BASE_URL` unset, dev builds use the proxy and production builds call `https://feralfile.com/api`, which allow-lists `publisher.feralfile.com`.
 
-These fields were introduced in ff-indexer-v2 at commit **`d601e24`** (`feat(api): replace mint_from/mint_to with explicit mint_numbers list`). If your configured endpoint predates that commit, the **Load** button will surface the GraphQL error inline. To develop against a compatible indexer locally:
+Releases worth checking after a change:
 
-```bash
-# in .env, point to a local ff-indexer-v2 with the slug + sparse-mint API
-VITE_INDEXER_BASE_URL=http://localhost:8081
-```
+| Vendor | Slug | Expect |
+| ------ | ---- | ------ |
+| Feral File | `most-valuable-painting-hng` | 512 mints, 6 artwork pages, not capped |
+| Feral File | `data-pilgrims-01-769` | 10 mints |
+| Art Blocks | `fidenza-by-tyler-hobbs` | 999 mints, titles `Fidenza #0…`, checksummed contract |
+| objkt | `KT1XR4XgBJ2RZz1vW22q6EKdSNgYbmaaWr5z` | 45 mints in numeric order |
+| objkt | `KT1RJ6PbjHpwc3M5rw5s2Nbmefwbuwbdxton` | refused: shared (hic et nunc) contract |
 
 ---
 

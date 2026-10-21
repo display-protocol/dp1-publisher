@@ -10,6 +10,13 @@ interface ImportMetaEnv {
    * When unset, the app reads `GET /api/v1` `extensionsEnabled` from `VITE_FEED_BASE_URL`.
    */
   readonly VITE_DP1_EXTENSIONS_ENABLED?: string
+  /**
+   * Feral File public API base for "Load from series". Unset: the dev server uses the
+   * Vite proxy path `/ff-api`, production builds call `https://feralfile.com/api`.
+   */
+  readonly VITE_FERALFILE_API_BASE_URL?: string
+  /** IPFS gateway base (…/ipfs) used to turn objkt `ipfs://` media into https sources. */
+  readonly VITE_IPFS_GATEWAY_BASE_URL?: string
 }
 
 interface ImportMeta {

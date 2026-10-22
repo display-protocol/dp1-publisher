@@ -1,5 +1,11 @@
 /**
- * ff-indexer-v2 GraphQL client (browser).
+ * DEPRECATED: ff-indexer-v2 GraphQL client (browser).
+ *
+ * Nothing in the app imports this module any more: "Load from series" reads the
+ * vendor APIs through `@/lib/vendors` (feral-file/feral-file#3576, step 4), and
+ * ESLint forbids importing it from app code. It is kept, unused, until the indexer
+ * is retired, so do not wire it back in or extend it.
+ *
  * Base URL mirrors feed client pattern: VITE_INDEXER_BASE_URL + /graphql.
  *
  * Vendor support: feralfile, artblocks, fxhash, objkt.
@@ -8,27 +14,37 @@
  * (max 50 per request) rather than mint_from/mint_to ranges — callers batch accordingly.
  */
 
+import { MINT_SPEC_MAX_SIZE, type MintSpec } from '@/lib/mintSpec'
+
+// Mint spec parsing moved to '@/lib/mintSpec'; re-exported so this module's surface is unchanged.
+export { MINT_SPEC_MAX_SIZE, MintSpecParseError, parseMintSpec, type MintSpec } from '@/lib/mintSpec'
+
+/** @deprecated Unused since series load through `@/lib/vendors`; see the module header. */
 export const INDEXER_VENDOR_FERALFILE = 'feralfile'
+/** @deprecated Unused since series load through `@/lib/vendors`; see the module header. */
 export const INDEXER_VENDOR_ARTBLOCKS = 'artblocks'
+/** @deprecated Unused since series load through `@/lib/vendors`; see the module header. */
 export const INDEXER_VENDOR_FXHASH = 'fxhash'
+/** @deprecated Unused since series load through `@/lib/vendors`; see the module header. */
 export const INDEXER_VENDOR_OBJKT = 'objkt'
 
-/** GraphQL Uint8 max for paginated token list requests. */
+/**
+ * GraphQL Uint8 max for paginated token list requests.
+ * @deprecated Unused since series load through `@/lib/vendors`; see the module header.
+ */
 export const MAX_RELEASE_TOKENS = 255
 
 /**
  * Max mint numbers per tokens query or triggerReleaseIndexing mutation call.
  * The indexer enforces this server-side; callers must batch larger lists.
+ * @deprecated Unused since series load through `@/lib/vendors`; see the module header.
  */
 export const MINT_NUMBERS_BATCH_SIZE = 50
 
 /**
- * Max total mints that parseMintSpec will expand from a range input (e.g. "1..1000").
- * Guards against accidental runaway expansion.
+ * Release metadata returned by the releases query.
+ * @deprecated Unused since series load through `@/lib/vendors`; see the module header.
  */
-export const MINT_SPEC_MAX_SIZE = 1000
-
-/** Release metadata returned by the releases query. */
 export interface IndexerReleaseSummary {
   id: number
   vendor: string
@@ -39,11 +55,13 @@ export interface IndexerReleaseSummary {
   total_mints: number | null
 }
 
+/** @deprecated Unused since series load through `@/lib/vendors`; see the module header. */
 export interface IndexerTokenDisplay {
   animation_url: string | null
   image_url: string | null
 }
 
+/** @deprecated Unused since series load through `@/lib/vendors`; see the module header. */
 export interface IndexerToken {
   id: number
   // CAIP-2 chain id, e.g. "eip155:1" or "tezos:mainnet" (see normalizeIndexerChain).
@@ -64,7 +82,10 @@ export interface IndexerToken {
   metadata: { name: string | null } | null
 }
 
-/** Result returned by triggerReleaseIndexing. */
+/**
+ * Result returned by triggerReleaseIndexing.
+ * @deprecated Unused since series load through `@/lib/vendors`; see the module header.
+ */
 export interface IndexerTriggerResult {
   job_id: number
 }
@@ -76,6 +97,7 @@ export interface IndexerTriggerResult {
  * that the client deliberately stopped fetching at MINT_SPEC_MAX_SIZE even though
  * the release may contain more indexed tokens. This is distinct from partial
  * server-side indexing (where the indexer has not yet processed all mints).
+ * @deprecated Unused since series load through `@/lib/vendors`; see the module header.
  */
 export interface TokenFetchResult {
   tokens: IndexerToken[]
@@ -85,6 +107,7 @@ export interface TokenFetchResult {
 /**
  * Job status shape from jobStatus(job_id).
  * status values: "pending" | "running" | "succeeded" | "failed" | "canceled"
+ * @deprecated Unused since series load through `@/lib/vendors`; see the module header.
  */
 export interface IndexerJobStatus {
   job_id: number
@@ -94,97 +117,9 @@ export interface IndexerJobStatus {
 }
 
 /**
- * Explicit sorted array of 1-based mint numbers derived from user input.
- * Used as the wire value for tokens(mint_numbers) and triggerReleaseIndexing(mint_numbers).
+ * Base indexer origin, no trailing slash (matches `VITE_INDEXER_BASE_URL` when set).
+ * @deprecated Unused since series load through `@/lib/vendors`; see the module header.
  */
-export type MintSpec = number[]
-
-/** Thrown by parseMintSpec when the input cannot be interpreted as valid mint numbers. */
-export class MintSpecParseError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'MintSpecParseError'
-  }
-}
-
-/**
- * Parse a curator-supplied mint input string into a sorted, deduplicated array of
- * 1-based mint numbers, or null when the input is empty (meaning "no filter, fetch all").
- *
- * Accepted formats:
- *   ""         → null
- *   "50"       → [50]
- *   "1..100"   → [1, 2, 3, ..., 100]  (inclusive range, expands inline)
- *   "1,3,5"    → [1, 3, 5]            (explicit sparse list)
- *
- * Throws MintSpecParseError for:
- *   - non-integer values
- *   - mint numbers < 1
- *   - reversed ranges (e.g. "5..1")
- *   - expanded range > MINT_SPEC_MAX_SIZE entries
- */
-export function parseMintSpec(input: string): MintSpec | null {
-  const trimmed = input.trim()
-  if (!trimmed) return null
-
-  // Range notation: "N..M"
-  if (trimmed.includes('..')) {
-    const parts = trimmed.split('..')
-    if (parts.length !== 2) {
-      throw new MintSpecParseError(`Invalid range format: "${trimmed}". Use "1..100".`)
-    }
-    const from = parseInt(parts[0], 10)
-    const to = parseInt(parts[1], 10)
-    if (!Number.isInteger(from) || isNaN(from) || String(from) !== parts[0].trim()) {
-      throw new MintSpecParseError(`Invalid range start: "${parts[0]}".`)
-    }
-    if (!Number.isInteger(to) || isNaN(to) || String(to) !== parts[1].trim()) {
-      throw new MintSpecParseError(`Invalid range end: "${parts[1]}".`)
-    }
-    if (from < 1) {
-      throw new MintSpecParseError(`Mint numbers must be ≥ 1 (got ${from}).`)
-    }
-    if (to < from) {
-      throw new MintSpecParseError(`Range end must be ≥ start (got ${from}..${to}).`)
-    }
-    const count = to - from + 1
-    if (count > MINT_SPEC_MAX_SIZE) {
-      throw new MintSpecParseError(
-        `Range "${trimmed}" expands to ${count} mints; max is ${MINT_SPEC_MAX_SIZE}.`
-      )
-    }
-    return Array.from({ length: count }, (_, i) => from + i)
-  }
-
-  // Comma-separated list (or single number)
-  const rawParts = trimmed.split(',')
-  const seen = new Set<number>()
-  const result: number[] = []
-  for (const part of rawParts) {
-    const val = parseInt(part.trim(), 10)
-    if (isNaN(val) || String(val) !== part.trim()) {
-      throw new MintSpecParseError(`"${part.trim()}" is not a valid mint number.`)
-    }
-    if (val < 1) {
-      throw new MintSpecParseError(`Mint numbers must be ≥ 1 (got ${val}).`)
-    }
-    if (seen.has(val)) {
-      throw new MintSpecParseError(`Duplicate mint number: ${val}.`)
-    }
-    seen.add(val)
-    result.push(val)
-  }
-  // Apply the same total-size cap as ranges to bound browser-side fan-out.
-  if (result.length > MINT_SPEC_MAX_SIZE) {
-    throw new MintSpecParseError(
-      `Explicit list contains ${result.length} mints; max is ${MINT_SPEC_MAX_SIZE}.`
-    )
-  }
-  result.sort((a, b) => a - b)
-  return result
-}
-
-/** Base indexer origin, no trailing slash (matches `VITE_INDEXER_BASE_URL` when set). */
 export function getIndexerBaseUrl(): string {
   return String(import.meta.env.VITE_INDEXER_BASE_URL || 'https://indexer.feralfile.com').replace(
     /\/$/,
@@ -196,6 +131,7 @@ function graphqlUrl(): string {
   return `${getIndexerBaseUrl()}/graphql`
 }
 
+/** @deprecated Unused since series load through `@/lib/vendors`; see the module header. */
 export class IndexerAPIError extends Error {
   constructor(
     message: string,
@@ -258,7 +194,10 @@ const RESOLVE_RELEASE_BY_SLUG_QUERY = `
   }
 `
 
-/** Resolve a release by vendor slug. Returns null when not found. */
+/**
+ * Resolve a release by vendor slug. Returns null when not found.
+ * @deprecated Unused since series load through `@/lib/vendors`; see the module header.
+ */
 export async function resolveReleaseBySlug(
   vendor: string,
   slug: string
@@ -369,6 +308,7 @@ async function fetchTokensBatchByMintNumbers(
  *   Use this for gap polling after triggerReleaseIndexing.
  *
  * include_unviewable is always true so partially-indexed tokens are visible.
+ * @deprecated Unused since series load through `@/lib/vendors`; see the module header.
  */
 export async function fetchTokensByVendorSlug(
   vendor: string,
@@ -473,6 +413,7 @@ const TRIGGER_RELEASE_INDEXING_MUTATION = `
  * indexer does not enforce a rate limit, a curator with access to the UI can submit
  * arbitrarily many jobs. Confirm the server-side policy before exposing this to untrusted
  * users. Also see the MINT_SPEC_MAX_SIZE cap in parseMintSpec which bounds the fan-out.
+ * @deprecated Unused since series load through `@/lib/vendors`; see the module header.
  */
 export async function triggerReleaseIndexing(
   vendor: string,
@@ -495,6 +436,7 @@ export async function triggerReleaseIndexing(
  *   never submitted and can be retried immediately after Phase 2 finishes.
  * partialError: set when at least one batch failed; the caller should poll the
  *   available jobIds, surface the partial note, and leave unsubmitted gaps visible.
+ * @deprecated Unused since series load through `@/lib/vendors`; see the module header.
  */
 export interface BatchedTriggerResult {
   jobIds: number[]
@@ -511,6 +453,7 @@ export interface BatchedTriggerResult {
  * submittedMints for successful batches so the caller can poll only those mints in
  * Phase 2. Without submittedMints, Phase 2 would poll the full gapMints set and
  * time out waiting for mints that were never submitted to the indexer.
+ * @deprecated Unused since series load through `@/lib/vendors`; see the module header.
  */
 export async function triggerReleaseIndexingBatched(
   vendor: string,
@@ -549,7 +492,10 @@ const JOB_STATUS_QUERY = `
   }
 `
 
-/** Fetch the current status of an indexing job. Returns null if the job is not found. */
+/**
+ * Fetch the current status of an indexing job. Returns null if the job is not found.
+ * @deprecated Unused since series load through `@/lib/vendors`; see the module header.
+ */
 export async function fetchJobStatus(jobId: number): Promise<IndexerJobStatus | null> {
   const data = await graphqlRequest<{ jobStatus: IndexerJobStatus | null }>(
     JOB_STATUS_QUERY,

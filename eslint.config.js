@@ -42,4 +42,23 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // ff-indexer-v2 is deprecated (feral-file/feral-file#3576): its client stays in the
+    // tree unused, and only its own modules and tests may reference it.
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/lib/indexerApi*.ts', 'src/lib/indexerToPlaylistItem*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/lib/indexerApi', '@/lib/indexerToPlaylistItem', '**/indexerApi', '**/indexerToPlaylistItem'],
+              message: 'ff-indexer-v2 is deprecated; load series through @/lib/vendors.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 )

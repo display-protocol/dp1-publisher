@@ -806,7 +806,7 @@ export default function PlaylistForm({
     }
     // Validate every source URI through the same policy applied to JSON-tab imports
     // (DP-1 core: any absolute URI), whether items were entered manually or expanded
-    // from an indexer series.
+    // from a vendor series.
     for (let i = 0; i < exportItems.length; i++) {
       const src = exportItems[i].source?.trim();
       if (!src) continue;

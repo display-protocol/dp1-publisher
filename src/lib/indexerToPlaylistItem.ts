@@ -1,4 +1,7 @@
 /**
+ * DEPRECATED: unused since series load through `@/lib/vendors`; see
+ * `vendorTokenToPlaylistItem`. Kept until ff-indexer-v2 is retired.
+ *
  * Map ff-indexer-v2 token rows to DP-1 playlist items for series expand at publish.
  * Source URLs come from display only; tokens without a renderable URL are skipped.
  */
@@ -31,14 +34,20 @@ const CAIP2_NAMESPACE_TO_CHAIN = new Map<string, ProvenanceChain>([
   ['bitmark', 'bitmark'],
 ])
 
-/** Normalize an indexer CAIP-2 chain id to DP-1 provenance contract.chain. */
+/**
+ * Normalize an indexer CAIP-2 chain id to DP-1 provenance contract.chain.
+ * @deprecated Unused since series load through `@/lib/vendors`; see the module header.
+ */
 export function normalizeIndexerChain(chain: string): ProvenanceChain {
   const match = CAIP2_CHAIN_ID.exec(chain.trim())
   if (!match) return 'other'
   return CAIP2_NAMESPACE_TO_CHAIN.get(match[1]) ?? 'other'
 }
 
-/** Normalize indexer standard to DP-1 provenance contract.standard. */
+/**
+ * Normalize indexer standard to DP-1 provenance contract.standard.
+ * @deprecated Unused since series load through `@/lib/vendors`; see the module header.
+ */
 export function normalizeIndexerStandard(standard: string): ProvenanceStandard {
   const lower = standard.trim().toLowerCase()
   if ((KNOWN_STANDARDS as string[]).includes(lower)) {
@@ -47,7 +56,10 @@ export function normalizeIndexerStandard(standard: string): ProvenanceStandard {
   return 'other'
 }
 
-/** display.animation_url → display.image_url; null when display is missing or empty. */
+/**
+ * display.animation_url → display.image_url; null when display is missing or empty.
+ * @deprecated Unused since series load through `@/lib/vendors`; see the module header.
+ */
 export function resolveTokenSourceUrl(token: IndexerToken): string | null {
   const display = token.display
   if (!display) return null
@@ -70,6 +82,7 @@ export function resolveTokenSourceUrl(token: IndexerToken): string | null {
  * Burned and non-viewable tokens are fetched with include_unviewable: true
  * so they count as "indexed" for gap detection and Phase 2 polling, but they
  * must not appear in the curator's playlist.
+ * @deprecated Unused since series load through `@/lib/vendors`; see the module header.
  */
 export function indexerTokenToPlaylistItem(token: IndexerToken): PlaylistItem | null {
   if (token.burned || !token.viewable) return null
@@ -98,7 +111,10 @@ export function indexerTokenToPlaylistItem(token: IndexerToken): PlaylistItem | 
   return item
 }
 
-/** Map tokens to playlist items; returns items and skip count for curator warnings. */
+/**
+ * Map tokens to playlist items; returns items and skip count for curator warnings.
+ * @deprecated Unused since series load through `@/lib/vendors`; see the module header.
+ */
 export function indexerTokensToPlaylistItems(tokens: IndexerToken[]): {
   items: PlaylistItem[]
   skippedCount: number

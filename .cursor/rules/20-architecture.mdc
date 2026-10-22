@@ -26,12 +26,14 @@ Flow (conceptual): `browser (React)` → **`src/lib/api.ts`** → **feed HTTP AP
 | **Signing** | `src/lib/signing.ts`, payloads | Strip signatures → JCS → digest → EIP-191 |
 | **Merge / wire helpers** | `src/lib/dp1Merge.ts`, `dp1EntityWire.ts` | Patch shapes aligned with server expectations |
 | **Extension policy** | `src/context/`, `src/lib/dp1ExtensionPolicy.ts` | Extensions on/off UX vs `GET /api/v1` |
+| **Vendor clients** | `src/lib/vendors/` | Read-only Feral File / Art Blocks / objkt calls for series expand; `VendorAPIError` |
 | **Types** | `src/types/dp1.ts` | DP-1-aligned shapes |
 
 ## Boundary rules
 
 - **Components:** orchestrate user intent; delegate IO to `lib/`.
 - **`api.ts`:** HTTP only for feed calls — no DP-1 signing or wallet access.
+- **Vendor clients (`lib/vendors/`):** HTTP only, read-only, no signing; item sources leave them as https.
 - **Signing modules:** deterministic inputs; isolate wallet/async concerns clearly.
 - **Types:** shared shapes across UI + `lib/`; tighten when responses are known stable.
 

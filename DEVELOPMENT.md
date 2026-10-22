@@ -28,7 +28,7 @@ Edit `.env`:
 | `VITE_WALLETCONNECT_PROJECT_ID` | Optional; omit to use injected wallet only |
 | `VITE_DEBUG_MODE` | Dev server only (`true`): relax playlist URI schemes for Channel validation |
 | `VITE_FERALFILE_API_BASE_URL` | Optional Feral File API base for series expand — see [Series expand](#series-expand-vendor-apis) below |
-| `VITE_IPFS_GATEWAY_BASE_URL` | Optional IPFS gateway (`…/ipfs`) for objkt media; default `https://ipfs.feralfile.com/ipfs` |
+| `VITE_IPFS_GATEWAY_BASE_URL` | Optional IPFS gateway (`…/ipfs`) for objkt media; default `https://ipfs.filebase.io/ipfs` |
 
 URI rules and dev-only relaxations: [`validatePlaylistURI` / `isDebugMode`](src/lib/api.ts) in `src/lib/api.ts`.
 

@@ -8,7 +8,12 @@
  * is the gateway's concern, not the feed's: the feed never fetches `source`.
  */
 
-export const DEFAULT_IPFS_GATEWAY_BASE_URL = 'https://ipfs.feralfile.com/ipfs'
+/**
+ * A public fetching gateway (one of the two ff-indexer-v2 is configured with), not
+ * ipfs.feralfile.com: that gateway runs with NoFetch and 404s any CID Feral File
+ * has not pinned, which is all objkt media.
+ */
+export const DEFAULT_IPFS_GATEWAY_BASE_URL = 'https://ipfs.filebase.io/ipfs'
 
 /** Gateway base, no trailing slash. `VITE_IPFS_GATEWAY_BASE_URL` overrides the default. */
 export function getIpfsGatewayBaseUrl(): string {

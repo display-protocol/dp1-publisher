@@ -85,7 +85,7 @@ describe('series-derived sources pass URI policy', () => {
     const ipfs = vendorTokenToPlaylistItem(
       makeToken({
         source:
-          'https://ipfs.filebase.io/ipfs/bafybeicnufmvwbgnqkcivv6k2oequjhfdlm42jkpiwaw5duhkhns2cnava',
+          'https://ipfs.raribleuserdata.com/ipfs/bafybeicnufmvwbgnqkcivv6k2oequjhfdlm42jkpiwaw5duhkhns2cnava',
       })
     )
     expect(validatePlaylistURI(ipfs!.source)).toMatchObject({ valid: true })

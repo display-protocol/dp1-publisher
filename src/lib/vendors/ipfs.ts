@@ -9,11 +9,15 @@
  */
 
 /**
- * A public fetching gateway (one of the two ff-indexer-v2 is configured with), not
- * ipfs.feralfile.com: that gateway runs with NoFetch and 404s any CID Feral File
- * has not pinned, which is all objkt media.
+ * Must be a fetching gateway that serves bytes untouched and without a restrictive
+ * CSP, because objkt sources include interactive HTML artworks with inline scripts.
+ * ipfs.feralfile.com runs with NoFetch (404s CIDs Feral File has not pinned, which
+ * is all objkt media); ipfs.filebase.io sends `default-src 'self'`, which blocks
+ * inline JS; ipfs.akaswap.com injects a Cloudflare script; ipfs.io / dweb.link
+ * rate-limit and redirect browsers. This one served HTML, PNG and MP4 cleanly
+ * (checked 2026-10-22), but it is a third-party gateway with no SLA.
  */
-export const DEFAULT_IPFS_GATEWAY_BASE_URL = 'https://ipfs.filebase.io/ipfs'
+export const DEFAULT_IPFS_GATEWAY_BASE_URL = 'https://ipfs.raribleuserdata.com/ipfs'
 
 /** Gateway base, no trailing slash. `VITE_IPFS_GATEWAY_BASE_URL` overrides the default. */
 export function getIpfsGatewayBaseUrl(): string {

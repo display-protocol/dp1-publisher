@@ -75,7 +75,7 @@ Publisher (browser) ──► Feed API ──► PostgreSQL
 
 ## Dependencies on vendor APIs (series expand)
 
-"Load from series" reads releases straight from each vendor's public API in the browser. It replaced the ff-indexer-v2 GraphQL path (feral-file/feral-file#3576): nothing is indexed on the fly, and a requested mint the vendor does not list is shown to the curator as a gap rather than queued for indexing. fxhash is no longer supported.
+"Load from series" reads releases straight from each vendor's public API in the browser. It replaced the ff-indexer-v2 GraphQL path (feral-file/feral-file#3576): nothing is indexed on the fly, and a requested mint the vendor does not list is shown to the curator as a gap rather than queued for indexing. fxhash is no longer supported. The old indexer client (`src/lib/indexerApi.ts`, `src/lib/indexerToPlaylistItem.ts`) is deprecated, not deleted: it stays in the tree with its tests until ff-indexer-v2 is retired, no app code imports it (an ESLint `no-restricted-imports` rule enforces this), and `VITE_INDEXER_BASE_URL` is read only by that unused module.
 
 | Vendor | Endpoint | Slug | Mint number | Item source |
 | ------ | -------- | ---- | ----------- | ----------- |

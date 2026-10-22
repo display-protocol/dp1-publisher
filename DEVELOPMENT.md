@@ -61,7 +61,7 @@ Conceptual layering and flows: **[docs/architecture.md](docs/architecture.md)**
 
 ## Series expand (vendor APIs)
 
-The **Load from series** panel in the playlist form reads releases directly from three vendor APIs: Feral File, Art Blocks and objkt. There is no indexer dependency. The architecture doc lists the endpoints and rules: [docs/architecture.md](docs/architecture.md#dependencies-on-vendor-apis-series-expand).
+The **Load from series** panel in the playlist form reads releases directly from three vendor APIs: Feral File, Art Blocks and objkt. There is no indexer dependency at runtime; the deprecated ff-indexer-v2 client under `src/lib/indexer*` is kept but unused, so `VITE_INDEXER_BASE_URL` has no effect. The architecture doc lists the endpoints and rules: [docs/architecture.md](docs/architecture.md#dependencies-on-vendor-apis-series-expand).
 
 Art Blocks and objkt allow any origin, so they work from `npm run dev` unchanged. Feral File refuses the `localhost` origin with a 403, so the dev server proxies `/ff-api` to `https://feralfile.com/api` and strips the `Origin` header (`vite.config.ts`). With `VITE_FERALFILE_API_BASE_URL` unset, dev builds use the proxy and production builds call `https://feralfile.com/api`, which allow-lists `publisher.feralfile.com`.
 

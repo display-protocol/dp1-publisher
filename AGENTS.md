@@ -73,16 +73,16 @@ A task is complete only when:
 1. **`npm run lint`** and **`npm run build`** are clean (unless explicitly agreed otherwise).
 2. Non-obvious intent is preserved for future agents (comments where needed).
 3. Any new assumption about the feed contract or security posture is explicit.
-4. The reviewer accepts the change (see Review workflow).
+4. For non-trivial changes, a fresh-context review has reported findings for the change owner to disposition.
 
 ## Review workflow
 
-After implementation, run a review loop until the reviewer qualifies the change. Do not commit, push, or open a PR before the reviewer says `Verdict: accept`.
+For non-trivial changes, run one fresh-context review after implementation. The verdict reports findings and carries no commit, merge, or release authority.
 
 1. Produce a compact handoff: goal, files changed, key decisions/trade-offs, checks run, unresolved assumptions.
 2. Invoke the reviewer sub-agent with the handoff, diff, and lint/build output.
-3. If the verdict is `revise`, address findings, rerun checks, and review again.
-4. Only proceed to commit, push, or PR after `accept`.
+3. The named human change owner decides how to disposition each finding.
+4. If a material revision changes behavior, a later review uses fresh context and the full updated diff.
 
 ## Commit message format
 
@@ -94,4 +94,4 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 
 ## Review guidelines
 
-The single source of truth for review posture and output format is **`prompts/code-review.md`**.
+The generated source of truth for review posture and output format is **`prompts/code-review.md`**. Apply the repository-specific checks in **`prompts/code-review.delta.md`** without weakening it.

@@ -54,7 +54,7 @@ import {
   isWalletAuthorizedToOverwrite,
   wrongWalletForOverwriteMessage,
 } from '@/lib/overwriteAuth';
-import { mergePlaylistForPatch } from '@/lib/dp1Merge';
+import { mergePlaylistForPatch, overlayPlaylistFormEdits } from '@/lib/dp1Merge';
 import {
   stripPlaylistExtensionFields,
   stripItemExtensionFields,
@@ -268,6 +268,14 @@ export default function PlaylistForm({
    * already been removed from, so it always answered no and the replace went ahead and erased them.
    */
   const storedBaseRef = useRef<Playlist | null>(null);
+  /**
+   * The last document the JSON tab parsed into the form. The form has no inputs for
+   * `visibility` / `openAt` / `links` / `satellites` or for most of `note` and
+   * `defaults`, so a form-built publish takes those from here (create) or from the
+   * loaded document (edit) via `overlayPlaylistFormEdits`; without it an imported
+   * `visibility: "unlisted"` is rebuilt away and published public.
+   */
+  const importedRef = useRef<Playlist | null>(null);
   const newPlaylistCreatedRef = useRef<string>(new Date().toISOString());
   const [id, setId] = useState(() => uuidv4());
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -340,6 +348,13 @@ export default function PlaylistForm({
   } | null>(null);
 
   const isEdit = Boolean(editId);
+
+  // Reset only when the edited document changes. Keyed on `address` or
+  // `extensionsEnabled` it would also fire on a wallet switch mid-create and
+  // discard the imported document the overlay depends on.
+  useEffect(() => {
+    importedRef.current = null;
+  }, [editId]);
 
   useEffect(() => {
     if (!editId || !address) {
@@ -560,7 +575,7 @@ export default function PlaylistForm({
       };
     });
 
-    return {
+    return overlayPlaylistFormEdits(importedRef.current ?? loadedRef.current, {
       dpVersion: '1.1.0',
       id,
       slug: displaySlug,
@@ -586,7 +601,7 @@ export default function PlaylistForm({
         license: defaultLicense,
         duration: defaultDuration ? parseFloat(defaultDuration) : undefined,
       },
-    };
+    });
   }, [
     id,
     displaySlug,
@@ -651,7 +666,10 @@ export default function PlaylistForm({
           duration: defaultDuration ? parseFloat(defaultDuration) : undefined,
         },
       };
-      const merged = mergePlaylistForPatch(base, patchFields);
+      const merged = mergePlaylistForPatch(
+        base,
+        overlayPlaylistFormEdits(importedRef.current ?? base, patchFields)
+      );
       const toSign = extensionsEnabled
         ? merged
         : stripPlaylistExtensionFields(merged);
@@ -686,6 +704,7 @@ export default function PlaylistForm({
   const applyParsedPlaylistToForm = useCallback(
     (raw: Playlist) => {
       const p = playlistFromJsonImport(raw, id);
+      importedRef.current = p;
       const kid = address ? ethereumAddressToDIDPKH(getAddress(address)) : '';
       if (!isEdit && p.created?.trim()) {
         newPlaylistCreatedRef.current = p.created.trim();
@@ -1025,6 +1044,9 @@ export default function PlaylistForm({
           })),
         });
         // Reset form so "Publish another" returns to a clean state.
+        // The imported document belongs to the playlist just published; keeping it
+        // would overlay its visibility/openAt/note extras onto the next one.
+        importedRef.current = null;
         setTitle('');
         setSlug('');
         setIsAutoSlug(true);
@@ -1063,6 +1085,9 @@ export default function PlaylistForm({
           })),
         });
         // Reset form (create only — edit leaves the form populated)
+        // The imported document belongs to the playlist just published; keeping it
+        // would overlay its visibility/openAt/note extras onto the next one.
+        importedRef.current = null;
         setTitle('');
         setSlug('');
         setIsAutoSlug(true);

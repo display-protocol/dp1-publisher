@@ -56,6 +56,54 @@ export function mergePlaylistForPatch(
   }
 }
 
+/**
+ * Lay the Form tab's own values over the document the form was loaded or
+ * imported from, so members the form has no control for survive a form-built
+ * publish.
+ *
+ * The form rebuilds `note` and `defaults` from its handful of inputs and has no
+ * input at all for `openAt` / `links` / `visibility` / `satellites`, so a
+ * document built from form state alone silently loses `note.title`,
+ * `note.author`, `defaults.display.imageRendering` (and `interaction`, `margin`,
+ * `userOverrides`) and, worst, `visibility: "unlisted"` — absent means public.
+ *
+ * Rules: the four top-level members come from `retained` only when the form
+ * did not state them (it never does); `note` and `defaults` (+ `defaults.display`)
+ * are merged one level, form keys winning — a key the form states as `undefined`
+ * (a cleared input) therefore still clears it. `note`/`defaults` the form did
+ * not emit (extensions off) are not re-added. The JSON tab does not go through
+ * this: it submits the document as written.
+ */
+export function overlayPlaylistFormEdits<
+  T extends Pick<Playlist, 'note' | 'defaults'> &
+    Partial<Pick<Playlist, 'openAt' | 'links' | 'visibility' | 'satellites'>>,
+>(
+  retained: Playlist | null | undefined,
+  form: T
+): T & Partial<Pick<Playlist, 'openAt' | 'links' | 'visibility' | 'satellites'>> {
+  if (!retained) return form
+  const out: ReturnType<typeof overlayPlaylistFormEdits<T>> = { ...form }
+  if (out.openAt === undefined && retained.openAt !== undefined) out.openAt = retained.openAt
+  if (out.links === undefined && retained.links !== undefined) out.links = retained.links
+  if (out.visibility === undefined && retained.visibility !== undefined) {
+    out.visibility = retained.visibility
+  }
+  if (out.satellites === undefined && retained.satellites !== undefined) {
+    out.satellites = retained.satellites
+  }
+  if (form.note && retained.note) out.note = { ...retained.note, ...form.note }
+  if (form.defaults && retained.defaults) {
+    out.defaults = {
+      ...retained.defaults,
+      ...form.defaults,
+      ...(form.defaults.display && retained.defaults.display
+        ? { display: { ...retained.defaults.display, ...form.defaults.display } }
+        : {}),
+    }
+  }
+  return out
+}
+
 export function mergeChannelForPatch(
   existing: Channel,
   patch: {

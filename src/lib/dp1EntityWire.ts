@@ -65,7 +65,7 @@ export function linkWire(l: unknown): Obj | undefined {
 }
 
 export function entityWire(e: Entity): Obj & { name: string; key?: string; url?: string } {
-  const o: Obj & { name: string; key?: string; url?: string } = { name: e.name }
+  const o: Obj & { name: string; key?: string; url?: string } = { name: typeof e.name === 'string' ? e.name : '' }
   setStr(o, 'key', e.key)
   setStr(o, 'id', e.id)
   setStr(o, 'url', e.url, true)

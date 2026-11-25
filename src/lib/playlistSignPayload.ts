@@ -235,6 +235,8 @@ function canonicalPlaylistItem(item: unknown): Record<string, unknown> | undefin
   if (!isPlainObject(item)) return undefined
   const out = pickFields(item, PLAYLIST_ITEM_FIELDS)
   if ('display' in out) out.display = canonicalDisplayPrefs(out.display)
+  // `RefHash string omitempty`
+  if (out.refHash === '') delete out.refHash
   if (isPlainObject(out.note)) out.note = canonicalNote(out.note)
   // `DisplayAt *string omitempty` — Go omits only a nil pointer, so JSON null
   // is dropped pre-hash: it is the one value Go's marshal cannot emit for
@@ -329,7 +331,13 @@ export function playlistUnsignedPayloadForSigning(p: Playlist): Record<string, u
   if (Array.isArray(out.satellites)) {
     const sats = (out.satellites as unknown[])
       .filter(isPlainObject)
-      .map((s) => pickFields(s, SATELLITE_FIELDS))
+      .map((s) => {
+        const sat = pickFields(s, SATELLITE_FIELDS)
+        // `title` / `note` are `string omitempty`; `playlist` / `kind` are always emitted.
+        if (sat.title === '') delete sat.title
+        if (sat.note === '') delete sat.note
+        return sat
+      })
     if (sats.length > 0) out.satellites = sats
     else delete out.satellites
   }

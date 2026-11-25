@@ -157,6 +157,25 @@ describe('entityWire carries the full Entity', () => {
   })
 })
 
+describe('omitempty and defaults for the new members', () => {
+  it('drops empty refHash and empty satellite title/note, keeps required satellite keys', () => {
+    const out = playlistUnsignedPayloadForSigning({
+      ...base,
+      items: [{ source: 'https://e.com/a', refHash: '' }],
+      satellites: [{ playlist: 'https://f/p/1', kind: 'burn', title: '', note: '' }],
+    })
+    expect((out.items as Record<string, unknown>[])[0]).not.toHaveProperty('refHash')
+    expect(out.satellites).toEqual([{ playlist: 'https://f/p/1', kind: 'burn' }])
+  })
+
+  it('always emits an Entity name, even for a nameless note author', () => {
+    expect(entityWire({ role: 'curator' } as unknown as Parameters<typeof entityWire>[0])).toEqual({
+      name: '',
+      role: 'curator',
+    })
+  })
+})
+
 describe('mergePlaylistForPatch with the new fields', () => {
   it('keeps the stored value when the edit omits it, and takes the edit when it states one', () => {
     const existing: Playlist = { ...base, visibility: 'unlisted' }

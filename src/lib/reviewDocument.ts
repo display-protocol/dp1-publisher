@@ -271,7 +271,8 @@ export function describeReviewDocument(reviewed: ReviewedDp1Document): ReviewSum
       facts.push(`Declared curators: ${p.curators.map(entityLine).join('; ')}`)
     }
     // Any value other than exactly "public" means unlisted (§3.7).
-    if (p.visibility !== undefined) {
+    // null is treated as absent (public), exactly as the signing payload does.
+    if (p.visibility !== undefined && p.visibility !== null) {
       facts.push(
         p.visibility === 'public'
           ? 'Listing: public'

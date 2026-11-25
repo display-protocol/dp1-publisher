@@ -3,6 +3,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import PlaylistForm from './PlaylistForm'
 import * as apiModule from '@/lib/api'
 import { ethereumAddressToDIDPKH } from '@/lib/signing'
+import type { Playlist } from '@/types/dp1'
+
+// The wire body as the assertions read it; `note.author` is an Entity.
+type PublishedBody = Playlist
 
 const TEST_WALLET = '0x000000000000000000000000000000000000aBcD'
 const TEST_WALLET_DID = ethereumAddressToDIDPKH(TEST_WALLET)
@@ -368,12 +372,12 @@ describe('PlaylistForm — publish flow', () => {
     await waitFor(() => {
       expect(mockedApi.publishPlaylist).toHaveBeenCalledTimes(1)
     })
-    const body = mockedApi.publishPlaylist.mock.calls[0][0] as Record<string, any>
+    const body = mockedApi.publishPlaylist.mock.calls[0][0] as PublishedBody
     expect(body.visibility).toBe('unlisted')
     expect(body.openAt).toBe('2026-01-01')
-    expect(body.note.title).toBe('Opening')
-    expect(body.note.author.name).toBe('Ana')
-    expect(body.defaults.display.imageRendering).toBe('pixelated')
+    expect(body.note?.title).toBe('Opening')
+    expect(body.note?.author?.name).toBe('Ana')
+    expect(body.defaults?.display?.imageRendering).toBe('pixelated')
   })
 
   it('does not carry an imported document into the next "Publish another" playlist', async () => {
@@ -531,12 +535,52 @@ describe('PlaylistForm — edit keeps members the form cannot show', () => {
     fillFormAndUpdate('Edited title', 'https://example.com/a.mp4')
 
     await waitFor(() => expect(mockedApi.replacePlaylist).toHaveBeenCalledTimes(1))
-    const body = mockedApi.replacePlaylist.mock.calls[0][1] as Record<string, any>
+    const body = mockedApi.replacePlaylist.mock.calls[0][1] as PublishedBody
     expect(body.title).toBe('Edited title')
     expect(body.visibility).toBe('unlisted')
     expect(body.openAt).toBe('2026-01-01')
-    expect(body.note.title).toBe('Opening')
-    expect(body.note.author.name).toBe('Ana')
-    expect(body.defaults.display.imageRendering).toBe('pixelated')
+    expect(body.note?.title).toBe('Opening')
+    expect(body.note?.author?.name).toBe('Ana')
+    expect(body.defaults?.display?.imageRendering).toBe('pixelated')
+  })
+  // PR #30 review F3: a form-built create whose id already exists on the feed
+  // becomes a replace; the stored note/defaults members must survive it.
+  it('overwrite-on-create keeps the stored note attribution and imageRendering', async () => {
+    const stored = {
+      dpVersion: '1.1.0',
+      id: 'dup-id',
+      slug: 'dup',
+      title: 'Stored',
+      created: '2025-01-01T00:00:00Z',
+      items: [],
+      visibility: 'unlisted',
+      note: { text: 'Welcome', title: 'Opening', author: { name: 'Ana' } },
+      defaults: { display: { imageRendering: 'pixelated' } },
+      signatures: [
+        {
+          alg: 'eip191',
+          kid: TEST_WALLET_DID,
+          ts: '2025-01-01T00:00:00Z',
+          payload_hash: 'sha256:prior',
+          role: 'curator',
+          sig: 'prior-sig',
+        },
+      ],
+    }
+    mockedApi.getPlaylist.mockResolvedValue(stored)
+    mockedApi.replacePlaylist.mockImplementation(async (_id, body) => body)
+
+    render(<PlaylistForm extensionsEnabled />)
+    fireEvent.change(screen.getByLabelText(/Title \*/i), { target: { value: 'New' } })
+    fireEvent.change(screen.getByLabelText(/Source URI \*/i), {
+      target: { value: 'https://example.com/a.mp4' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Sign & publish/i }))
+
+    await waitFor(() => expect(mockedApi.replacePlaylist).toHaveBeenCalledTimes(1))
+    const body = mockedApi.replacePlaylist.mock.calls[0][1] as PublishedBody
+    expect(body.visibility).toBe('unlisted')
+    expect(body.note?.title).toBe('Opening')
+    expect(body.defaults?.display?.imageRendering).toBe('pixelated')
   })
 })

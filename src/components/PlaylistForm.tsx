@@ -934,6 +934,14 @@ export default function PlaylistForm({
           }
         }
       }
+      // A form-built create that overwrites an existing playlist: lay the
+      // form's values over the fetched document so the members the form has
+      // no control for (note.title/author, defaults.display.imageRendering,
+      // visibility, …) survive the wholesale note/defaults replace in the
+      // merge. The JSON tab keeps its explicit replacement semantics.
+      if (jsonMode !== 'json' && overwriteBase) {
+        rawDocument = overlayPlaylistFormEdits(overwriteBase, rawDocument);
+      }
       const walletDID = ethereumAddressToDIDPKH(getAddress(address));
 
       // Step 2b: pre-sign ownership gate. If preflight found an existing doc

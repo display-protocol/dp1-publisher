@@ -9,6 +9,7 @@ import {
   mergePlaylistForPatch,
   mergeChannelForPatch,
   overlayPlaylistFormEdits,
+  overlayPublisherProfile,
 } from '@/lib/dp1Merge'
 import { playlistWithMetadata } from '@/test/fixtures/playlist'
 import { channelWithMetadata } from '@/test/fixtures/channel'
@@ -369,5 +370,20 @@ describe('overlayPlaylistFormEdits', () => {
   it('is the identity without a retained document', () => {
     const form = { note: undefined, defaults: undefined }
     expect(overlayPlaylistFormEdits(null, form)).toBe(form)
+  })
+})
+
+describe('overlayPublisherProfile', () => {
+  it('keeps profile members and lets the form win on name/key/url', () => {
+    const out = overlayPublisherProfile(
+      { name: 'Old', key: 'did:key:a', url: 'https://old', location: 'Paris' },
+      { name: 'New', key: 'did:pkh:b', url: undefined }
+    )
+    expect(out).toEqual({ name: 'New', key: 'did:pkh:b', url: undefined, location: 'Paris' })
+  })
+
+  it('is the identity without a retained publisher', () => {
+    const form = { name: 'N', key: 'k' }
+    expect(overlayPublisherProfile(undefined, form)).toBe(form)
   })
 })

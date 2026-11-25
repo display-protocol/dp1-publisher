@@ -421,6 +421,51 @@ describe('ChannelForm — publish flow', () => {
     expect(body.playlists).toEqual([oldUrl, newUrl])
   })
 
+  // PR #30 review F4: a form edit must not drop publisher profile members the
+  // form has no input for.
+  it('edit keeps the stored publisher profile (location, links)', async () => {
+    mockedApi.getChannel.mockResolvedValue({
+      dpVersion: '1.1.0',
+      id: 'ch-profile',
+      slug: 'profile',
+      title: 'Profile',
+      version: '1.0.0',
+      created: '2025-01-01T00:00:00Z',
+      playlists: ['https://feed.example/api/v1/playlists/p1'],
+      publisher: {
+        name: 'Test Publisher',
+        key: TEST_WALLET_DID,
+        location: 'Paris',
+        links: [{ url: 'https://example.com' }],
+      },
+      signatures: [
+        {
+          alg: 'eip191',
+          kid: TEST_WALLET_DID,
+          ts: '2025-01-01T00:00:00Z',
+          payload_hash: 'sha256:prior',
+          role: 'publisher',
+          sig: 'prior-sig',
+        },
+      ],
+    })
+    mockedApi.replaceChannel.mockImplementation(async (_id, body) => body)
+
+    render(<ChannelForm editId="ch-profile" />)
+    await waitFor(() => {
+      expect((screen.getByLabelText(/Title \*/i) as HTMLInputElement).value).toBe('Profile')
+    })
+    fireEvent.change(screen.getByLabelText(/Title \*/i), { target: { value: 'Renamed' } })
+    fireEvent.click(screen.getByRole('button', { name: /Sign & update/i }))
+
+    await waitFor(() => expect(mockedApi.replaceChannel).toHaveBeenCalledTimes(1))
+    const body = mockedApi.replaceChannel.mock.calls[0][1] as {
+      publisher: { location?: string; links?: unknown[] }
+    }
+    expect(body.publisher.location).toBe('Paris')
+    expect(body.publisher.links).toHaveLength(1)
+  })
+
   it('shows the overwrite-specific error when an auto-overwrite PATCH is rejected (wrong wallet)', async () => {
     // Existing channel was previously signed by THIS wallet as publisher (so
     // the ownership gate passes); server then rejects the PATCH with 401.

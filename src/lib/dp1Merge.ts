@@ -104,6 +104,20 @@ export function overlayPlaylistFormEdits<
   return out
 }
 
+/**
+ * Lay the Channel form's publisher inputs (name / key / url) over the publisher
+ * the form was loaded or imported with, so Entity profile members the form has
+ * no input for (`location`, `avatar`, `links`, …) survive a form-built publish.
+ * Form keys win, including an emptied URL clearing `url`.
+ */
+export function overlayPublisherProfile(
+  retained: Entity | null | undefined,
+  form: Entity
+): Entity {
+  if (!retained || typeof retained !== 'object' || Array.isArray(retained)) return form
+  return { ...retained, ...form }
+}
+
 export function mergeChannelForPatch(
   existing: Channel,
   patch: {

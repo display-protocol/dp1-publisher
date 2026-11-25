@@ -32,7 +32,7 @@ import { ethereumAddressToDIDPKH } from '@/lib/signing';
 import { signDocument, stripSignatureFields } from '@/lib/signing';
 import { buildReplaceIntent } from '@/lib/replaceIntent';
 import { channelUnsignedPayloadForSigning } from '@/lib/channelSignPayload';
-import { mergeChannelForPatch } from '@/lib/dp1Merge';
+import { mergeChannelForPatch, overlayPublisherProfile } from '@/lib/dp1Merge';
 import { flattenOwnedPages, useOwnedPlaylists } from '@/hooks/useOwnedDocuments';
 import {
   FeedAPIError,
@@ -169,6 +169,12 @@ export default function ChannelForm({
   const { toast } = useToast();
 
   const loadedRef = useRef<Channel | null>(null);
+  /**
+   * Publisher of the last JSON-imported channel. The form has inputs for the
+   * publisher's name/url only, so its Entity profile members (location, links,
+   * avatar, …) are retained here and overlaid on form-built publishes.
+   */
+  const importedPublisherRef = useRef<Entity | null>(null);
   /** Stable `created` for new channels so JSON preview does not change every keystroke. */
   const newChannelCreatedRef = useRef<string>(new Date().toISOString());
   const [id, setId] = useState(() => uuidv4());
@@ -235,6 +241,7 @@ export default function ChannelForm({
   const isEdit = Boolean(editId);
 
   useEffect(() => {
+    importedPublisherRef.current = null;
     if (!editId || !address) {
       loadedRef.current = null;
       return;
@@ -357,11 +364,14 @@ export default function ChannelForm({
           .map((line) => line.trim())
           .filter((line) => line.length > 0);
 
-      const publisher: Entity = {
-        name: publisherName || '',
-        key: ethereumAddressToDIDPKH(getAddress(address!)),
-        url: publisherUrl || undefined,
-      };
+      const publisher: Entity = overlayPublisherProfile(
+        importedPublisherRef.current ?? loadedRef.current?.publisher,
+        {
+          name: publisherName || '',
+          key: ethereumAddressToDIDPKH(getAddress(address!)),
+          url: publisherUrl || undefined,
+        }
+      );
 
       return {
         id,
@@ -401,11 +411,14 @@ export default function ChannelForm({
         .split('\n')
         .map((line) => line.trim())
         .filter((line) => line.length > 0);
-      const publisher: Entity = {
-        name: publisherName || '',
-        key: ethereumAddressToDIDPKH(getAddress(address)),
-        url: publisherUrl || undefined,
-      };
+      const publisher: Entity = overlayPublisherProfile(
+        importedPublisherRef.current ?? base.publisher,
+        {
+          name: publisherName || '',
+          key: ethereumAddressToDIDPKH(getAddress(address)),
+          url: publisherUrl || undefined,
+        }
+      );
       const patchFields = {
         title: title.trim(),
         slug: displaySlug,
@@ -475,6 +488,7 @@ export default function ChannelForm({
       setSummary(ch.summary || '');
       setCoverImage(ch.coverImage || '');
       const pub = ch.publisher;
+      importedPublisherRef.current = pub ?? null;
       setPublisherName(pub?.name || '');
       setPublisherUrl(pub?.url || '');
       setCurators(ch.curators?.length ? ch.curators : []);
@@ -671,6 +685,17 @@ export default function ChannelForm({
           }
         }
       }
+      // A form-built create that overwrites an existing channel: keep the
+      // stored publisher's profile members the form has no input for.
+      if (jsonMode !== 'json' && overwriteBase && rawDocument.publisher) {
+        rawDocument = {
+          ...rawDocument,
+          publisher: overlayPublisherProfile(
+            overwriteBase.publisher,
+            rawDocument.publisher
+          ),
+        };
+      }
       const walletDID = ethereumAddressToDIDPKH(getAddress(address));
 
       // Step 2b: pre-sign ownership gate. See PlaylistForm for rationale.
@@ -785,6 +810,7 @@ export default function ChannelForm({
         setCurators([]);
         setJsonText('');
         newChannelCreatedRef.current = new Date().toISOString();
+        importedPublisherRef.current = null;
         setId(uuidv4());
       } else {
         const published = await publishChannel(body as Channel);
@@ -814,6 +840,7 @@ export default function ChannelForm({
         setCurators([]);
         setJsonText('');
         newChannelCreatedRef.current = new Date().toISOString();
+        importedPublisherRef.current = null;
         setId(uuidv4());
       }
     } catch (error) {

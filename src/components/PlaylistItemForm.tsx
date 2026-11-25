@@ -238,8 +238,10 @@ export default function PlaylistItemForm({
                           ...item,
                           note: e.target.value
                             ? {
+                                // Spread keeps `title`/`author`, which this
+                                // form has no input for.
+                                ...item.note,
                                 text: e.target.value,
-                                duration: item.note?.duration,
                               }
                             : undefined,
                         })
@@ -266,7 +268,7 @@ export default function PlaylistItemForm({
                           ...item,
                           note: item.note?.text
                             ? {
-                                text: item.note.text,
+                                ...item.note,
                                 duration,
                               }
                             : undefined,

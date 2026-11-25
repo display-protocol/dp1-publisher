@@ -13,6 +13,7 @@ import {
   playlistExtensionFieldsPresent,
   stripPlaylistExtensionFields,
 } from '@/lib/dp1ExtensionPolicy'
+import { mergePlaylistForPatch } from '@/lib/dp1Merge'
 import { minimalPlaylist } from '@/test/fixtures/playlist'
 import type { Playlist } from '@/types/dp1'
 
@@ -40,7 +41,7 @@ describe('playlist-level extension fields survive the whitelist', () => {
           type: 'article',
           url: 'https://example.com/a',
           title: 'T',
-          authors: [{ name: 'Writer', key: '', role: 'author', extra: 1 }],
+          authors: [{ name: 'Writer', role: 'author', extra: 1 }],
           junk: true,
         },
       ],
@@ -53,7 +54,7 @@ describe('playlist-level extension fields survive the whitelist', () => {
         type: 'article',
         url: 'https://example.com/a',
         title: 'T',
-        authors: [{ name: 'Writer', key: '', role: 'author' }],
+        authors: [{ name: 'Writer', role: 'author' }],
       },
     ])
     expect(out.satellites).toEqual([{ playlist: 'https://feed.example/p/1', kind: 'burn' }])
@@ -76,7 +77,7 @@ describe('nested spec fields survive', () => {
           ref: 'https://example.com/m.json',
           refHash: 'sha256:abc',
           display: { imageRendering: 'pixelated' },
-          note: { text: 'hi', title: 'T', author: { name: 'A', key: '', role: 'curator' } },
+          note: { text: 'hi', title: 'T', author: { name: 'A', role: 'curator' } },
         },
       ],
     } as unknown as Playlist
@@ -86,7 +87,7 @@ describe('nested spec fields survive', () => {
     expect(item.note).toEqual({
       text: 'hi',
       title: 'T',
-      author: { name: 'A', key: '', role: 'curator' },
+      author: { name: 'A', role: 'curator' },
     })
   })
 
@@ -153,6 +154,14 @@ describe('entityWire carries the full Entity', () => {
       publisher: { name: 'Pub', key: 'did:key:p', location: 'Paris' },
     })
     expect((out.publisher as Record<string, unknown>).location).toBe('Paris')
+  })
+})
+
+describe('mergePlaylistForPatch with the new fields', () => {
+  it('keeps the stored value when the edit omits it, and takes the edit when it states one', () => {
+    const existing: Playlist = { ...base, visibility: 'unlisted' }
+    expect(mergePlaylistForPatch(existing, {}).visibility).toBe('unlisted')
+    expect(mergePlaylistForPatch(existing, { visibility: 'public' }).visibility).toBe('public')
   })
 })
 

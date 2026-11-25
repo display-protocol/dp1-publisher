@@ -6,8 +6,8 @@ import type { Biography, Entity, Link, Thumbnail } from '@/types/dp1'
  * `links[].authors` and any other place a document names someone, before hashing.
  *
  * Key rules, mirroring dp1-go's struct tags:
- * - `name` and `key` are always emitted (this repo's long-standing shape; the
- *   feed accepts an empty `key`, and changing it would re-shape stored bytes).
+ * - `name` is always emitted; `key` is omitted when empty (dp1-go v0.8.0
+ *   `key,omitempty`, and the spec makes it optional on curators/publishers).
  * - every other member is `omitempty`: "" and empty arrays are dropped.
  * - only the members the feed's dp1-go declares are emitted. The feed rejects
  *   unknown members with a 400, so this list is also the publisher's guard
@@ -64,11 +64,9 @@ export function linkWire(l: unknown): Obj | undefined {
   return out
 }
 
-export function entityWire(e: Entity): Obj & { name: string; key: string; url?: string } {
-  const o: Obj & { name: string; key: string; url?: string } = {
-    name: e.name,
-    key: e.key ?? '',
-  }
+export function entityWire(e: Entity): Obj & { name: string; key?: string; url?: string } {
+  const o: Obj & { name: string; key?: string; url?: string } = { name: e.name }
+  setStr(o, 'key', e.key)
   setStr(o, 'id', e.id)
   setStr(o, 'url', e.url, true)
   setStr(o, 'role', e.role)

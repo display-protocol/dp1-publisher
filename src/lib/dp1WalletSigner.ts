@@ -51,12 +51,31 @@ function hasValidKey(c: unknown): c is { key: string } {
  * `url` to undefined.
  */
 function normalizeCurator(c: unknown): Entity {
+  // Spread first: Entity carries profile members (role, location, avatar,
+  // links, …) that must survive to `entityWire`; only the members this helper
+  // vouches for are overridden. `entityWire` is what filters unknown keys.
   const o = c as { name?: unknown; key?: unknown; url?: unknown }
   return {
+    ...(c as Entity),
     name: typeof o.name === 'string' ? o.name : '',
-    key: o.key as string, // hasValidKey guarantees key is a string
+    key: typeof o.key === 'string' ? o.key : undefined,
     url: typeof o.url === 'string' ? o.url : undefined,
   }
+}
+
+/**
+ * A curator the document names without a DID (`key` is optional in the spec):
+ * a non-empty string `name` and no usable key. It cannot sign, but dropping it
+ * would erase a credit the document legitimately carries.
+ */
+function isKeylessNamedCurator(c: unknown): boolean {
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return false
+  const o = c as { name?: unknown; key?: unknown }
+  return (
+    typeof o.name === 'string' &&
+    o.name.trim() !== '' &&
+    (o.key === undefined || o.key === null || o.key === '')
+  )
 }
 
 /**
@@ -67,7 +86,9 @@ export function normalizeChannelCurators(channel: Channel): Channel {
   if (!Array.isArray(channel.curators)) return channel
   return {
     ...channel,
-    curators: channel.curators.map((c) => (hasValidKey(c) ? normalizeCurator(c) : c)),
+    curators: channel.curators.map((c) =>
+      hasValidKey(c) || isKeylessNamedCurator(c) ? normalizeCurator(c) : c
+    ),
   }
 }
 
@@ -84,7 +105,9 @@ export function ensurePlaylistWalletCurator(
   // the JSON boundary, AND so preserved entries are normalized (no
   // `name: undefined` slipping into the wire payload).
   const rawArray: unknown[] = Array.isArray(playlist.curators) ? playlist.curators : []
-  const validCurators: Entity[] = rawArray.filter(hasValidKey).map(normalizeCurator)
+  const validCurators: Entity[] = rawArray
+    .filter((c) => hasValidKey(c) || isKeylessNamedCurator(c))
+    .map(normalizeCurator)
 
   const previousCount = validCurators.length
   const alreadyDeclared = validCurators.some((c) => c.key === walletDID)
@@ -148,6 +171,9 @@ export function ensureChannelWalletPublisher(
   const p = isObjectPublisher
     ? (rawPublisher as { name?: unknown; key?: unknown; url?: unknown })
     : {}
+  // Profile members (location, avatar, links, …) ride along on the publisher;
+  // only name/key/url are overridden below.
+  const profile = isObjectPublisher ? (rawPublisher as Entity) : {}
   const previousKey = typeof p.key === 'string' ? p.key : undefined
 
   const existingName = typeof p.name === 'string' && p.name.trim() ? p.name : ''
@@ -159,6 +185,7 @@ export function ensureChannelWalletPublisher(
         channel: {
           ...channel,
           publisher: {
+            ...profile,
             name: named,
             key: walletDID,
             url: typeof p.url === 'string' ? p.url : undefined,
@@ -174,6 +201,7 @@ export function ensureChannelWalletPublisher(
     channel: {
       ...channel,
       publisher: {
+        ...profile,
         name: existingName || named,
         key: walletDID,
         url: typeof p.url === 'string' ? p.url : undefined,

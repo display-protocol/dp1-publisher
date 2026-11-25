@@ -27,6 +27,10 @@ export function mergePlaylistForPatch(
     defaults?: Playlist['defaults']
     dynamicQuery?: DynamicQuery
     note?: Note
+    openAt?: string
+    links?: Playlist['links']
+    visibility?: string
+    satellites?: Playlist['satellites']
   }
 ): Playlist {
   return {
@@ -42,6 +46,13 @@ export function mergePlaylistForPatch(
     dynamicQuery:
       patch.dynamicQuery !== undefined ? patch.dynamicQuery : existing.dynamicQuery,
     note: patch.note !== undefined ? patch.note : existing.note,
+    // An edit that states one of these wins over the stored value; one that
+    // leaves it out keeps the stored value (the spread above), so a form edit
+    // never erases an unlisted playlist's `visibility`.
+    openAt: patch.openAt !== undefined ? patch.openAt : existing.openAt,
+    links: patch.links !== undefined ? patch.links : existing.links,
+    visibility: patch.visibility !== undefined ? patch.visibility : existing.visibility,
+    satellites: patch.satellites !== undefined ? patch.satellites : existing.satellites,
   }
 }
 

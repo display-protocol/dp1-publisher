@@ -52,7 +52,7 @@ export function playlistExtensionFieldsPresent(p: Playlist): string[] {
   if (p.note !== undefined) present.push('note')
   if (p.openAt !== undefined) present.push('openAt')
   if (Array.isArray(p.links) && p.links.length > 0) present.push('links')
-  // Losing `visibility` on a replace publishes an unlisted playlist.
+  // Losing `visibility` on a replace makes an unlisted playlist public (absent means public).
   if (p.visibility !== undefined) present.push('visibility')
   if (Array.isArray(p.satellites) && p.satellites.length > 0) present.push('satellites')
   const itemFields = new Set<string>()

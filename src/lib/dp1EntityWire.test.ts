@@ -57,14 +57,14 @@ describe('entityWire', () => {
     expect(result).not.toHaveProperty('url')
   })
 
-  it('should preserve empty name and key (not omit)', () => {
+  it('should preserve an empty name and omit an empty key (dp1-go key,omitempty)', () => {
     const entity: Entity = {
       name: '',
       key: '',
     }
     const result = entityWire(entity)
     expect(result).toHaveProperty('name', '')
-    expect(result).toHaveProperty('key', '')
+    expect(result).not.toHaveProperty('key')
     expect(result).not.toHaveProperty('url')
   })
 

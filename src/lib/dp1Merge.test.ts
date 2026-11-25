@@ -8,6 +8,8 @@ import { describe, it, expect } from 'vitest'
 import {
   mergePlaylistForPatch,
   mergeChannelForPatch,
+  overlayPlaylistFormEdits,
+  overlayPublisherProfile,
 } from '@/lib/dp1Merge'
 import { playlistWithMetadata } from '@/test/fixtures/playlist'
 import { channelWithMetadata } from '@/test/fixtures/channel'
@@ -310,5 +312,78 @@ describe('merge helpers - undefined vs null semantics', () => {
 
     const withEmpty = mergeChannelForPatch(existing, { summary: '' })
     expect(withEmpty.summary).toBe('')
+  })
+})
+
+describe('overlayPlaylistFormEdits', () => {
+  const retained: Playlist = {
+    dpVersion: '1.1.0',
+    title: 'T',
+    items: [],
+    visibility: 'unlisted',
+    openAt: '2026-01-01',
+    note: { text: 'Welcome', title: 'Opening', author: { name: 'Ana' } },
+    defaults: {
+      license: 'open',
+      display: { scaling: 'fit', imageRendering: 'pixelated', margin: '4px' },
+    },
+  }
+
+  it('carries the members the form has no input for', () => {
+    const out = overlayPlaylistFormEdits(retained, {
+      note: { text: 'Welcome', duration: undefined },
+      defaults: { license: 'open', display: { scaling: 'fill' } },
+    })
+    expect(out.visibility).toBe('unlisted')
+    expect(out.openAt).toBe('2026-01-01')
+    expect(out.note).toEqual({
+      text: 'Welcome',
+      title: 'Opening',
+      author: { name: 'Ana' },
+      duration: undefined,
+    })
+    expect(out.defaults?.display).toEqual({
+      scaling: 'fill',
+      imageRendering: 'pixelated',
+      margin: '4px',
+    })
+  })
+
+  it('lets a form-stated key win, including a cleared one', () => {
+    const out = overlayPlaylistFormEdits(retained, {
+      note: { text: 'New' },
+      defaults: { duration: undefined, license: 'token', display: {} },
+    })
+    expect(out.note?.text).toBe('New')
+    expect(out.defaults?.license).toBe('token')
+  })
+
+  it('does not re-add a note or defaults the form did not emit', () => {
+    const out = overlayPlaylistFormEdits(retained, {
+      note: undefined,
+      defaults: undefined,
+    })
+    expect(out.note).toBeUndefined()
+    expect(out.defaults).toBeUndefined()
+  })
+
+  it('is the identity without a retained document', () => {
+    const form = { note: undefined, defaults: undefined }
+    expect(overlayPlaylistFormEdits(null, form)).toBe(form)
+  })
+})
+
+describe('overlayPublisherProfile', () => {
+  it('keeps profile members and lets the form win on name/key/url', () => {
+    const out = overlayPublisherProfile(
+      { name: 'Old', key: 'did:key:a', url: 'https://old', location: 'Paris' },
+      { name: 'New', key: 'did:pkh:b', url: undefined }
+    )
+    expect(out).toEqual({ name: 'New', key: 'did:pkh:b', url: undefined, location: 'Paris' })
+  })
+
+  it('is the identity without a retained publisher', () => {
+    const form = { name: 'N', key: 'k' }
+    expect(overlayPublisherProfile(undefined, form)).toBe(form)
   })
 })

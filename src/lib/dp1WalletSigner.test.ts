@@ -180,20 +180,44 @@ describe('ensurePlaylistWalletCurator', () => {
     ])
   })
 
-  it('drops entries missing key and appends wallet', () => {
+  it('keeps a named curator without a key (key is optional) and drops unnamed keyless entries', () => {
     const playlist = {
       ...basePlaylist,
       curators: [
         { name: 'Anonymous', url: '' } as unknown as Entity,
+        { name: '' } as unknown as Entity,
         { name: 'NODE', key: DID_KEY, url: '' },
       ],
     }
     const r = ensurePlaylistWalletCurator(playlist, WALLET)
     expect(r.injected).toBe(true)
-    expect(r.previousCount).toBe(1)
-    expect(r.playlist.curators).toHaveLength(2)
-    expect(r.playlist.curators?.[0].key).toBe(DID_KEY)
-    expect(r.playlist.curators?.[1].key).toBe(WALLET)
+    expect(r.previousCount).toBe(2)
+    expect(r.playlist.curators).toHaveLength(3)
+    expect(r.playlist.curators?.[0].name).toBe('Anonymous')
+    expect(r.playlist.curators?.[0].key).toBeUndefined()
+    expect(r.playlist.curators?.[1].key).toBe(DID_KEY)
+    expect(r.playlist.curators?.[2].key).toBe(WALLET)
+  })
+
+  it('keeps Entity profile members on curators and the channel publisher', () => {
+    const p = ensurePlaylistWalletCurator(
+      {
+        ...basePlaylist,
+        curators: [{ name: 'Ana', key: DID_KEY, role: 'curator', location: 'Berlin' }],
+      },
+      WALLET
+    )
+    expect(p.playlist.curators?.[0]).toMatchObject({ role: 'curator', location: 'Berlin' })
+    const c = ensureChannelWalletPublisher(
+      {
+        title: 'C',
+        version: '1.0.0',
+        playlists: [],
+        publisher: { name: 'Pub', key: DID_KEY, location: 'Paris' },
+      },
+      WALLET
+    )
+    expect(c.channel.publisher).toMatchObject({ location: 'Paris', key: WALLET })
   })
 
   it('cleans garbage entries even when wallet is already declared', () => {

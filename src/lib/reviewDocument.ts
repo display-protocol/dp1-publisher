@@ -224,7 +224,8 @@ function shortDid(key: string): string {
 
 function entityLine(e: Entity): string {
   const name = e.name?.trim()
-  return name ? `${name} (${shortDid(e.key)})` : shortDid(e.key)
+  const key = e.key ?? ''
+  return name ? `${name} (${shortDid(key)})` : shortDid(key)
 }
 
 /** Unique hosts of a URI list, for "where the content lives" facts. */
@@ -268,6 +269,15 @@ export function describeReviewDocument(reviewed: ReviewedDp1Document): ReviewSum
     }
     if (p.curators?.length) {
       facts.push(`Declared curators: ${p.curators.map(entityLine).join('; ')}`)
+    }
+    // Any value other than exactly "public" means unlisted (§3.7).
+    // null is treated as absent (public), exactly as the signing payload does.
+    if (p.visibility !== undefined && p.visibility !== null) {
+      facts.push(
+        p.visibility === 'public'
+          ? 'Listing: public'
+          : 'Listing: unlisted — directories are asked to leave this playlist out of their listings.'
+      )
     }
     return {
       kindLabel: 'Playlist',

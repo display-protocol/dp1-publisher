@@ -22,7 +22,7 @@
  *   below, each once lost this way).
  */
 
-import { entityWire } from '@/lib/dp1EntityWire'
+import { entityWire, linkWire } from '@/lib/dp1EntityWire'
 import { stripSignatureFields } from '@/lib/signing'
 import { generateSlug } from '@/lib/utils'
 import type { Entity, Playlist } from '@/types/dp1'
@@ -50,7 +50,18 @@ const PLAYLIST_FIELDS: readonly string[] = [
   'coverImage',
   'dynamicQuery',
   'note',
+  // playlists-extension §3.5.2 / §3.7 / §3.8 and dp1#55 (dp1-go v0.8.0
+  // Playlist.OpenAt / Links / Visibility / Satellites). Absent from this list
+  // they were signed away silently — and `visibility` is the one that turns a
+  // replace of an unlisted playlist into a public one, because absent means
+  // public. `links` and `satellites` are handled structurally below.
+  'openAt',
+  'links',
+  'visibility',
+  'satellites',
 ]
+
+const SATELLITE_FIELDS: readonly string[] = ['playlist', 'kind', 'title', 'note']
 
 const PLAYLIST_ITEM_FIELDS: readonly string[] = [
   'id',
@@ -60,12 +71,10 @@ const PLAYLIST_ITEM_FIELDS: readonly string[] = [
   'duration',
   'license',
   'ref',
-  // NOTE: `refHash` is missing here, and that is a bug, not a decision.
-  // dp1-go's PlaylistItem has carried `RefHash string json:"refHash,omitempty"`
-  // since v0.5.1, so the feed keeps a refHash we drop — silently losing the
-  // integrity hash that §3.6 requires for a manifest served over mutable
-  // HTTPS. Left out of this change to keep it scoped to inlineManifest;
-  // fixing it means adding the key here and to `PlaylistItem`.
+  // `refHash` is the integrity hash §3.6 requires for a manifest served over
+  // mutable HTTPS (dp1-go PlaylistItem.RefHash, `omitempty`). It was once
+  // missing from this list, which signed the hash away silently.
+  'refHash',
   'override',
   'display',
   'repro',
@@ -105,6 +114,7 @@ const DISPLAY_PREFS_FIELDS: readonly string[] = [
   'background',
   'autoplay',
   'loop',
+  'imageRendering',
   'interaction',
   'userOverrides',
 ]
@@ -114,7 +124,7 @@ const INTERACTION_FIELDS: readonly string[] = ['keyboard', 'mouse']
 // `keyboard` is a string array (no keys to filter); `mouse` is a typed struct.
 const INTERACTION_MOUSE_FIELDS: readonly string[] = ['click', 'scroll', 'drag', 'hover']
 
-const NOTE_FIELDS: readonly string[] = ['text', 'duration']
+const NOTE_FIELDS: readonly string[] = ['text', 'duration', 'title', 'author']
 
 // NOTE: `engineVersion` is deliberately NOT whitelisted below — dp1-go's
 // ReproBlock.EngineVersion is `map[string]string` (arbitrary engine names),
@@ -186,6 +196,17 @@ function dropOmitemptyZeros(obj: Record<string, unknown>): Record<string, unknow
   return out
 }
 
+/** Whitelist a Note; `author` is an Entity and goes through [entityWire]. */
+function canonicalNote(n: unknown): Record<string, unknown> | undefined {
+  if (!isPlainObject(n)) return undefined
+  const out = pickFields(n, NOTE_FIELDS)
+  if (isPlainObject(out.author)) out.author = entityWire(out.author as unknown as Entity)
+  else delete out.author
+  // `title string omitempty`
+  if (out.title === '') delete out.title
+  return out
+}
+
 /** Recursively whitelist a DisplayPrefs object. */
 function canonicalDisplayPrefs(d: unknown): Record<string, unknown> | undefined {
   if (!isPlainObject(d)) return undefined
@@ -214,7 +235,9 @@ function canonicalPlaylistItem(item: unknown): Record<string, unknown> | undefin
   if (!isPlainObject(item)) return undefined
   const out = pickFields(item, PLAYLIST_ITEM_FIELDS)
   if ('display' in out) out.display = canonicalDisplayPrefs(out.display)
-  if (isPlainObject(out.note)) out.note = pickFields(out.note, NOTE_FIELDS)
+  // `RefHash string omitempty`
+  if (out.refHash === '') delete out.refHash
+  if (isPlainObject(out.note)) out.note = canonicalNote(out.note)
   // `DisplayAt *string omitempty` — Go omits only a nil pointer, so JSON null
   // is dropped pre-hash: it is the one value Go's marshal cannot emit for
   // this field. An empty string round-trips verbatim through the pointer, so
@@ -296,7 +319,33 @@ export function playlistUnsignedPayloadForSigning(p: Playlist): Record<string, u
     }
     out.dynamicQuery = dq
   }
-  if (isPlainObject(out.note)) out.note = pickFields(out.note, NOTE_FIELDS)
+  if (isPlainObject(out.note)) out.note = canonicalNote(out.note)
+
+  // Playlist-level links / satellites: typed structs in dp1-go, so filter each
+  // element; both are `omitempty` slices, so an empty array is dropped.
+  if (Array.isArray(out.links)) {
+    const links = (out.links as unknown[]).map(linkWire).filter(Boolean)
+    if (links.length > 0) out.links = links
+    else delete out.links
+  }
+  if (Array.isArray(out.satellites)) {
+    const sats = (out.satellites as unknown[])
+      .filter(isPlainObject)
+      .map((s) => {
+        const sat = pickFields(s, SATELLITE_FIELDS)
+        // `title` / `note` are `string omitempty`; `playlist` / `kind` are always emitted.
+        if (sat.title === '') delete sat.title
+        if (sat.note === '') delete sat.note
+        return sat
+      })
+    if (sats.length > 0) out.satellites = sats
+    else delete out.satellites
+  }
+  // `openAt string omitempty`
+  if (out.openAt === '' || out.openAt === null) delete out.openAt
+  // `Visibility *string omitempty`: only nil is omitted, "" is kept (and means
+  // unlisted), so drop JSON null alone.
+  if (out.visibility === null) delete out.visibility
 
   // Step 3: curators are mapped through entityWire (drops empty url).
   if (Array.isArray(out.curators) && (out.curators as unknown[]).length > 0) {

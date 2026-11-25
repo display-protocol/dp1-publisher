@@ -18,10 +18,58 @@ export interface Signature {
   sig: string // base64url (no padding)
 }
 
+/** Image reference shared by entity avatars and link thumbnails (core ref-manifest `Thumbnail`). */
+export interface Thumbnail {
+  uri: string
+  w?: number
+  h?: number
+  sha256?: string
+}
+
+export interface Biography {
+  text: string
+  source?: string
+  sourceUrl?: string
+}
+
+export type LinkType =
+  | 'website'
+  | 'twitter'
+  | 'instagram'
+  | 'profile'
+  | 'publication'
+  | 'article'
+  | 'event'
+  | 'news'
+  | 'other'
+
+/** External link (core ref-manifest `Link`); on a playlist it is editorial content about it. */
+export interface Link {
+  type: LinkType | string
+  url: string
+  title?: string
+  date?: string // RFC3339
+  thumbnail?: Thumbnail
+  authors?: Entity[]
+}
+
+/**
+ * One model for every place DP-1 names someone (core ref-manifest `$defs/Entity`,
+ * dp1-go `extension/identity.Entity`). Only `name` is required by the schema;
+ * `key` is a DID when present. The profile fields are a snapshot taken at
+ * authoring time and are carried verbatim so a replace never erases them.
+ */
 export interface Entity {
   name: string
-  key: string // DID format
-  url?: string
+  key?: string // DID format
+  id?: string
+  url?: string // deprecated in favour of `links`
+  role?: string
+  location?: string
+  addresses?: string[]
+  avatar?: Thumbnail
+  biographies?: Biography[]
+  links?: Link[]
 }
 
 export interface DisplayPrefs {
@@ -30,6 +78,7 @@ export interface DisplayPrefs {
   background?: string
   autoplay?: boolean
   loop?: boolean
+  imageRendering?: 'auto' | 'pixelated'
   interaction?: {
     keyboard?: string[]
     mouse?: {
@@ -62,7 +111,8 @@ export interface ProvenanceBlock {
     chain?: 'evm' | 'tezos' | 'bitmark' | 'other'
     standard?: 'erc721' | 'erc1155' | 'fa2' | 'other'
     address?: string
-    seriesId?: number
+    // A number, or a decimal string when the id exceeds 2^53 (spec.md §provenance).
+    seriesId?: number | string
     tokenId?: string
     uri?: string
     metaHash?: string
@@ -77,6 +127,16 @@ export interface ProvenanceBlock {
 export interface Note {
   text: string
   duration?: number // seconds, default 20
+  title?: string
+  author?: Entity
+}
+
+/** Playlists-extension §3.8: a smaller playlist published around the parent. */
+export interface Satellite {
+  playlist: string // URI
+  kind: string
+  title?: string
+  note?: string
 }
 
 export interface ResponseMapping {
@@ -103,6 +163,9 @@ export interface PlaylistItem {
   license?: LicenseMode
   ref?: string // URI
   override?: Record<string, unknown>
+  // Integrity hash of the manifest at `ref` (playlists-extension §3.6); signed
+  // with the document so a mutable HTTPS manifest cannot change underneath it.
+  refHash?: string
   // Playlists-extension §3.6 (dp1-go v0.6.0 PlaylistItem.InlineManifest): a
   // complete Ref Manifest carried inline instead of hosted behind `ref`. Typed
   // as an open shape like `override` because dp1-go holds it as
@@ -152,6 +215,13 @@ export interface Playlist {
   coverImage?: string
   dynamicQuery?: DynamicQuery
   note?: Note
+  // Playlists-extension fields below were once dropped by the signing whitelist
+  // (see playlistSignPayload.ts). `visibility` is the one that matters most:
+  // absent means public, so losing "unlisted" on a replace publishes it.
+  openAt?: string // §3.5.2 date shape; playlist-level event time, not scheduling
+  links?: Link[]
+  visibility?: string // open vocabulary; "public", or anything else = unlisted
+  satellites?: Satellite[]
 }
 
 

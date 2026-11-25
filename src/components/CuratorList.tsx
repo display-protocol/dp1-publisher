@@ -62,7 +62,7 @@ export default function CuratorList({ curators, onChange }: Props) {
                 <Label htmlFor={`curator-key-${index}`}>Key (DID:PKH) *</Label>
                 <Input
                   id={`curator-key-${index}`}
-                  value={curator.key}
+                  value={curator.key ?? ''}
                   onChange={(e) => handleUpdateCurator(index, 'key', e.target.value)}
                   placeholder="did:pkh:eip155:1:0x..."
                 />

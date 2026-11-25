@@ -50,10 +50,13 @@ export function playlistExtensionFieldsPresent(p: Playlist): string[] {
   if (typeof p.coverImage === 'string' && p.coverImage.trim() !== '') present.push('coverImage')
   if (p.dynamicQuery !== undefined) present.push('dynamicQuery')
   if (p.note !== undefined) present.push('note')
-  if (p.openAt !== undefined) present.push('openAt')
+  if (typeof p.openAt === 'string' && p.openAt !== '') present.push('openAt')
   if (Array.isArray(p.links) && p.links.length > 0) present.push('links')
   // Losing `visibility` on a replace makes an unlisted playlist public (absent means public).
-  if (p.visibility !== undefined) present.push('visibility')
+  // "public" reads the same as absent, so stripping it loses nothing.
+  if (p.visibility !== undefined && p.visibility !== null && p.visibility !== 'public') {
+    present.push('visibility')
+  }
   if (Array.isArray(p.satellites) && p.satellites.length > 0) present.push('satellites')
   const itemFields = new Set<string>()
   for (const item of p.items ?? []) {

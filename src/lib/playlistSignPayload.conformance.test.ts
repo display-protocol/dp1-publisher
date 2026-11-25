@@ -198,6 +198,10 @@ describe('extension policy knows the new fields', () => {
     )
   })
 
+  it('does not flag values that read the same as absent', () => {
+    expect(playlistExtensionFieldsPresent({ ...base, visibility: 'public', openAt: '' })).toEqual([])
+  })
+
   it('strips them when extensions are off', () => {
     const stripped = stripPlaylistExtensionFields({ ...base, visibility: 'unlisted', openAt: 'x' })
     expect(stripped).not.toHaveProperty('visibility')

@@ -8,13 +8,14 @@ import { ethereumAddressToDIDPKH } from '@/lib/signing'
 const TEST_WALLET = '0x000000000000000000000000000000000000aBcD'
 const TEST_WALLET_DID = ethereumAddressToDIDPKH(TEST_WALLET)
 
-vi.mock('wagmi', () => {
-  const address = '0x000000000000000000000000000000000000aBcD'
-  return {
-    useAccount: () => ({ address }),
-    useWalletClient: () => ({ data: { account: { address } } }),
-  }
-})
+const wallet = vi.hoisted(() => ({
+  address: '0x000000000000000000000000000000000000aBcD',
+}))
+
+vi.mock('wagmi', () => ({
+  useAccount: () => ({ address: wallet.address }),
+  useWalletClient: () => ({ data: { account: { address: wallet.address } } }),
+}))
 
 const signKid = ethereumAddressToDIDPKH('0x000000000000000000000000000000000000aBcD')
 
@@ -423,6 +424,119 @@ describe('ChannelForm — publish flow', () => {
 
   // PR #30 review F4: a form edit must not drop publisher profile members the
   // form has no input for.
+  // PR #30 review F7: switching wallet accounts must not drop a publisher
+  // profile imported through the JSON tab (create has no loaded document).
+  it('create keeps the JSON-imported publisher profile across a wallet account switch', async () => {
+    mockedApi.getChannel.mockRejectedValue(new apiModule.FeedAPIError('not found', 404))
+    mockedApi.publishChannel.mockImplementation(async (c) => c)
+
+    render(<ChannelForm />)
+    const jsonTextarea = await switchToJsonTabAndGetTextarea()
+    fireEvent.change(jsonTextarea, {
+      target: {
+        value: JSON.stringify({
+          dpVersion: '1.1.0',
+          id: 'imp-id',
+          title: 'Imported',
+          version: '1.0.0',
+          playlists: ['https://feed.example/api/v1/playlists/p1'],
+          publisher: { name: 'Bob', key: TEST_WALLET_DID, location: 'Paris' },
+        }),
+      },
+    })
+    const formTab = screen.getByRole('tab', { name: /Form/i })
+    fireEvent.mouseDown(formTab)
+    fireEvent.click(formTab)
+    await waitFor(() =>
+      expect((screen.getByLabelText(/Title \*/i) as HTMLInputElement).value).toBe('Imported'),
+    )
+
+    wallet.address = '0x0000000000000000000000000000000000001234'
+    try {
+      // Any state change re-renders the form, which re-reads the new account.
+      fireEvent.change(screen.getByLabelText(/Title \*/i), {
+        target: { value: 'Imported 2' },
+      })
+      fireEvent.click(screen.getByRole('button', { name: /Check URLs/i }))
+      fireEvent.click(screen.getByRole('button', { name: /Sign & publish/i }))
+      await waitFor(() => expect(mockedApi.publishChannel).toHaveBeenCalledTimes(1))
+      const body = mockedApi.publishChannel.mock.calls[0][0] as {
+        publisher: { location?: string }
+      }
+      expect(body.publisher.location).toBe('Paris')
+    } finally {
+      wallet.address = TEST_WALLET
+    }
+  })
+
+  it('edit keeps a JSON-imported publisher profile across a wallet account switch', async () => {
+    mockedApi.getChannel.mockResolvedValue({
+      dpVersion: '1.1.0',
+      id: 'ch-sw',
+      slug: 'sw',
+      title: 'Stored',
+      version: '1.0.0',
+      created: '2025-01-01T00:00:00Z',
+      playlists: ['https://feed.example/api/v1/playlists/p1'],
+      publisher: { name: 'Bob', key: TEST_WALLET_DID },
+      signatures: [
+        {
+          alg: 'eip191',
+          kid: TEST_WALLET_DID,
+          ts: '2025-01-01T00:00:00Z',
+          payload_hash: 'sha256:prior',
+          role: 'publisher',
+          sig: 'prior-sig',
+        },
+      ],
+    })
+    mockedApi.replaceChannel.mockImplementation(async (_id, body) => body)
+
+    render(<ChannelForm editId="ch-sw" />)
+    await waitFor(() =>
+      expect((screen.getByLabelText(/Title \*/i) as HTMLInputElement).value).toBe('Stored'),
+    )
+    const jsonTextarea = await switchToJsonTabAndGetTextarea()
+    fireEvent.change(jsonTextarea, {
+      target: {
+        value: JSON.stringify({
+          dpVersion: '1.1.0',
+          id: 'ch-sw',
+          slug: 'sw',
+          title: 'Stored',
+          version: '1.0.0',
+          created: '2025-01-01T00:00:00Z',
+          playlists: ['https://feed.example/api/v1/playlists/p1'],
+          publisher: { name: 'Bob', key: TEST_WALLET_DID, location: 'Paris' },
+        }),
+      },
+    })
+    const formTab = screen.getByRole('tab', { name: /Form/i })
+    fireEvent.mouseDown(formTab)
+    fireEvent.click(formTab)
+
+    wallet.address = '0x0000000000000000000000000000000000001234'
+    try {
+      // Any state change re-renders the form, which re-reads the new account
+      // and re-fires the load effect.
+      fireEvent.change(screen.getByLabelText(/Title \*/i), {
+        target: { value: 'Renamed' },
+      })
+      await waitFor(() => expect(mockedApi.getChannel.mock.calls.length).toBeGreaterThan(1))
+      await waitFor(() =>
+        expect((screen.getByLabelText(/Title \*/i) as HTMLInputElement).value).toBe('Stored'),
+      )
+      fireEvent.click(screen.getByRole('button', { name: /Sign & update/i }))
+      await waitFor(() => expect(mockedApi.replaceChannel).toHaveBeenCalledTimes(1))
+      const body = mockedApi.replaceChannel.mock.calls[0][1] as {
+        publisher: { location?: string }
+      }
+      expect(body.publisher.location).toBe('Paris')
+    } finally {
+      wallet.address = TEST_WALLET
+    }
+  })
+
   it('edit keeps the stored publisher profile (location, links)', async () => {
     mockedApi.getChannel.mockResolvedValue({
       dpVersion: '1.1.0',

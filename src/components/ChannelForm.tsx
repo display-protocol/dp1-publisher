@@ -240,8 +240,15 @@ export default function ChannelForm({
 
   const isEdit = Boolean(editId);
 
+  // The imported publisher profile belongs to the document being edited, not
+  // to the connected wallet: switching accounts must not drop it (create
+  // flow has no loaded document to recover it from). Reset only when the
+  // edited document changes.
   useEffect(() => {
     importedPublisherRef.current = null;
+  }, [editId]);
+
+  useEffect(() => {
     if (!editId || !address) {
       loadedRef.current = null;
       return;

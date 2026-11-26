@@ -8,13 +8,15 @@ import {
   type ReactNode,
 } from 'react'
 import { getFeedApiMetadata } from '@/lib/api'
-import { parseEnvExtensionsOverride } from '@/lib/dp1ExtensionPolicy'
+import { type ExtensionsState, parseEnvExtensionsOverride } from '@/lib/dp1ExtensionPolicy'
 
 export type ExtensionsSource = 'env' | 'feed' | 'default'
 
 interface Dp1ExtensionsValue {
-  /** Effective flag for UI + publish path. */
+  /** Effective flag for UI. `false` also covers "not known"; the publish path reads `extensionsState`. */
   extensionsEnabled: boolean
+  /** What the publish path may rely on. */
+  extensionsState: ExtensionsState
   /** True while fetching feed metadata when env override is unset. */
   extensionsLoading: boolean
   /** Where `extensionsEnabled` came from when resolved. */
@@ -65,15 +67,24 @@ export function Dp1ExtensionsProvider({ children }: { children: ReactNode }) {
         ? 'default'
         : 'feed'
 
+  const extensionsState: ExtensionsState =
+    envOverride === undefined && (feedLoading || extensionsSource === 'default')
+      ? 'unknown'
+      : extensionsEnabled
+        ? 'on'
+        : 'off'
+
   const value = useMemo(
     (): Dp1ExtensionsValue => ({
       extensionsEnabled,
+      extensionsState,
       extensionsLoading: envOverride === undefined && feedLoading,
       extensionsSource,
       refreshFeedExtensions: loadFromFeed,
     }),
     [
       extensionsEnabled,
+      extensionsState,
       envOverride,
       feedLoading,
       extensionsSource,

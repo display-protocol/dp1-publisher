@@ -225,7 +225,9 @@ function shortDid(key: string): string {
 function entityLine(e: Entity): string {
   const name = e.name?.trim()
   const key = e.key ?? ''
-  return name ? `${name} (${shortDid(key)})` : shortDid(key)
+  if (name && key) return `${name} (${shortDid(key)})`
+  if (name) return name
+  return key ? shortDid(key) : `unnamed, no key${e.role ? ` (${e.role})` : e.url ? ` (${e.url})` : ''}`
 }
 
 /** Unique hosts of a URI list, for "where the content lives" facts. */

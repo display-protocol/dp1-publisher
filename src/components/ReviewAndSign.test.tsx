@@ -20,7 +20,7 @@ vi.mock('wagmi', () => {
 })
 
 vi.mock('@/context/Dp1ExtensionsContext', () => ({
-  useDp1Extensions: () => ({ extensionsEnabled: true, extensionsLoading: false }),
+  useDp1Extensions: () => ({ extensionsEnabled: true, extensionsState: 'on', extensionsLoading: false }),
 }))
 
 const toastMock = vi.fn()

@@ -15,6 +15,7 @@ vi.mock('wagmi', () => ({
 vi.mock('@/context/Dp1ExtensionsContext', () => ({
   useDp1Extensions: () => ({
     extensionsEnabled: true,
+    extensionsState: 'on',
     extensionsLoading: false,
   }),
 }))

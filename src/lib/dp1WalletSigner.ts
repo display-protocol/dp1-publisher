@@ -8,6 +8,7 @@
  * it cannot match the on-the-wire signature to a declared identity.
  */
 
+import { entityWire } from '@/lib/dp1EntityWire'
 import type { Channel, Entity, Playlist } from '@/types/dp1'
 
 export interface CuratorEnsureResult {
@@ -64,18 +65,18 @@ function normalizeCurator(c: unknown): Entity {
 }
 
 /**
- * A curator the document names without a DID (`key` is optional in the spec):
- * a non-empty string `name` and no usable key. It cannot sign, but dropping it
- * would erase a credit the document legitimately carries.
+ * A curator the document declares without a DID (`key` is optional in the spec,
+ * and `name` may be empty): no usable key, and either a non-blank name or some
+ * other member that reaches the wire (`role`, `url`, `links`, …). It cannot sign,
+ * but dropping it would erase a credit the document legitimately carries. An
+ * entry with nothing in it — the form's untouched "Add curator" row — is not one.
  */
-function isKeylessNamedCurator(c: unknown): boolean {
+function isKeylessCurator(c: unknown): boolean {
   if (!c || typeof c !== 'object' || Array.isArray(c)) return false
   const o = c as { name?: unknown; key?: unknown }
-  return (
-    typeof o.name === 'string' &&
-    o.name.trim() !== '' &&
-    (o.key === undefined || o.key === null || o.key === '')
-  )
+  if (!(o.key === undefined || o.key === null || o.key === '')) return false
+  if (typeof o.name === 'string' && o.name.trim() !== '') return true
+  return Object.keys(entityWire(normalizeCurator(c))).some((k) => k !== 'name')
 }
 
 /**
@@ -87,7 +88,7 @@ export function normalizeChannelCurators(channel: Channel): Channel {
   return {
     ...channel,
     curators: channel.curators.map((c) =>
-      hasValidKey(c) || isKeylessNamedCurator(c) ? normalizeCurator(c) : c
+      hasValidKey(c) || isKeylessCurator(c) ? normalizeCurator(c) : c
     ),
   }
 }
@@ -106,7 +107,7 @@ export function ensurePlaylistWalletCurator(
   // `name: undefined` slipping into the wire payload).
   const rawArray: unknown[] = Array.isArray(playlist.curators) ? playlist.curators : []
   const validCurators: Entity[] = rawArray
-    .filter((c) => hasValidKey(c) || isKeylessNamedCurator(c))
+    .filter((c) => hasValidKey(c) || isKeylessCurator(c))
     .map(normalizeCurator)
 
   const previousCount = validCurators.length

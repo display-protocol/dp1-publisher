@@ -100,7 +100,7 @@ describe('PlaylistForm — publish flow', () => {
       slug: 'first-slug',
     }))
 
-    render(<PlaylistForm extensionsEnabled={false} />)
+    render(<PlaylistForm extensionsState="off" />)
     fillFormAndPublish('First playlist', 'https://example.com/a.mp4')
 
     await waitFor(() => {
@@ -164,7 +164,7 @@ describe('PlaylistForm — publish flow', () => {
     const signSpy = signingModule.signDocument as unknown as ReturnType<typeof vi.fn>
     signSpy.mockClear()
 
-    render(<PlaylistForm extensionsEnabled={false} />)
+    render(<PlaylistForm extensionsState="off" />)
     fillFormAndPublish('Whatever', 'https://example.com/a.mp4')
 
     // Wait for the gate's update-failed toast.
@@ -209,7 +209,7 @@ describe('PlaylistForm — publish flow', () => {
       new apiModule.FeedAPIError('signature rejected', 401, 'unauthorized'),
     )
 
-    render(<PlaylistForm extensionsEnabled={false} />)
+    render(<PlaylistForm extensionsState="off" />)
     fillFormAndPublish('Whatever', 'https://example.com/a.mp4')
 
     await waitFor(() => {
@@ -259,7 +259,7 @@ describe('PlaylistForm — publish flow', () => {
     mockedApi.getPlaylist.mockRejectedValue(new apiModule.FeedAPIError('not found', 404))
     mockedApi.publishPlaylist.mockImplementation(async (p) => p as Record<string, unknown>)
 
-    render(<PlaylistForm extensionsEnabled />)
+    render(<PlaylistForm extensionsState="on" />)
     pasteJsonAndPublish({
       dpVersion: '1.1.0',
       title: 'Inline manifest playlist',
@@ -285,7 +285,7 @@ describe('PlaylistForm — publish flow', () => {
   it('refuses to publish an inlineManifest missing its envelope', async () => {
     mockedApi.getPlaylist.mockRejectedValue(new apiModule.FeedAPIError('not found', 404))
 
-    render(<PlaylistForm extensionsEnabled />)
+    render(<PlaylistForm extensionsState="on" />)
     pasteJsonAndPublish({
       dpVersion: '1.1.0',
       title: 'Broken manifest playlist',
@@ -314,7 +314,7 @@ describe('PlaylistForm — publish flow', () => {
   it('still refuses a malformed manifest after switching back to the Form tab', async () => {
     mockedApi.getPlaylist.mockRejectedValue(new apiModule.FeedAPIError('not found', 404))
 
-    render(<PlaylistForm extensionsEnabled />)
+    render(<PlaylistForm extensionsState="on" />)
     fireEvent.mouseDown(screen.getByRole('tab', { name: /JSON/i }))
     fireEvent.change(screen.getByPlaceholderText(/paste DP-1 JSON/i), {
       target: {
@@ -351,7 +351,7 @@ describe('PlaylistForm — publish flow', () => {
     mockedApi.getPlaylist.mockRejectedValue(new apiModule.FeedAPIError('not found', 404))
     mockedApi.publishPlaylist.mockImplementation(async (p) => p as Record<string, unknown>)
 
-    render(<PlaylistForm extensionsEnabled />)
+    render(<PlaylistForm extensionsState="on" />)
     fireEvent.mouseDown(screen.getByRole('tab', { name: /JSON/i }))
     fireEvent.change(screen.getByPlaceholderText(/paste DP-1 JSON/i), {
       target: {
@@ -384,7 +384,7 @@ describe('PlaylistForm — publish flow', () => {
     mockedApi.getPlaylist.mockRejectedValue(new apiModule.FeedAPIError('not found', 404))
     mockedApi.publishPlaylist.mockImplementation(async (p) => p as Record<string, unknown>)
 
-    render(<PlaylistForm extensionsEnabled />)
+    render(<PlaylistForm extensionsState="on" />)
     fireEvent.mouseDown(screen.getByRole('tab', { name: /JSON/i }))
     fireEvent.change(screen.getByPlaceholderText(/paste DP-1 JSON/i), {
       target: {
@@ -447,7 +447,7 @@ describe('PlaylistForm — core mode must not silently replace an extension-bear
     const signSpy = signingModule.signDocument as unknown as ReturnType<typeof vi.fn>
     signSpy.mockClear()
 
-    render(<PlaylistForm extensionsEnabled={false} editId="ext-bearing-id" />)
+    render(<PlaylistForm extensionsState="off" editId="ext-bearing-id" />)
     await waitFor(() => expect(mockedApi.getPlaylist).toHaveBeenCalled())
 
     fillFormAndUpdate('Edited in core mode', 'https://example.com/a.mp4')
@@ -483,7 +483,7 @@ describe('PlaylistForm — core mode must not silently replace an extension-bear
       title: 'Edited in core mode',
     })
 
-    render(<PlaylistForm extensionsEnabled={false} editId="ext-bearing-id" />)
+    render(<PlaylistForm extensionsState="off" editId="ext-bearing-id" />)
     await waitFor(() => expect(mockedApi.getPlaylist).toHaveBeenCalled())
 
     fillFormAndUpdate('Edited in core mode', 'https://example.com/a.mp4')
@@ -529,7 +529,7 @@ describe('PlaylistForm — edit keeps members the form cannot show', () => {
     mockedApi.getPlaylist.mockResolvedValue(stored)
     mockedApi.replacePlaylist.mockImplementation(async (_id, body) => body)
 
-    render(<PlaylistForm extensionsEnabled editId="keep-id" />)
+    render(<PlaylistForm extensionsState="on" editId="keep-id" />)
     await waitFor(() => expect(mockedApi.getPlaylist).toHaveBeenCalled())
 
     fillFormAndUpdate('Edited title', 'https://example.com/a.mp4')
@@ -570,7 +570,7 @@ describe('PlaylistForm — edit keeps members the form cannot show', () => {
     mockedApi.getPlaylist.mockResolvedValue(stored)
     mockedApi.replacePlaylist.mockImplementation(async (_id, body) => body)
 
-    render(<PlaylistForm extensionsEnabled />)
+    render(<PlaylistForm extensionsState="on" />)
     fireEvent.change(screen.getByLabelText(/Title \*/i), { target: { value: 'New' } })
     fireEvent.change(screen.getByLabelText(/Source URI \*/i), {
       target: { value: 'https://example.com/a.mp4' },
@@ -582,5 +582,26 @@ describe('PlaylistForm — edit keeps members the form cannot show', () => {
     expect(body.visibility).toBe('unlisted')
     expect(body.note?.title).toBe('Opening')
     expect(body.defaults?.display?.imageRendering).toBe('pixelated')
+  })
+})
+
+describe('PlaylistForm — feed extension state unknown', () => {
+  beforeEach(() => {
+    toastMock.mockClear()
+    mockedApi.publishPlaylist.mockReset()
+    mockedApi.getPlaylist.mockReset()
+  })
+
+  it('publishes nothing and says why', async () => {
+    render(<PlaylistForm extensionsState="unknown" />)
+    fillFormAndPublish('Title', 'https://example.com/a.mp4')
+
+    await waitFor(() =>
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Cannot publish yet' })
+      )
+    )
+    expect(mockedApi.getPlaylist).not.toHaveBeenCalled()
+    expect(mockedApi.publishPlaylist).not.toHaveBeenCalled()
   })
 })

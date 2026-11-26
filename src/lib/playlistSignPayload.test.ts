@@ -223,31 +223,21 @@ describe('playlistUnsignedPayloadForSigning', () => {
     const mouse = interaction.mouse as Record<string, unknown>
     expect(mouse).not.toHaveProperty('extra')
     expect(mouse.click).toBe(true)
-    // MousePrefs bools are value-typed omitempty in dp1-go: `false` is absent
-    // from the feed's re-marshal and must be absent from the signed bytes.
-    expect(mouse).not.toHaveProperty('drag')
+    // An explicit false revokes what a lower layer enabled (dp1-go v0.8.0 `*bool`).
+    expect(mouse.drag).toBe(false)
     expect(interaction.keyboard).toEqual(['KeyW'])
   })
 
-  it('re-marshals an all-false mouse as {} and drops an empty keyboard array (Go omitempty)', () => {
-    const playlist = {
+  it('keeps explicit false flags and an empty keyboard in defaults and items (revocation)', () => {
+    const display = { interaction: { keyboard: [], mouse: { click: false, hover: false } } }
+    const payload = playlistUnsignedPayloadForSigning({
       ...minimalPlaylist,
-      items: [
-        {
-          source: 'https://example.com/v.m3u8',
-          display: {
-            interaction: { keyboard: [], mouse: { click: false, hover: false } },
-          },
-        },
-      ],
-    } as unknown as Playlist
-    const payload = playlistUnsignedPayloadForSigning(playlist)
-    const display = (payload.items as Array<{ display: Record<string, unknown> }>)[0].display
-    const interaction = display.interaction as Record<string, unknown>
-    // `[]string omitempty` → empty keyboard is gone entirely.
-    expect(interaction).not.toHaveProperty('keyboard')
-    // Mouse pointer is non-nil on the feed side → `{}` survives, empty.
-    expect(interaction.mouse).toEqual({})
+      defaults: { display },
+      items: [{ source: 'https://example.com/v.m3u8', display }],
+    } as unknown as Playlist)
+    const items = payload.items as Array<{ display: unknown }>
+    expect(items[0].display).toEqual(display)
+    expect((payload.defaults as { display: unknown }).display).toEqual(display)
   })
 
   it('passes engineVersion through as an open dictionary and whitelists frameHash (issue #4)', () => {

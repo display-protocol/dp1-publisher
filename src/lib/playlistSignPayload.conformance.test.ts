@@ -202,9 +202,10 @@ describe('extension policy knows the new fields', () => {
     expect(playlistExtensionFieldsPresent({ ...base, visibility: 'public', openAt: '' })).toEqual([])
   })
 
-  it('strips them when extensions are off', () => {
+  it('strips them when extensions are off, except a non-public visibility', () => {
     const stripped = stripPlaylistExtensionFields({ ...base, visibility: 'unlisted', openAt: 'x' })
-    expect(stripped).not.toHaveProperty('visibility')
+    // Non-public visibility is never stripped (§3.7); preparePublish refuses it instead.
+    expect(stripped.visibility).toBe('unlisted')
     expect(stripped).not.toHaveProperty('openAt')
   })
 })

@@ -29,6 +29,10 @@ import {
   type PrepareResult,
   type ToastInput,
 } from '@/lib/preparePublish';
+import {
+  EXTENSIONS_UNKNOWN_MESSAGE,
+  type ExtensionsState,
+} from '@/lib/dp1ExtensionPolicy';
 import { ethereumAddressToDIDPKH, signDocument } from '@/lib/signing';
 import { buildReplaceIntent } from '@/lib/replaceIntent';
 import {
@@ -129,7 +133,7 @@ function prepareReviewed(
   reviewed: ReviewedDp1Document,
   walletDID: string,
   base: Playlist | Channel | undefined,
-  extensionsEnabled: boolean,
+  extensions: ExtensionsState,
   walletName: string
 ): PreparedOk | { validationErrors: string[] } {
   const ok = <T,>(
@@ -151,7 +155,7 @@ function prepareReviewed(
         rawDocument: reviewed.document,
         walletDID,
         base: base as Playlist | undefined,
-        extensionsEnabled,
+        extensions,
         walletName,
       }),
       (p) => ({ kind: 'playlist', document: p })
@@ -188,7 +192,8 @@ const ATTRIBUTION_NAME_STORAGE_KEY = 'dp1-publisher.attribution-name';
 export default function ReviewAndSign() {
   const { isConnected, address } = useAccount();
   const { data: walletClient } = useWalletClient();
-  const { extensionsEnabled, extensionsLoading } = useDp1Extensions();
+  const { extensionsEnabled, extensionsState, extensionsLoading } =
+    useDp1Extensions();
   const { toast } = useToast();
 
   const [jsonText, setJsonText] = useState('');
@@ -228,8 +233,12 @@ export default function ReviewAndSign() {
   const parseResult = useMemo(() => {
     const trimmed = settledJsonText.trim();
     if (!trimmed) return null;
+    // Unknown is not off: say so instead of the "extensions are off" refusals.
+    if (extensionsState === 'unknown') {
+      return { error: EXTENSIONS_UNKNOWN_MESSAGE };
+    }
     return parseReviewDocument(trimmed, { extensionsEnabled });
-  }, [settledJsonText, extensionsEnabled]);
+  }, [settledJsonText, extensionsEnabled, extensionsState]);
 
   const reviewed = parseResult && 'doc' in parseResult ? parseResult.doc : null;
 
@@ -298,7 +307,7 @@ export default function ReviewAndSign() {
         reviewed,
         walletDID,
         base,
-        extensionsEnabled,
+        extensionsState,
         settledSignerName
       );
       if (token !== prepareTokenRef.current) return;
@@ -324,7 +333,7 @@ export default function ReviewAndSign() {
     settledJsonText,
     settledSignerName,
     address,
-    extensionsEnabled,
+    extensionsState,
   ]);
 
   const handleSignAndPublish = async () => {

@@ -6,6 +6,25 @@
 
 import type { Playlist, PlaylistItem } from '@/types/dp1'
 
+/**
+ * Whether the target feed takes extension fields. `unknown` (metadata still loading or unreadable) is
+ * its own state, never folded into `off`: `off` shapes the signed document by stripping fields, so
+ * treating a guess as `off` signs away what the author wrote. Nothing may be signed while `unknown`.
+ */
+export type ExtensionsState = 'on' | 'off' | 'unknown'
+
+export const EXTENSIONS_UNKNOWN_MESSAGE =
+  'The feed’s extension settings are not known yet (still loading, or the feed could not be reached), ' +
+  'so nothing can be signed safely. Wait a moment or reload the page, then try again.'
+
+/**
+ * Playlists ext §3.7: only an absent or exactly "public" `visibility` may be listed; every other value
+ * reads as unlisted. JSON null is dropped by the signing payload, so it counts as absent.
+ */
+export function isNonPublicVisibility(visibility: unknown): boolean {
+  return visibility !== undefined && visibility !== null && visibility !== 'public'
+}
+
 /** Env override: unset = follow feed metadata; true/false = force UI and publish shape. */
 export function parseEnvExtensionsOverride(): boolean | undefined {
   const v = import.meta.env.VITE_DP1_EXTENSIONS_ENABLED
@@ -54,7 +73,7 @@ export function playlistExtensionFieldsPresent(p: Playlist): string[] {
   if (Array.isArray(p.links) && p.links.length > 0) present.push('links')
   // Losing `visibility` on a replace makes an unlisted playlist public (absent means public).
   // "public" reads the same as absent, so stripping it loses nothing.
-  if (p.visibility !== undefined && p.visibility !== null && p.visibility !== 'public') {
+  if (isNonPublicVisibility(p.visibility)) {
     present.push('visibility')
   }
   if (Array.isArray(p.satellites) && p.satellites.length > 0) present.push('satellites')
@@ -67,7 +86,13 @@ export function playlistExtensionFieldsPresent(p: Playlist): string[] {
   return [...present, ...[...itemFields].sort()]
 }
 
-/** Drop playlists-extension fields so the payload matches core-only feed validation. */
+/**
+ * Drop playlists-extension fields so the payload matches core-only feed validation.
+ *
+ * Except a non-public `visibility`: removing it makes the playlist public (§3.7 fails closed), so it
+ * stays on the document — including in the form's JSON preview, which can be published as written —
+ * and `preparePlaylistForPublish` refuses to sign it. "public" means the same as absent and is dropped.
+ */
 export function stripPlaylistExtensionFields(p: Playlist): Playlist {
   const items = p.items.map(stripItemExtensionFields)
   const {
@@ -78,9 +103,11 @@ export function stripPlaylistExtensionFields(p: Playlist): Playlist {
     note: _n,
     openAt: _oa,
     links: _l,
-    visibility: _v,
+    visibility,
     satellites: _sat,
     ...rest
   } = p
-  return { ...rest, items }
+  return isNonPublicVisibility(visibility)
+    ? { ...rest, visibility, items }
+    : { ...rest, items }
 }

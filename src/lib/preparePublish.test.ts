@@ -15,6 +15,7 @@ import {
   prepareChannelForPublish,
   preparePlaylistForPublish,
 } from '@/lib/preparePublish'
+import { stripPlaylistExtensionFields } from '@/lib/dp1ExtensionPolicy'
 import type { Channel, Entity, Playlist } from '@/types/dp1'
 
 const WALLET = 'did:pkh:eip155:1:0xabcdef0123456789abcdef0123456789abcdef01'
@@ -47,7 +48,7 @@ describe('preparePlaylistForPublish — create', () => {
     const r = preparePlaylistForPublish({
       rawDocument: basePlaylist,
       walletDID: WALLET,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     ok<Playlist>(r)
     // signedPayload (typed) retains empty url; signedBytes (canonical) drops it.
@@ -67,7 +68,7 @@ describe('preparePlaylistForPublish — create', () => {
         curators: [{ name: 'NODE', key: DID_KEY, url: 'https://node.art' }],
       },
       walletDID: WALLET,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     ok<Playlist>(r)
     expect(r.signedPayload.curators).toEqual([
@@ -90,7 +91,7 @@ describe('preparePlaylistForPublish — create', () => {
         summary: 'should be stripped',
       },
       walletDID: WALLET,
-      extensionsEnabled: false,
+      extensions: 'off',
     })
     ok<Playlist>(r)
     expect(r.signedPayload.curators).toBeUndefined()
@@ -110,7 +111,7 @@ describe('preparePlaylistForPublish — create', () => {
         ],
       },
       walletDID: WALLET,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     ok<Playlist>(r)
     const items = r.signedBytes.items as Array<Record<string, unknown>>
@@ -126,7 +127,7 @@ describe('preparePlaylistForPublish — create', () => {
         items: [{ source: 'https://example.com/day1.html', displayAt: '2026-07-21T00:00:00' }],
       },
       walletDID: WALLET,
-      extensionsEnabled: false,
+      extensions: 'off',
     })
     ok<Playlist>(r)
     const items = r.signedBytes.items as Array<Record<string, unknown>>
@@ -151,7 +152,7 @@ describe('preparePlaylistForPublish — create', () => {
         ],
       },
       walletDID: WALLET,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     ok<Playlist>(r)
     const items = r.signedBytes.items as Array<Record<string, unknown>>
@@ -177,7 +178,7 @@ describe('preparePlaylistForPublish — create', () => {
         ],
       },
       walletDID: WALLET,
-      extensionsEnabled: false,
+      extensions: 'off',
     })
     ok<Playlist>(r)
     const items = r.signedBytes.items as Array<Record<string, unknown>>
@@ -201,7 +202,7 @@ describe('preparePlaylistForPublish — create', () => {
         ],
       },
       walletDID: WALLET,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     expect(r).toHaveProperty('validationErrors')
     expect((r as { validationErrors: string[] }).validationErrors).toEqual([
@@ -221,7 +222,7 @@ describe('preparePlaylistForPublish — create', () => {
         ],
       } as unknown as Playlist,
       walletDID: WALLET,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     expect((r as { validationErrors: string[] }).validationErrors).toEqual([
       'items[0].inlineManifest must be a Ref Manifest object.',
@@ -240,7 +241,7 @@ describe('preparePlaylistForPublish — create', () => {
         ],
       } as unknown as Playlist,
       walletDID: WALLET,
-      extensionsEnabled: false,
+      extensions: 'off',
     })
     ok<Playlist>(r)
     const items = r.signedBytes.items as Array<Record<string, unknown>>
@@ -260,8 +261,8 @@ describe('preparePlaylistForPublish — create', () => {
         },
       ],
     }
-    for (const extensionsEnabled of [true, false]) {
-      const r = preparePlaylistForPublish({ rawDocument: raw, walletDID: WALLET, extensionsEnabled })
+    for (const extensions of ['on', 'off'] as const) {
+      const r = preparePlaylistForPublish({ rawDocument: raw, walletDID: WALLET, extensions })
       ok<Playlist>(r)
       const item = (r.signedBytes.items as Array<Record<string, unknown>>)[0]
       expect(item.contentRating).toBe('mature')
@@ -283,7 +284,7 @@ describe('preparePlaylistForPublish — create', () => {
       rawDocument: { ...existing, title: 'edited' },
       walletDID: WALLET,
       base: existing,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     ok<Playlist>(r)
     expect((r.signedBytes.items as Array<Record<string, unknown>>)[0].contentRating).toBe('mature')
@@ -299,7 +300,7 @@ describe('preparePlaylistForPublish — create', () => {
         ],
       } as unknown as Playlist,
       walletDID: WALLET,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     expect('validationErrors' in r).toBe(true)
     if ('validationErrors' in r) {
@@ -313,7 +314,7 @@ describe('preparePlaylistForPublish — create', () => {
     const r = preparePlaylistForPublish({
       rawDocument: { ...basePlaylist, title: '' },
       walletDID: WALLET,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     expect('validationErrors' in r).toBe(true)
     if ('validationErrors' in r) {
@@ -326,7 +327,7 @@ describe('preparePlaylistForPublish — create', () => {
     const r = preparePlaylistForPublish({
       rawDocument: raw as Playlist,
       walletDID: WALLET,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     ok<Playlist>(r)
     expect(r.signedPayload.dpVersion).toBe('1.1.0')
@@ -345,7 +346,7 @@ describe('preparePlaylistForPublish — create', () => {
         created: '2026-05-22T08:30:00Z',
       },
       walletDID: WALLET,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     ok<Playlist>(r)
     expect(r.wireBody).toEqual(r.signedBytes)
@@ -365,7 +366,7 @@ describe('preparePlaylistForPublish — create', () => {
       rawDocument: { ...basePlaylist, title: 'edited' },
       walletDID: WALLET,
       base: existing,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     ok<Playlist>(r)
     expect(r.signedBytes.id).toBe('pl-abc-123')
@@ -390,7 +391,7 @@ describe('preparePlaylistForPublish — create', () => {
     const r = preparePlaylistForPublish({
       rawDocument: rawWithUnknown,
       walletDID: WALLET,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     ok<Playlist>(r)
     // Unknown keys are absent from both signed bytes AND wire body —
@@ -411,7 +412,7 @@ describe('preparePlaylistForPublish — create', () => {
         curators: [],
       },
       walletDID: WALLET,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     ok<Playlist>(r)
     expect(r.wireBody).toEqual(r.signedBytes)
@@ -427,10 +428,58 @@ describe('preparePlaylistForPublish — create', () => {
         coverImage: '',
       } as Playlist,
       walletDID: WALLET,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     ok<Playlist>(r)
     expect(r.wireBody).toEqual(r.signedBytes)
+  })
+})
+
+describe('preparePlaylistForPublish — extensions off or unknown (§3.7)', () => {
+  const unlisted: Playlist = { ...basePlaylist, visibility: 'unlisted' }
+
+  it.each(['unlisted', '', 'friends-only'])('refuses a create marked %j with extensions off', (v) => {
+    const r = preparePlaylistForPublish({
+      rawDocument: { ...basePlaylist, visibility: v },
+      walletDID: WALLET,
+      extensions: 'off',
+    })
+    expect('validationErrors' in r && r.validationErrors[0]).toMatch(/make the playlist public/)
+  })
+
+  it('refuses an edit that newly adds a non-public visibility with extensions off', () => {
+    const base: Playlist = { ...basePlaylist, id: 'p1', created: '2026-09-27T00:00:00Z' }
+    const r = preparePlaylistForPublish({
+      rawDocument: { ...base, visibility: 'unlisted' },
+      walletDID: WALLET,
+      base,
+      extensions: 'off',
+    })
+    expect('validationErrors' in r).toBe(true)
+  })
+
+  it('still publishes an explicit "public" with extensions off', () => {
+    const r = preparePlaylistForPublish({
+      rawDocument: { ...basePlaylist, visibility: 'public' },
+      walletDID: WALLET,
+      extensions: 'off',
+    })
+    ok<Playlist>(r)
+    expect(r.signedBytes).not.toHaveProperty('visibility')
+  })
+
+  it('refuses every playlist while the extension state is unknown', () => {
+    for (const rawDocument of [basePlaylist, unlisted]) {
+      const r = preparePlaylistForPublish({ rawDocument, walletDID: WALLET, extensions: 'unknown' })
+      expect('validationErrors' in r && r.validationErrors[0]).toMatch(/not known yet/)
+    }
+  })
+
+  it('keeps a non-public visibility through the strip, so a JSON preview cannot drop it', () => {
+    expect(stripPlaylistExtensionFields(unlisted).visibility).toBe('unlisted')
+    expect(stripPlaylistExtensionFields({ ...basePlaylist, visibility: 'public' })).not.toHaveProperty(
+      'visibility'
+    )
   })
 })
 
@@ -450,7 +499,7 @@ describe('preparePlaylistForPublish — edit', () => {
       rawDocument: patch,
       walletDID: WALLET,
       base: existing,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     ok<Playlist>(r)
     expect(r.signedPayload.title).toBe('Season 1 — edited')
@@ -470,7 +519,7 @@ describe('preparePlaylistForPublish — edit', () => {
       rawDocument: { ...basePlaylist, title: 'edited' },
       walletDID: WALLET,
       base: existing,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     ok<Playlist>(r)
     expect(r.signedPayload.curators).toEqual([{ name: 'Sean', key: WALLET, url: '' }])
@@ -484,7 +533,7 @@ describe('preparePlaylistForPublish — edit', () => {
       rawDocument: { ...patchFields, title: 'edited' } as Playlist,
       walletDID: WALLET,
       base: existing,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     ok<Playlist>(r)
     expect(r.signedPayload.dpVersion).toBe('2.0.0')
@@ -502,7 +551,7 @@ describe('preparePlaylistForPublish — edit', () => {
     const r = preparePlaylistForPublish({
       rawDocument: noSlug as Playlist,
       walletDID: WALLET,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     ok<Playlist>(r)
     expect(r.signedBytes.slug).toBe('season-1-abcd1234')
@@ -518,7 +567,7 @@ describe('preparePlaylistForPublish — edit', () => {
     const r = preparePlaylistForPublish({
       rawDocument: { ...basePlaylist, slug: 'my-chosen-slug' },
       walletDID: WALLET,
-      extensionsEnabled: true,
+      extensions: 'on',
     })
     ok<Playlist>(r)
     expect(r.signedBytes.slug).toBe('my-chosen-slug')
@@ -831,7 +880,7 @@ describe('core mode never silently strips a stored document on replace', () => {
       rawDocument: { ...basePlaylist, title: 'edited in core mode' },
       walletDID: WALLET,
       base: withExtensions,
-      extensionsEnabled: false,
+      extensions: 'off',
     })
     expect('validationErrors' in r).toBe(true)
     const [message] = (r as { validationErrors: string[] }).validationErrors
@@ -851,7 +900,7 @@ describe('core mode never silently strips a stored document on replace', () => {
       rawDocument: { ...basePlaylist, title: 'edited' },
       walletDID: WALLET,
       base,
-      extensionsEnabled: false,
+      extensions: 'off',
     })
     expect('validationErrors' in r).toBe(true)
     expect((r as { validationErrors: string[] }).validationErrors[0]).toContain('items[].displayAt')
@@ -862,7 +911,7 @@ describe('core mode never silently strips a stored document on replace', () => {
     const r = preparePlaylistForPublish({
       rawDocument: { ...basePlaylist, summary: 'dropped', curators: [{ name: 'N', key: DID_KEY }] },
       walletDID: WALLET,
-      extensionsEnabled: false,
+      extensions: 'off',
     })
     ok<Playlist>(r)
     expect(r.wireBody.summary).toBeUndefined()
@@ -876,7 +925,7 @@ describe('core mode never silently strips a stored document on replace', () => {
       rawDocument: { ...basePlaylist, title: 'edited' },
       walletDID: WALLET,
       base: plain,
-      extensionsEnabled: false,
+      extensions: 'off',
     })
     ok<Playlist>(r)
     expect(r.wireBody).toEqual(r.signedBytes)

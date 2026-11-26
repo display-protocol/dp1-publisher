@@ -182,9 +182,9 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
  * reproduce the signed bytes from the decoded document. Emit what Go would.
  *
  * Only safe on structs whose fields are ALL value-typed omitempty in dp1-go
- * (MousePrefs, FrameHash, ProvenanceDep). Pointer-typed fields (e.g.
- * DisplayPrefs.Autoplay `*bool`) marshal as explicit false and must NOT go
- * through this.
+ * (FrameHash, ProvenanceDep). Pointer-typed fields (e.g. DisplayPrefs.Autoplay
+ * and, from dp1-go v0.8.0, MousePrefs' `*bool`) marshal as explicit false and
+ * must NOT go through this.
  */
 function dropOmitemptyZeros(obj: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
@@ -213,17 +213,11 @@ function canonicalDisplayPrefs(d: unknown): Record<string, unknown> | undefined 
   const out = pickFields(d, DISPLAY_PREFS_FIELDS)
   if (isPlainObject(out.interaction)) {
     const interaction = pickFields(out.interaction, INTERACTION_FIELDS)
-    // Keyboard is `[]string omitempty` — the feed's marshal drops an empty array.
-    if (Array.isArray(interaction.keyboard) && interaction.keyboard.length === 0) {
-      delete interaction.keyboard
-    }
-    // MousePrefs bools are value-typed omitempty: Go's marshal never emits
-    // false. A present-but-all-false mouse marshals as `{}` (the pointer is
-    // non-nil), so keep the object itself.
+    // `keyboard: []` and a mouse flag's explicit `false` are kept: a higher layer
+    // (item over defaults) states them to revoke what a lower one enabled, and
+    // dp1-go v0.8.0 preserves both. Absent means "says nothing", not false.
     if (isPlainObject(interaction.mouse)) {
-      interaction.mouse = dropOmitemptyZeros(
-        pickFields(interaction.mouse, INTERACTION_MOUSE_FIELDS)
-      )
+      interaction.mouse = pickFields(interaction.mouse, INTERACTION_MOUSE_FIELDS)
     }
     out.interaction = interaction
   }

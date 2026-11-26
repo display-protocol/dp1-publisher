@@ -199,6 +199,23 @@ describe('ensurePlaylistWalletCurator', () => {
     expect(r.playlist.curators?.[2].key).toBe(WALLET)
   })
 
+  it('keeps a keyless curator with an empty name when it carries any other member', () => {
+    const r = ensurePlaylistWalletCurator(
+      {
+        ...basePlaylist,
+        curators: [
+          { name: '', role: 'curator' },
+          { name: '', url: 'https://node.art' },
+          { name: '', links: [{ type: 'website', url: 'https://node.art' }] },
+          { name: '', key: '', url: '' },
+        ],
+      },
+      WALLET
+    )
+    // The last entry is the form's untouched "Add curator" row: nothing to keep.
+    expect(r.previousCount).toBe(3)
+  })
+
   it('keeps Entity profile members on curators and the channel publisher', () => {
     const p = ensurePlaylistWalletCurator(
       {

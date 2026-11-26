@@ -20,6 +20,9 @@ import {
   mergePlaylistForPatch,
 } from '@/lib/dp1Merge'
 import {
+  EXTENSIONS_UNKNOWN_MESSAGE,
+  type ExtensionsState,
+  isNonPublicVisibility,
   playlistExtensionFieldsPresent,
   stripPlaylistExtensionFields,
 } from '@/lib/dp1ExtensionPolicy'
@@ -86,8 +89,8 @@ export interface PreparePlaylistArgs {
   walletDID: string
   /** The stored document to merge onto, for an edit/replace; omit for create. */
   base?: Playlist
-  /** Drives extension-field stripping and curator auto-inject behavior. */
-  extensionsEnabled: boolean
+  /** Drives extension-field stripping and curator auto-inject behavior; `unknown` refuses. */
+  extensions: ExtensionsState
   /** Optional attribution: fills the injected curator's empty name. */
   walletName?: string
 }
@@ -95,8 +98,12 @@ export interface PreparePlaylistArgs {
 export function preparePlaylistForPublish(
   args: PreparePlaylistArgs
 ): PrepareResult<Playlist> {
-  const { rawDocument, walletDID, base, extensionsEnabled, walletName } = args
+  const { rawDocument, walletDID, base, extensions, walletName } = args
   const toasts: ToastInput[] = []
+
+  // Step 0: the strip path below is only safe when the feed is *known* to have extensions off.
+  if (extensions === 'unknown') return { validationErrors: [EXTENSIONS_UNKNOWN_MESSAGE] }
+  const extensionsEnabled = extensions === 'on'
 
   // Step 1: merge with base (edit) or use raw verbatim (create).
   let merged: Playlist = base ? mergePlaylistForPatch(base, rawDocument) : rawDocument
@@ -137,6 +144,19 @@ export function preparePlaylistForPublish(
             `the feed recorded. Enable extensions to edit this playlist.`,
         ],
       }
+    }
+  }
+
+  // Step 1d: never strip a non-public `visibility` (§3.7 fails closed). Checked on the merged
+  // document, so it covers a create and an edit that newly adds it; the replace check above only
+  // sees what the feed already stores. The author removes the field to publish publicly.
+  if (!extensionsEnabled && isNonPublicVisibility(merged.visibility)) {
+    return {
+      validationErrors: [
+        `This playlist is marked visibility ${JSON.stringify(merged.visibility)}, and extensions are off ` +
+          `for this session. Publishing it now would drop the field and make the playlist public. Enable ` +
+          `extensions, or remove "visibility" from the document to publish it publicly.`,
+      ],
     }
   }
 

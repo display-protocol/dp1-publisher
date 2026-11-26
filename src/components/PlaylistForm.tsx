@@ -57,6 +57,8 @@ import {
 import { mergePlaylistForPatch, overlayPlaylistFormEdits } from '@/lib/dp1Merge';
 import {
   stripPlaylistExtensionFields,
+  EXTENSIONS_UNKNOWN_MESSAGE,
+  type ExtensionsState,
   stripItemExtensionFields,
 } from '@/lib/dp1ExtensionPolicy';
 import type { DynamicQuery, Entity, Playlist, PlaylistItem } from '@/types/dp1';
@@ -232,7 +234,7 @@ export default function PlaylistForm({
   onRetryChannels,
   retryingChannels,
   onViewPublished,
-  extensionsEnabled,
+  extensionsState,
 }: {
   editId?: string;
   onCancelEdit?: () => void;
@@ -252,8 +254,10 @@ export default function PlaylistForm({
   retryingChannels?: boolean;
   /** Called when the user clicks "View all published" after a create publish. */
   onViewPublished?: () => void;
-  extensionsEnabled: boolean;
+  extensionsState: ExtensionsState;
 }) {
+  // UI gating only; `unknown` hides extension controls like `off`, and publishing is refused below.
+  const extensionsEnabled = extensionsState === 'on';
   const { address } = useAccount();
   const { data: walletClient } = useWalletClient();
   const { toast } = useToast();
@@ -874,6 +878,16 @@ export default function PlaylistForm({
       return;
     }
 
+    // Before any parsing: the parsers would report "unknown" as "extensions off".
+    if (extensionsState === 'unknown') {
+      toast({
+        title: 'Cannot publish yet',
+        description: EXTENSIONS_UNKNOWN_MESSAGE,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     // Step 1: resolve raw document — from form state or from imported JSON.
     let rawDocument: Playlist;
     if (jsonMode === 'json') {
@@ -968,7 +982,7 @@ export default function PlaylistForm({
         rawDocument,
         walletDID,
         base: isEdit ? (storedBaseRef.current ?? undefined) : overwriteBase,
-        extensionsEnabled,
+        extensions: extensionsState,
       });
       if ('validationErrors' in prepared) {
         toast({

@@ -31,7 +31,7 @@ type PublishTab = 'playlist' | 'channel'
 
 export default function Dashboard() {
   const { isConnected, address } = useAccount()
-  const { extensionsEnabled, extensionsLoading } = useDp1Extensions()
+  const { extensionsEnabled, extensionsState, extensionsLoading } = useDp1Extensions()
   const [view, setView] = useState<'publish' | 'published'>('publish')
   const [publishTab, setPublishTab] = useState<PublishTab>('playlist')
   /** When set, the channel form is rendered with this URL pre-filled into `playlists[]`.
@@ -230,7 +230,7 @@ export default function Dashboard() {
 
             <TabsContent value="playlist" className="mt-10 outline-none">
               <PlaylistForm
-                extensionsEnabled
+                extensionsState={extensionsState}
                 onPublished={bumpPublished}
                 onUseInNewChannel={handleUseInNewChannel}
                 existingChannels={existingChannels}
@@ -263,7 +263,7 @@ export default function Dashboard() {
         ) : (
           /* Core-only deployments can compose playlists and nothing else. */
           <PlaylistForm
-            extensionsEnabled={false}
+            extensionsState={extensionsState}
             onPublished={bumpPublished}
             onViewPublished={handleViewPublished}
           />
@@ -271,7 +271,7 @@ export default function Dashboard() {
           <PlaylistForm
             key={editPlaylistId}
             editId={editPlaylistId}
-            extensionsEnabled={extensionsEnabled}
+            extensionsState={extensionsState}
             onCancelEdit={() => {
               setEditPlaylistId(null)
               bumpPublished()

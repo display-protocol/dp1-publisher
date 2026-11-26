@@ -267,6 +267,20 @@ describe('describeReviewDocument', () => {
   })
 })
 
+describe('describeReviewDocument — curators without a key', () => {
+  it.each([
+    [{ name: '', role: 'curator' }, 'unnamed, no key (curator)'],
+    [{ name: '', url: 'https://node.art' }, 'unnamed, no key (https://node.art)'],
+    [{ name: 'Ana' }, 'Ana'],
+  ])('labels %j', (curator, line) => {
+    const summary = describeReviewDocument({
+      kind: 'playlist',
+      document: { ...minimalPlaylist, curators: [curator] },
+    })
+    expect(summary.facts).toContain(`Declared curators: ${line}`)
+  })
+})
+
 describe('hasUnnamedWalletEntity', () => {
   const WALLET = 'did:pkh:eip155:1:0x9E4e4c30B92D4109442215027279Fdaed45a620f'
 

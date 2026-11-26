@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import ReviewAndSign from './ReviewAndSign'
 import * as apiModule from '@/lib/api'
+import { EXTENSIONS_UNKNOWN_MESSAGE } from '@/lib/dp1ExtensionPolicy'
 import * as signingModule from '@/lib/signing'
 import { ethereumAddressToDIDPKH } from '@/lib/signing'
 
@@ -19,8 +20,13 @@ vi.mock('wagmi', () => {
   }
 })
 
+const extensions = vi.hoisted(() => ({ state: 'on' as 'on' | 'off' | 'unknown' }))
 vi.mock('@/context/Dp1ExtensionsContext', () => ({
-  useDp1Extensions: () => ({ extensionsEnabled: true, extensionsState: 'on', extensionsLoading: false }),
+  useDp1Extensions: () => ({
+    extensionsEnabled: extensions.state === 'on',
+    extensionsState: extensions.state,
+    extensionsLoading: false,
+  }),
 }))
 
 const toastMock = vi.fn()
@@ -398,5 +404,42 @@ describe('ReviewAndSign — attribution recall', () => {
   it('starts empty when nothing was remembered', () => {
     render(<ReviewAndSign />)
     expect(screen.getByLabelText(/attribution name/i)).toHaveValue('')
+  })
+})
+
+describe('ReviewAndSign — feed extension state unknown', () => {
+  beforeEach(() => {
+    extensions.state = 'unknown'
+    mockedSigning.signDocument.mockClear()
+    for (const fn of [
+      mockedApi.getPlaylist,
+      mockedApi.getChannel,
+      mockedApi.publishPlaylist,
+      mockedApi.publishChannel,
+      mockedApi.replacePlaylist,
+    ]) {
+      fn.mockReset()
+    }
+  })
+  afterEach(() => {
+    extensions.state = 'on'
+  })
+
+  it.each([
+    ['playlist', pastedPlaylist],
+    ['channel', { version: '1.0.0', title: 'C', playlists: ['https://feed.example/p/1'] }],
+  ])('prepares and signs nothing for a pasted %s', async (_kind, doc) => {
+    render(<ReviewAndSign />)
+    pasteJson(doc)
+
+    await waitFor(() =>
+      expect(screen.getByText(EXTENSIONS_UNKNOWN_MESSAGE)).toBeInTheDocument()
+    )
+    expect(screen.queryByRole('button', { name: /Sign & (publish|update)/i })).toBeNull()
+    expect(mockedApi.getPlaylist).not.toHaveBeenCalled()
+    expect(mockedApi.getChannel).not.toHaveBeenCalled()
+    expect(mockedSigning.signDocument).not.toHaveBeenCalled()
+    expect(mockedApi.publishPlaylist).not.toHaveBeenCalled()
+    expect(mockedApi.publishChannel).not.toHaveBeenCalled()
   })
 })
